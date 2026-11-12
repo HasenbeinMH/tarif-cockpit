@@ -1,7 +1,7 @@
 /* tarif-cockpit: Tarife, Kosten und Abschlagsprognose für Strom, Gas und Wasser auf einen Blick.
    Optik angelehnt an energy-cockpit (gleiche Farbschemen). Eine Datei, kein Build nötig. */
 (() => {
-  const VERSION = '0.1.0';
+  const VERSION = '0.2.0';
 
   const THEMES = {
     dunkel: { ov: '255,255,255', bg0: '#070b14', bg1: '#121b30', panel: '#0c1322', txt: '#e8eefc', mut: '139,151,179', stroke: 'rgba(255,255,255,.08)' },
@@ -76,6 +76,19 @@ footer{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap
 .stat small{color:rgb(var(--mut));font-weight:500;font-size:.72rem;margin-left:3px}
 .note{margin-top:10px;font-size:.64rem;color:rgba(var(--mut),.8);text-align:center}
 :host([data-theme="hell"]) .big,:host([data-theme="warm"]) .big,:host([data-theme="hell"]) .pill,:host([data-theme="warm"]) .pill,:host([data-theme="hell"]) .total,:host([data-theme="warm"]) .total{color:rgb(var(--qd))}
+.panel.wide{margin-top:14px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-top:14px}
+.chead{display:flex;align-items:center;flex-wrap:wrap;margin:16px 0 4px}
+.chead .lbl{margin-right:auto}
+.leg{display:flex;align-items:center;font-size:.72rem;color:rgb(var(--mut));margin-left:14px}
+.leg i{width:10px;height:10px;border-radius:3px;margin-right:6px;background:rgb(var(--lc))}
+svg.ch{display:block;width:100%;height:auto}
+.ch .ax{fill:rgb(var(--mut));font-size:9px;font-family:inherit}
+.ch .gl{stroke:var(--stroke);stroke-width:1}
+.ch .cb{fill:rgb(var(--c));opacity:.9}
+.ch .ln{fill:none;stroke:rgb(var(--lc));stroke-width:2;stroke-linejoin:round}
+.ch .dot{fill:rgb(var(--lc))}
+.nodata{font-size:.74rem;color:rgb(var(--mut));padding:14px 0 4px}
 .narrow .wrap{padding:16px}
 .narrow .big .num{font-size:2rem}
 `;
@@ -101,13 +114,156 @@ footer{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap
         throw new Error('tarif-cockpit: mindestens strom, gas oder wasser mit Sensoren angeben');
       }
       this._c = c;
+      this._hist = null;
+      this._histAt = 0;
       this._build();
       this._render();
+      this._loadHistory();
     }
 
     set hass(h) {
       this._h = h;
       this._render();
+      this._loadHistory();
+    }
+
+    // Letzte n Monate (ältester zuerst) als Achse für die Verlaufsdiagramme
+    _months(n) {
+      const out = [];
+      const now = new Date();
+      for (let i = n - 1; i >= 0; i--) {
+        const x = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        out.push({ y: x.getFullYear(), m: x.getMonth(), key: x.getFullYear() + '-' + x.getMonth() });
+      }
+      return out;
+    }
+
+    // Monatsmittel aus der Langzeitstatistik; höchstens einmal pro Stunde
+    async _loadHistory() {
+      const a = this._c && this._c.analysis;
+      if (!a || a.history === false || !this._h || typeof this._h.callWS !== 'function') return;
+      const now = Date.now();
+      if (this._histAt && now - this._histAt < 3600e3) return;
+      this._histAt = now;
+      const ids = [a.consumption, a.temperature, a.kennwert].filter(Boolean);
+      if (!ids.length) return;
+      const ax = this._months(Number(a.months) > 0 ? Math.min(Number(a.months), 36) : 24);
+      try {
+        const r = await this._h.callWS({
+          type: 'recorder/statistics_during_period',
+          start_time: new Date(ax[0].y, ax[0].m, 1).toISOString(),
+          end_time: new Date().toISOString(),
+          statistic_ids: ids,
+          period: 'month',
+          types: ['mean'],
+        });
+        const pick = (id) => {
+          const map = {};
+          ((r && r[id]) || []).forEach((s) => {
+            const d = new Date(s.start);
+            if (typeof s.mean === 'number') map[d.getFullYear() + '-' + d.getMonth()] = s.mean;
+          });
+          return ax.map((x) => (x.key in map ? map[x.key] : null));
+        };
+        this._hist = { ax, cons: a.consumption ? pick(a.consumption) : [], temp: a.temperature ? pick(a.temperature) : [], kw: a.kennwert ? pick(a.kennwert) : [] };
+      } catch (e) {
+        this._hist = null;
+      }
+      this._last = null;
+      this._render();
+    }
+
+    // Diagramm: optional Balken (linke Achse) und Linie (rechte Achse, ohne Balken links)
+    _svgChart(ax, bars, line, uBar, uLine) {
+      const W = 720, H = 170, L = 40, R = bars ? 40 : 10, T = 10, B = 24;
+      const n = ax.length, step = (W - L - R) / n, ih = H - T - B;
+      const bv = bars ? bars.filter((v) => v !== null) : [];
+      const lv = line ? line.filter((v) => v !== null) : [];
+      const bmax = bv.length ? Math.max(...bv) * 1.1 || 1 : 1;
+      let lmin = lv.length ? Math.floor(Math.min(...lv, 0)) : 0;
+      let lmax = lv.length ? Math.ceil(Math.max(...lv) * (bars ? 1 : 1.1) + (bars ? 1 : 0)) : 1;
+      if (lmax <= lmin) lmax = lmin + 1;
+      const yb = (v) => T + ih - (v / bmax) * ih;
+      const yl = (v) => T + ih - ((v - lmin) / (lmax - lmin)) * ih;
+      let s = `<svg class="ch" viewBox="0 0 ${W} ${H}" role="img">`;
+      for (let g = 0; g <= 4; g++) {
+        const y = T + (ih * g) / 4;
+        s += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/>`;
+        if (bars) {
+          s += `<text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${nf(bmax * (1 - g / 4), 0)}</text>`;
+          if (lv.length) s += `<text class="ax" x="${W - R + 5}" y="${y + 3}">${nf(lmax - ((lmax - lmin) * g) / 4, 0)}</text>`;
+        } else {
+          s += `<text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${nf(lmax - ((lmax - lmin) * g) / 4, 1)}</text>`;
+        }
+      }
+      if (bars) bars.forEach((v, i) => { if (v !== null) s += `<rect class="cb" x="${L + i * step + step * 0.2}" y="${yb(v)}" width="${step * 0.6}" height="${Math.max(1, T + ih - yb(v))}" rx="3"/>`; });
+      if (line) {
+        let d = '', pen = false;
+        line.forEach((v, i) => {
+          if (v === null) { pen = false; return; }
+          const x = L + i * step + step / 2;
+          d += (pen ? 'L' : 'M') + x.toFixed(1) + ' ' + yl(v).toFixed(1) + ' ';
+          pen = true;
+        });
+        if (d) s += `<path class="ln" d="${d}"/>`;
+        line.forEach((v, i) => { if (v !== null) s += `<circle class="dot" cx="${L + i * step + step / 2}" cy="${yl(v)}" r="3"/>`; });
+      }
+      ax.forEach((x, i) => {
+        const cx = L + i * step + step / 2;
+        const name = new Date(x.y, x.m, 1).toLocaleDateString('de-DE', { month: 'narrow' });
+        s += `<text class="ax" x="${cx}" y="${H - 11}" text-anchor="middle">${name}</text>`;
+        if (x.m === 0 || i === 0) s += `<text class="ax" x="${cx}" y="${H - 1}" text-anchor="middle">${x.y}</text>`;
+      });
+      void uBar; void uLine;
+      return s + '</svg>';
+    }
+
+    // Auswertung (z. B. Gas witterungsbereinigt): Kennwert, Kacheln, Verlauf
+    _analysis() {
+      const a = this._c.analysis;
+      if (!a || typeof a !== 'object') return '';
+      const c = rgbOf(a.color, MEDIA.gas.color);
+      const kw = this._num(a.kennwert);
+      const prev = this._num(a.kennwert_previous);
+      let pill = '<span class="pill" style="--q:' + INFO + ';--qd:' + DARK[INFO] + '">Wartet auf Ablesung</span>';
+      let big = '', cmp = '';
+      if (kw !== null) {
+        pill = '';
+        big = `<div class="big" style="--q:${c};--qd:${c}"><span class="num">${nf(kw, 2)}</span><span class="unit">kWh/Kd</span><small>Kennwert der letzten Periode</small></div>`;
+        if (prev !== null && prev > 0) {
+          const p = (kw / prev - 1) * 100;
+          const t = Math.abs(p) < 5 ? 'etwa gleich' : p > 0 ? 'mehr, als das Wetter erklärt' : 'weniger, als das Wetter erklärt';
+          cmp = `<div class="hint">Gegenüber der Vorperiode (${nf(prev, 2)}): <b>${p >= 0 ? '+' : ''}${nf(p, 1)} %</b> · ${t}.</div>`;
+        }
+      }
+      const pending = kw === null ? `<div class="hint">${esc(a.pending_text || 'Noch keine Auswertung: Der erste Kennwert kommt mit der nächsten Gas-Ablesung.')}</div>` : '';
+      const tile = (name, id, unit, dec) => {
+        if (!id) return '';
+        const v = this._num(id);
+        return `<div class="stat"><span class="lbl">${esc(name)}</span><b>${v === null ? '—' : nf(v, dec)}<small>${esc(unit)}</small></b></div>`;
+      };
+      const extras = (Array.isArray(a.extras) ? a.extras : []).map((e) => (e && e.entity ? tile(e.name || e.entity, e.entity, e.unit || '', typeof e.decimals === 'number' ? e.decimals : 1) : '')).join('');
+      const tiles = tile('Verbrauch letzte Periode', a.consumption, 'kWh', 0) + tile('Ø Außentemperatur', a.temperature, '°C', 1) + tile('Gradtage', a.degree_days, 'Kd', 1) + extras;
+      let charts = '';
+      const h = this._hist;
+      if (a.history !== false && (a.consumption || a.kennwert)) {
+        const has = h && (h.cons.some((v) => v !== null) || h.kw.some((v) => v !== null));
+        if (!has) charts = '<div class="nodata">Noch keine Verlaufsdaten in der Langzeitstatistik.</div>';
+        else {
+          if (a.consumption && h.cons.some((v) => v !== null)) {
+            charts += `<div class="chead" style="--lc:${INFO}"><span class="lbl">Verbrauch und Außentemperatur je Monat</span><span class="leg" style="--lc:${c}"><i></i>Verbrauch (kWh)</span>${a.temperature ? '<span class="leg"><i></i>Ø Außentemperatur (°C)</span>' : ''}</div><div style="--c:${c};--lc:${INFO}">${this._svgChart(h.ax, h.cons, a.temperature ? h.temp : null)}</div>`;
+          }
+          if (a.kennwert && h.kw.some((v) => v !== null)) {
+            charts += `<div class="chead"><span class="lbl">Kennwert je Monat (kWh/Kd)</span></div><div style="--lc:${c}">${this._svgChart(h.ax, null, h.kw)}</div>`;
+          }
+        }
+      }
+      const explain = a.explain ? `<div class="hint">${esc(a.explain)}</div>` : '';
+      return `<div class="panel wide" style="--c:${c}">
+        <div class="ph"><span class="lbl"><i></i>${esc(a.title || 'Auswertung')}</span>${pill}</div>
+        ${big}${cmp}${pending}
+        <div class="tiles">${tiles}</div>${charts}${explain}
+      </div>`;
     }
 
     _build() {
@@ -232,7 +388,7 @@ footer{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap
       const sub = c.subtitle ? `<small>${esc(c.subtitle)}</small>` : '';
       const panels = calcs.map((x) => this._panel(x, c[x.key])).join('');
       const html = `<header><div class="title"><span class="ico" style="--c:${INFO}"><ha-icon icon="${esc(c.icon || 'mdi:receipt-text-outline')}"></ha-icon></span><div>${esc(c.title || 'Tarife und Abrechnung')}${sub}</div></div>${head}</header>
-        <div class="grid">${panels}</div>${this._footer()}
+        <div class="grid">${panels}</div>${this._analysis()}${this._footer()}
         <div class="note">Hochrechnung aus den Prognose-Sensoren, Differenz = Abschläge im Jahr minus Hochrechnung. Keine Abrechnung.</div>`;
       if (html !== this._last) { this._w.innerHTML = html; this._last = html; }
       void card;

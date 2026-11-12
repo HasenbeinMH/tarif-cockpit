@@ -50,6 +50,27 @@ footer:
 | `theme` | Farbschema wie bei energy-cockpit |
 | `tolerance_pct` | Schwelle für „Passt“, Standard 5 |
 | `footer` | Liste von Kacheln mit `entity`, `name`, `unit`, `decimals`, `scale`, `format: date` |
+| `analysis` | Auswertung unter den Medien-Kacheln, siehe unten |
+
+### Auswertung (z. B. Gas witterungsbereinigt)
+Optional zeigt die Karte unter den Kacheln einen Auswertungsblock: Kennwert, Vergleich mit der Vorperiode, Kacheln für Verbrauch, Außentemperatur und Gradtage sowie zwei Verlaufsdiagramme (Verbrauch gegen Außentemperatur je Monat, Kennwert je Monat). Der Verlauf kommt aus der Langzeitstatistik der Sensoren. Solange noch kein Kennwert vorliegt, steht dort „Wartet auf Ablesung“.
+
+```yaml
+analysis:
+  title: Gas witterungsbereinigt
+  kennwert: sensor.gas_kennwert_je_gradtag          # kWh je Gradtag
+  kennwert_previous: input_number.gas_kennwert_vorperiode   # optional, für den Vergleich
+  consumption: sensor.gas_verbrauch_letzte_periode  # kWh
+  temperature: sensor.gas_aussentemperatur_letzte_periode   # °C
+  degree_days: sensor.gas_gradtage_letzte_periode
+  extras:                                           # beliebige weitere Kacheln, z. B. Kaminofen
+    - { name: Ofentage seit Ablesung, entity: input_number.ofentage_periode, unit: d, decimals: 0 }
+    - { name: Ofenstunden seit Ablesung, entity: input_number.ofen_stunden_periode, unit: h, decimals: 0 }
+  explain: Kennwert = kWh Gas je Gradtag. Bleibt er gleich, hat sich am Heizverhalten nichts geändert.
+  months: 24          # Monate im Verlauf (höchstens 36)
+  history: true       # false blendet die Diagramme aus
+  color: '#fb923c'
+```
 
 Fehlt ein Sensor oder ist er nicht verfügbar, zeigt die Kachel „Noch keine Prognose“ bzw. „—“.
 
