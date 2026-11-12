@@ -26,13 +26,13 @@ const monthly=async(m)=>{const r={};const now=new Date();(m.statistic_ids||[]).f
  const mean=id.includes('verbrauch')?3000+(12-temp*1.3)*160:id.includes('temperatur')?temp:id.includes('kennwert')?5.2+(i%5)*.35:null;r[id].push({start:d.getTime(),end:d.getTime()+2592e6,mean});}});return r;};
 const hass=()=>({states,themes:{darkMode:true},callWS:monthly});
 if(window.__noKw){}
-base['sensor.gas_kennwert_je_gradtag']=S(6.88,'kWh/Kd');base['input_number.gas_kennwert_vorperiode']=S(6.05,'kWh/Kd');
+base['input_datetime.abr_strom']=S('2026-07-30');base['input_datetime.abr_gas']=S('2026-08-15');base['sensor.gas_kennwert_je_gradtag']=S(6.88,'kWh/Kd');base['input_number.gas_kennwert_vorperiode']=S(6.05,'kWh/Kd');
 base['sensor.gas_verbrauch_letzte_periode']=S(3725,'kWh');base['sensor.gas_aussentemperatur_letzte_periode']=S(6.5,'°C');base['sensor.gas_gradtage_letzte_periode']=S(541,'Kd');
 base['input_number.ofentage_periode']=S(0,'d');base['input_number.ofen_stunden_periode']=S(0,'h');
 states=JSON.parse(JSON.stringify(base));
-const cfg={theme:'dunkel',title:'Tarife und Abrechnung',subtitle:'Abrechnungsjahr ab 30.06.2026',
+const cfg={theme:'dunkel',title:'Tarife und Abrechnung',period_start:'input_datetime.abr_strom',
  strom:{cost:'sensor.kosten_strom_abrechnungsjahr',advance_paid:'sensor.abschlage_strom_abrechnungsjahr',forecast_cost:'sensor.prognose_strom_kosten',forecast_kwh:'sensor.prognose_strom_verbrauch',advance:'input_number.abschlag_strom'},
- gas:{cost:'sensor.kosten_gas_abrechnungsjahr',advance_paid:'sensor.abschlage_gas_abrechnungsjahr',forecast_cost:'sensor.prognose_gas_kosten',forecast_kwh:'sensor.prognose_gas_verbrauch',advance:'input_number.abschlag_gas'},
+ gas:{start:'input_datetime.abr_gas',cost:'sensor.kosten_gas_abrechnungsjahr',advance_paid:'sensor.abschlage_gas_abrechnungsjahr',forecast_cost:'sensor.prognose_gas_kosten',forecast_kwh:'sensor.prognose_gas_verbrauch',advance:'input_number.abschlag_gas'},
  analysis:{title:'Gas witterungsbereinigt',kennwert:'sensor.gas_kennwert_je_gradtag',kennwert_previous:'input_number.gas_kennwert_vorperiode',consumption:'sensor.gas_verbrauch_letzte_periode',temperature:'sensor.gas_aussentemperatur_letzte_periode',degree_days:'sensor.gas_gradtage_letzte_periode',
   extras:[{name:'Ofentage seit Ablesung',entity:'input_number.ofentage_periode',unit:'d',decimals:0},{name:'Ofenstunden seit Ablesung',entity:'input_number.ofen_stunden_periode',unit:'h',decimals:0}],
   explain:'Kennwert = kWh Gas je Gradtag. Bleibt er gleich, hat sich am Heizverhalten nichts geändert. Steigt er, verbrauchst du mehr, als das Wetter erklärt.'},

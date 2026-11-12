@@ -1,7 +1,7 @@
 /* tarif-cockpit: Tarife, Kosten und Abschlagsprognose für Strom, Gas und Wasser auf einen Blick.
    Optik angelehnt an energy-cockpit (gleiche Farbschemen). Eine Datei, kein Build nötig. */
 (() => {
-  const VERSION = '0.2.0';
+  const VERSION = '0.3.0';
 
   const THEMES = {
     dunkel: { ov: '255,255,255', bg0: '#070b14', bg1: '#121b30', panel: '#0c1322', txt: '#e8eefc', mut: '139,151,179', stroke: 'rgba(255,255,255,.08)' },
@@ -76,6 +76,8 @@ footer{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap
 .stat small{color:rgb(var(--mut));font-weight:500;font-size:.72rem;margin-left:3px}
 .note{margin-top:10px;font-size:.64rem;color:rgba(var(--mut),.8);text-align:center}
 :host([data-theme="hell"]) .big,:host([data-theme="warm"]) .big,:host([data-theme="hell"]) .pill,:host([data-theme="warm"]) .pill,:host([data-theme="hell"]) .total,:host([data-theme="warm"]) .total{color:rgb(var(--qd))}
+.tap{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+.tap:hover{color:var(--txt)}
 .panel.wide{margin-top:14px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-top:14px}
 .chead{display:flex;align-items:center;flex-wrap:wrap;margin:16px 0 4px}
@@ -269,6 +271,11 @@ svg.ch{display:block;width:100%;height:auto}
     _build() {
       this.shadowRoot.innerHTML = `<style>${CSS}</style><ha-card><div class="wrap" id="w"></div></ha-card>`;
       this._w = this.shadowRoot.getElementById('w');
+      // Tipp auf den Zeitraum öffnet den Datums-Helfer, dort lässt er sich ändern
+      this._w.addEventListener('click', (e) => {
+        const t = e.target.closest && e.target.closest('[data-entity]');
+        if (t) this.dispatchEvent(new CustomEvent('hass-more-info', { detail: { entityId: t.getAttribute('data-entity') }, bubbles: true, composed: true }));
+      });
       if (typeof ResizeObserver !== 'undefined') {
         if (this._ro) this._ro.disconnect();
         this._ro = new ResizeObserver((e) => {
@@ -280,6 +287,18 @@ svg.ch{display:block;width:100%;height:auto}
     }
 
     disconnectedCallback() { if (this._ro) this._ro.disconnect(); }
+
+    // Datum aus Entität (input_datetime, Sensor) oder als Text "JJJJ-MM-TT"; sonst null
+    _date(v) {
+      if (!v || typeof v !== 'string') return null;
+      const s = /^\d{4}-\d{2}-\d{2}/.test(v) ? v : this._h && this._h.states[v] && this._h.states[v].state;
+      const m = typeof s === 'string' && /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+      return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+    }
+
+    _fd(d) {
+      return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    }
 
     _num(id) {
       if (!id || !this._h) return null;
@@ -326,6 +345,9 @@ svg.ch{display:block;width:100%;height:auto}
         if (v === null) return '';
         return `<div class="row"><div class="rh"><span>${name}</span><b>${eur(v)} €${extra ? ' · ' + extra : ''}</b></div><div class="bar"><i class="${ref ? 'ref' : ''}" style="width:${Math.max(1, Math.min(100, (v / max) * 100))}%"></i></div></div>`;
       };
+      // Hat das Medium einen eigenen Beginn, der vom Gesamtzeitraum abweicht, steht er in der Kachel
+      const own = this._date(m.start), all = this._date(this._c.period_start);
+      const startTxt = own && (!all || own.getTime() !== all.getTime()) ? ' · ab ' + this._fd(own) : '';
       const kwhTxt = calc.kwh === null ? '' : nf(calc.kwh, 0) + ' kWh';
       const sign = calc.diff === null ? '' : calc.verdict === 'ok' ? (calc.diff >= 0 ? '+' : '−') : '';
       const big = calc.diff === null
@@ -335,7 +357,7 @@ svg.ch{display:block;width:100%;height:auto}
         : `<div class="hint">Passender Abschlag: <b>${nf(calc.fitting, 0)} €</b> statt ${nf(calc.monthly, 0)} € im Monat.</div>`;
       const old = m.stale_hint ? `<div class="warn">${esc(m.stale_hint)}</div>` : '';
       return `<div class="panel" style="--c:${c};--q:${q};--qd:${DARK[q]}">
-        <div class="ph"><span class="lbl"><i></i>${esc(m.name || def.name)}${m.advance && calc.monthly !== null ? ' · Abschlag ' + nf(calc.monthly, 0) + ' €' : ''}</span><span class="pill">${label}</span></div>
+        <div class="ph"><span class="lbl"><i></i>${esc(m.name || def.name)}${m.advance && calc.monthly !== null ? ' · Abschlag ' + nf(calc.monthly, 0) + ' €' : ''}${startTxt}</span><span class="pill">${label}</span></div>
         <div class="big">${big}</div>
         <div class="rows">
           ${row('Kosten bisher', calc.cost, false, '')}
@@ -385,7 +407,13 @@ svg.ch{display:block;width:100%;height:auto}
       const totalQ = total >= 0 ? OK : BAD;
       const head = sums.length > 1
         ? `<span class="total" style="--q:${totalQ};--qd:${DARK[totalQ]}">${total >= 0 ? 'Guthaben' : 'Nachzahlung'} gesamt<b>${eur(Math.abs(total))} €</b></span>` : '';
-      const sub = c.subtitle ? `<small>${esc(c.subtitle)}</small>` : '';
+      const ps = this._date(c.period_start);
+      let sub = c.subtitle ? `<small>${esc(c.subtitle)}</small>` : '';
+      if (ps) {
+        const end = this._date(c.period_end) || new Date(ps.getFullYear() + 1, ps.getMonth(), ps.getDate() - 1);
+        const id = typeof c.period_start === 'string' && c.period_start.includes('.') && this._h.states[c.period_start] ? c.period_start : '';
+        sub = `<small${id ? ` class="tap" data-entity="${esc(id)}" title="Antippen, um den Zeitraum zu ändern"` : ''}>Abrechnungszeitraum ${this._fd(ps)} – ${this._fd(end)}</small>`;
+      }
       const panels = calcs.map((x) => this._panel(x, c[x.key])).join('');
       const html = `<header><div class="title"><span class="ico" style="--c:${INFO}"><ha-icon icon="${esc(c.icon || 'mdi:receipt-text-outline')}"></ha-icon></span><div>${esc(c.title || 'Tarife und Abrechnung')}${sub}</div></div>${head}</header>
         <div class="grid">${panels}</div>${this._analysis()}${this._footer()}

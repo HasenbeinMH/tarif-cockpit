@@ -22,7 +22,7 @@ Die Karte **rechnet die Prognose nicht selbst**. Sie zeigt, was deine Sensoren l
 ```yaml
 type: custom:tarif-cockpit-card
 title: Tarife und Abrechnung
-subtitle: Abrechnungsjahr ab 30.06.2026
+period_start: input_datetime.abrechnung_strom_beginn   # Beginn des Abrechnungszeitraums, in HA änderbar
 theme: dunkel          # dunkel, graphit, hell, warm, auto, ha
 tolerance_pct: 5       # ab welcher Abweichung nicht mehr "Passt" gilt
 strom:
@@ -47,6 +47,9 @@ footer:
 |---|---|
 | `strom`, `gas`, `wasser` | Mindestens eines ist nötig. Weitere Felder je Medium: `name`, `color` (`#hex`), `months` (Abschläge pro Jahr, Standard 12) |
 | `title`, `subtitle`, `icon` | Kopfzeile |
+| `period_start` | Beginn des Abrechnungszeitraums: ein Datums-Helfer (`input_datetime`, Sensor) oder Text `2026-07-30`. Die Karte zeigt dann „Abrechnungszeitraum 30.07.2026 – 29.07.2027“. Ist es eine Entität, öffnet ein Tipp auf den Zeitraum den Helfer, dort lässt sich das Datum ändern. Ersetzt `subtitle` |
+| `period_end` | Optional, sonst ein Jahr nach dem Beginn minus ein Tag |
+| `strom.start`, `gas.start` | Optional: eigener Beginn je Medium. Weicht er von `period_start` ab, steht „ab 15.08.2026“ in der Kachel |
 | `theme` | Farbschema wie bei energy-cockpit |
 | `tolerance_pct` | Schwelle für „Passt“, Standard 5 |
 | `footer` | Liste von Kacheln mit `entity`, `name`, `unit`, `decimals`, `scale`, `format: date` |
