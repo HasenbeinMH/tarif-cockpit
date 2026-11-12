@@ -14,7 +14,7 @@ Die Karte **rechnet die Prognose nicht selbst**. Sie zeigt, was deine Sensoren l
 
 ## Installation
 1. HACS öffnen, oben rechts Menü, **Benutzerdefinierte Repositories**.
-2. Die Adresse dieses Repos eintragen, Kategorie **Dashboard** (früher „Lovelace“).
+2. `https://github.com/HasenbeinMH/tarif-cockpit` eintragen, Kategorie **Dashboard** (früher „Lovelace“).
 3. `tarif-cockpit` herunterladen, Browser-Cache leeren (Strg+F5).
 4. Karte hinzufügen: **Tarif-Cockpit**, oder als YAML wie unten.
 
