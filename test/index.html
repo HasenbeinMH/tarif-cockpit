@@ -1,0 +1,37 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tarif-cockpit Test</title>
+<style>html,body{margin:0;background:#05070d;color:#e8eefc;font-family:system-ui}#host{max-width:1100px;margin:0 auto;padding:12px}.bar{padding:8px 12px;display:flex;gap:8px;flex-wrap:wrap}button{padding:6px 12px;border-radius:8px;border:1px solid #333;background:#16203a;color:#e8eefc;cursor:pointer}</style></head>
+<body>
+<div class="bar"><button onclick="theme('dunkel')">Dunkel</button><button onclick="theme('graphit')">Graphit</button><button onclick="theme('hell')">Hell</button><button onclick="theme('warm')">Warm</button><button onclick="nachzahlung()">Nachzahlung</button><button onclick="ohne()">Ohne Prognose</button><button onclick="schmal()">Schmal</button></div>
+<div id="host"></div>
+<script>
+if(location.search.indexOf('shot')>=0){const s=document.createElement('style');s.textContent='.bar{display:none}';document.head.appendChild(s)}
+// Testhilfe: HA-Icon als einfacher Platzhalter
+customElements.define('ha-icon',class extends HTMLElement{connectedCallback(){this.textContent='●';this.style.fontSize='10px'}});
+customElements.define('ha-card',class extends HTMLElement{});
+</script>
+<script src="../tarif-cockpit.js"></script>
+<script>
+const S=(state,u,n)=>({state:String(state),attributes:{unit_of_measurement:u||'',friendly_name:n||''}});
+const base={
+ 'sensor.kosten_strom_abrechnungsjahr':S(368.26,'EUR'),'sensor.abschlage_strom_abrechnungsjahr':S(825,'EUR'),
+ 'sensor.prognose_strom_kosten':S(1267.92,'EUR'),'sensor.prognose_strom_verbrauch':S(3522,'kWh'),'input_number.abschlag_strom':S(165,'EUR/Monat'),
+ 'sensor.kosten_gas_abrechnungsjahr':S(222.88,'EUR'),'sensor.abschlage_gas_abrechnungsjahr':S(830,'EUR'),
+ 'sensor.prognose_gas_kosten':S(1777.38,'EUR'),'sensor.prognose_gas_verbrauch':S(16270,'kWh'),'input_number.abschlag_gas':S(166,'EUR/Monat'),
+ 'sensor.zahler_strombezug':S(6627.4,'kWh'),'sensor.zahler_gas':S(9808,'m³'),'sensor.zahler_wasser':S(411.9,'m³'),
+ 'input_datetime.zahler_letzte_ablesung':S('2026-11-12 09:11:17'),'input_number.tarif_strom_arbeitspreis':S(0.3154,'EUR/kWh'),'input_number.tarif_gas_arbeitspreis':S(0.0952,'EUR/kWh')};
+let states=JSON.parse(JSON.stringify(base));
+const hass=()=>({states,themes:{darkMode:true}});
+const cfg={theme:'dunkel',title:'Tarife und Abrechnung',subtitle:'Abrechnungsjahr ab 30.06.2026',
+ strom:{cost:'sensor.kosten_strom_abrechnungsjahr',advance_paid:'sensor.abschlage_strom_abrechnungsjahr',forecast_cost:'sensor.prognose_strom_kosten',forecast_kwh:'sensor.prognose_strom_verbrauch',advance:'input_number.abschlag_strom'},
+ gas:{cost:'sensor.kosten_gas_abrechnungsjahr',advance_paid:'sensor.abschlage_gas_abrechnungsjahr',forecast_cost:'sensor.prognose_gas_kosten',forecast_kwh:'sensor.prognose_gas_verbrauch',advance:'input_number.abschlag_gas'},
+ footer:[{name:'Strombezug',entity:'sensor.zahler_strombezug'},{name:'Gas',entity:'sensor.zahler_gas'},{name:'Wasser',entity:'sensor.zahler_wasser'},{name:'Letzte Ablesung',entity:'input_datetime.zahler_letzte_ablesung',format:'date'},{name:'Strom Arbeitspreis',entity:'input_number.tarif_strom_arbeitspreis',scale:100,unit:'ct/kWh',decimals:2},{name:'Gas Arbeitspreis',entity:'input_number.tarif_gas_arbeitspreis',scale:100,unit:'ct/kWh',decimals:2}]};
+let card,c=cfg;
+function mount(){const h=document.getElementById('host');h.innerHTML='';card=document.createElement('tarif-cockpit-card');card.setConfig(c);h.appendChild(card);card.hass=hass();}
+function theme(t){c=Object.assign({},c,{theme:t});document.body.style.background=(t==='hell'||t==='warm')?'#d8dde6':'#05070d';mount();}
+function nachzahlung(){states=JSON.parse(JSON.stringify(base));states['sensor.prognose_strom_kosten']=S(2300,'EUR');states['sensor.prognose_gas_kosten']=S(1990,'EUR');mount();}
+function ohne(){states=JSON.parse(JSON.stringify(base));states['sensor.prognose_gas_kosten']=S('unavailable');mount();}
+function schmal(){document.getElementById('host').style.maxWidth='380px';}
+mount();
+const q=new URLSearchParams(location.search);if(q.get('theme'))theme(q.get('theme'));if(q.get('n'))nachzahlung();if(q.get('o'))ohne();
+</script></body></html>
