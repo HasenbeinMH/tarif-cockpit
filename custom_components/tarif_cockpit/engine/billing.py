@@ -1,17 +1,21 @@
 """Bereich Abrechnung: Vertragskette und Abrechnungsperioden (Arbeitspaket 2.3, Entscheidung F).
 
 Die Abrechnungsperiode ist die zentrale Einheit. Ein Vertrag hat mehrere Perioden; eine Preisänderung ist
-keine neue Periode. In 0.5 enthalten: Perioden nach Regel, Rumpfjahr, Schlussperiode beim Vertragsende,
-Verschiebung durch den tatsächlichen Ablesetermin, Prüfung der Vertragskette.
-Kosten und Zahlungen folgen in 0.6.
+keine neue Periode. Enthalten: Perioden nach Regel, Rumpfjahr, Schlussperiode beim Vertragsende, Verschiebung
+durch den tatsächlichen Ablesetermin, Prüfung der Vertragskette (0.5); Kosten und Zahlungen (0.6).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from datetime import date, timedelta
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
+from datetime import UTC, date, datetime, timedelta, tzinfo
 
-from .model import BillingPeriod, BillingRule, Contract, PeriodStatus
+from .model import (
+    AdvancePlan, BillingPeriod, BillingRule, Contract, Medium, Meter, Payment, PaymentStatus, PaymentType, PeriodStatus,
+    PriceSegment, VatMode,
+)
+from .units import gas_factor
 
 # Ein abweichender tatsächlicher Ablesetermin darf das Periodenende um höchstens so viele Tage verschieben
 MAX_READING_SHIFT_DAYS = 10
@@ -297,3 +301,236 @@ def to_billing_period(spec: PeriodSpec, status: PeriodStatus) -> BillingPeriod:
         is_partial=spec.is_partial,
         is_final=spec.is_final,
     )
+
+
+# ---------------------------------------------------------------- Kosten (0.6)
+
+# Grundpreis je Monat → je Tag: × 12 / 365,25 (wie bisher in den Template-Sensoren; Rundungsregeln der Versorger nach 1.0)
+DAYS_PER_YEAR = 365.25
+
+
+@dataclass(slots=True)
+class CostBreakdown:
+    """Kosten eines Zeitraums. ``total`` ist im Preis-Modus des Vertrags (brutto oder netto), ``gross`` immer brutto."""
+
+    energy: float = 0.0
+    wastewater: float = 0.0
+    base: float = 0.0
+    fixed: float = 0.0
+    demand: float = 0.0
+    quantity: float = 0.0  # abgerechnete Menge (kWh bei Energie, m³ bei Wasser)
+    total: float = 0.0
+    gross: float = 0.0
+    flags: list[str] = field(default_factory=list)
+
+    @property
+    def complete(self) -> bool:
+        return not any(f in self.flags for f in ("kein_preis", "brennwert_fehlt"))
+
+
+def segment_on(segments: list[PriceSegment], day: date) -> PriceSegment | None:
+    """Preisabschnitt, der an ``day`` gilt (der jüngste mit valid_from ≤ day und ohne abgelaufenes valid_to)."""
+    best = None
+    for s in segments:
+        if s.valid_from <= day and (s.valid_to is None or day <= s.valid_to):
+            if best is None or s.valid_from > best.valid_from:
+                best = s
+    return best
+
+
+def energy_factor(meter: Meter, seg: PriceSegment | None) -> float | None:
+    """Umrechnung Zählereinheit → abgerechnete Einheit. Gas in m³: Brennwert × Zustandszahl (Abschnitt, sonst Zähler)."""
+    if meter.medium == Medium.GAS and meter.unit in ("m³", "m3"):
+        cal = (seg.calorific if seg and seg.calorific else None) or meter.conversion.calorific
+        z = (seg.z_factor if seg and seg.z_factor else None) or meter.conversion.z_factor
+        return gas_factor(cal, z)
+    if meter.unit == "MWh":
+        return 1000.0
+    return 1.0
+
+
+def calculate_costs(
+    contract: Contract,
+    segments: list[PriceSegment],
+    meter: Meter,
+    quantities: Mapping[date, float],
+    base_from: datetime,
+    base_to: datetime,
+    tz: tzinfo,
+    quantities_are_billing_unit: bool = False,
+    wastewater: Mapping[date, float] | None = None,
+) -> CostBreakdown:
+    """Kosten tagesgenau je Preisabschnitt.
+
+    ``quantities``: Menge je Tag in der Zählereinheit (oder schon in kWh, wenn ``quantities_are_billing_unit``).
+    Grund-, Mess-, Leistungspreis und feste Jahresbeträge laufen anteilig über die Zeit von ``base_from`` bis ``base_to``.
+    """
+    segs = [s for s in segments if s.contract_id == contract.contract_id]
+    cb = CostBreakdown()
+    for day, q in sorted(quantities.items()):
+        seg = segment_on(segs, day)
+        if seg is None:
+            if q:
+                cb.flags.append("kein_preis")
+            continue
+        factor = 1.0 if quantities_are_billing_unit else energy_factor(meter, seg)
+        if factor is None:
+            cb.flags.append("brennwert_fehlt")
+            continue
+        cb.quantity += q * factor
+        cb.energy += q * factor * seg.work_price
+    for day, q in sorted((wastewater or {}).items()):
+        seg = segment_on(segs, day)
+        if seg and seg.wastewater_price:
+            cb.wastewater += q * seg.wastewater_price
+    # zeitanteilige Bestandteile, tageweise mit Bruchteilen an den Rändern
+    t = base_from.astimezone(UTC)
+    end = base_to.astimezone(UTC)
+    while t < end:
+        local_day = t.astimezone(tz).date()
+        day_end = datetime.combine(local_day + timedelta(days=1), datetime.min.time(), tzinfo=tz).astimezone(UTC)
+        stop = min(day_end, end)
+        day_start = datetime.combine(local_day, datetime.min.time(), tzinfo=tz).astimezone(UTC)
+        # Anteil am lokalen Tag (23/25 Stunden an den Tagen der Zeitumstellung zählen als ein Tag)
+        frac = (stop - t).total_seconds() / (day_end - day_start).total_seconds()
+        seg = segment_on(segs, local_day)
+        if seg is None:
+            cb.flags.append("kein_preis")
+        else:
+            cb.base += frac * ((seg.base_price or 0.0) + (seg.metering_price or 0.0)) * 12 / DAYS_PER_YEAR
+            cb.fixed += frac * (seg.fixed_yearly or 0.0) / DAYS_PER_YEAR
+            if seg.demand_price and seg.demand_kw:
+                cb.demand += frac * seg.demand_price * seg.demand_kw / DAYS_PER_YEAR
+        t = stop
+    cb.flags = sorted(set(cb.flags))
+    cb.total = cb.energy + cb.wastewater + cb.base + cb.fixed + cb.demand
+    cb.gross = cb.total * (1 + contract.vat_rate / 100) if contract.vat_mode == VatMode.NET else cb.total
+    for name in ("energy", "wastewater", "base", "fixed", "demand", "quantity", "total", "gross"):
+        setattr(cb, name, round(getattr(cb, name), 4))
+    return cb
+
+
+# ---------------------------------------------------------------- Zahlungen (0.6, Entscheidung K)
+
+
+@dataclass(slots=True)
+class Installment:
+    date: date
+    amount: float
+    status: str  # faellig (Datum erreicht) | geplant | gezahlt (eigene Zahlung erfasst) | storniert
+
+
+@dataclass(slots=True)
+class PaymentState:
+    paid_to_date: float = 0.0
+    period_total: float = 0.0  # alle Abschläge und Zahlungen der Periode (bezahlt und geplant)
+    installments: list[Installment] = field(default_factory=list)
+    other: float = 0.0  # Einmalzahlungen abzüglich Gutschriften in der Periode
+    next_date: date | None = None
+    remaining: int = 0  # noch offene Abschläge nach heute
+    future_other: float = 0.0  # geplante Einmalzahlungen/Gutschriften nach heute
+    known: bool = True  # False: weder Abschlagsplan noch Zahlungen bekannt (dann nie "0 € gezahlt" behaupten)
+
+    @property
+    def per_period(self) -> int:
+        return sum(1 for i in self.installments if i.status != "storniert")
+
+
+def _add_months(d: date, months: int, day: int) -> date:
+    m = d.month - 1 + months
+    y, m = d.year + m // 12, m % 12 + 1
+    nxt = date(y + (1 if m == 12 else 0), 1 if m == 12 else m + 1, 1)
+    last = (nxt - timedelta(days=1)).day
+    return date(y, m, min(day, last))
+
+
+def advance_on(plan: AdvancePlan, day: date) -> float | None:
+    steps = [s for s in plan.steps if s.from_date <= day]
+    return max(steps, key=lambda s: s.from_date).amount if steps else None
+
+
+def plan_dates(plan: AdvancePlan, period_start: date, period_end: date) -> list[tuple[date, float]]:
+    """Zahltermine einer Periode. Jede Stufe gilt ab ihrem Datum mit eigenem Zahltag/Rhythmus (sonst dem des Plans);
+    der erste Termin einer Stufe ist der erste Zahltag ab ihrem Beginn. Frühere Termine ändern sich nie rückwirkend."""
+    steps = sorted(plan.steps, key=lambda s: s.from_date)
+    out: list[tuple[date, float]] = []
+    for i, step in enumerate(steps):
+        until = steps[i + 1].from_date - timedelta(days=1) if i + 1 < len(steps) else period_end
+        lo, hi = max(step.from_date, period_start), min(until, period_end)
+        if lo > hi:
+            continue
+        day = step.pay_day or plan.pay_day
+        rhythm = max(step.rhythm or plan.rhythm, 1)
+        first = _add_months(date(step.from_date.year, step.from_date.month, 1), 0, day)
+        if first < step.from_date:
+            first = _add_months(date(step.from_date.year, step.from_date.month, 1), 1, day)
+        k = 0
+        while k < 400:
+            d = _add_months(date(first.year, first.month, 1), k * rhythm, day)
+            k += 1
+            if d > hi:
+                break
+            if d >= lo:
+                out.append((d, step.amount))
+    return out
+
+
+def calculate_payments(plan: AdvancePlan | None, payments: list[Payment], period_start: date, period_end: date, today: date) -> PaymentState:
+    """Abschläge laut Plan (Stufen, Rhythmus, Höchstzahl) und erfasste Zahlungen einer Periode.
+
+    Eine erfasste Zahlung vom Typ Abschlag ersetzt den geplanten Abschlag desselben Monats; eine stornierte
+    Abschlagszahlung streicht ihn. Gutschriften und Erstattungen mindern den gezahlten Betrag.
+    """
+    ps = PaymentState()
+    pays = [p for p in payments if period_start <= p.date <= period_end]
+    adv_by_month: dict[tuple[int, int], list[Payment]] = {}
+    for p in pays:
+        if p.type == PaymentType.ADVANCE:
+            adv_by_month.setdefault((p.date.year, p.date.month), []).append(p)
+    ps.known = plan is not None and bool(plan.steps) or bool(pays)
+    if plan is not None:
+        count = 0
+        for d, amount in plan_dates(plan, period_start, period_end):
+            if plan.max_per_period and count >= plan.max_per_period:
+                break
+            count += 1
+            own = adv_by_month.pop((d.year, d.month), None)
+            if own:
+                if all(p.status == PaymentStatus.CANCELLED for p in own):
+                    ps.installments.append(Installment(d, amount, "storniert"))
+                else:
+                    for p in own:
+                        if p.status != PaymentStatus.CANCELLED:
+                            ps.installments.append(Installment(p.date, p.amount, "gezahlt" if p.status == PaymentStatus.PAID else "geplant"))
+            else:
+                ps.installments.append(Installment(d, amount, "faellig" if d <= today else "geplant"))
+    # Abschlagszahlungen ohne passenden Plan-Termin
+    for own in adv_by_month.values():
+        for p in own:
+            if p.status != PaymentStatus.CANCELLED:
+                ps.installments.append(Installment(p.date, p.amount, "gezahlt" if p.status == PaymentStatus.PAID else "geplant"))
+    ps.installments.sort(key=lambda x: x.date)
+    for inst in ps.installments:
+        if inst.status == "storniert":
+            continue
+        ps.period_total += inst.amount
+        if inst.date <= today and inst.status in ("faellig", "gezahlt"):
+            ps.paid_to_date += inst.amount
+        elif inst.date > today:
+            ps.remaining += 1
+            if ps.next_date is None:
+                ps.next_date = inst.date
+    for p in pays:
+        if p.type == PaymentType.ADVANCE or p.status == PaymentStatus.CANCELLED:
+            continue
+        sign = -1 if p.type in (PaymentType.CREDIT, PaymentType.REFUND) else 1
+        ps.other += sign * p.amount
+        ps.period_total += sign * p.amount
+        if p.date <= today and p.status == PaymentStatus.PAID:
+            ps.paid_to_date += sign * p.amount
+        elif p.date > today:
+            ps.future_other += sign * p.amount
+    ps.paid_to_date = round(ps.paid_to_date, 2)
+    ps.period_total = round(ps.period_total, 2)
+    ps.other = round(ps.other, 2)
+    return ps

@@ -50,6 +50,16 @@ class TarifStore(Store[dict[str, Any]]):
                 readings.append(r)
             data["readings"] = readings
             _LOGGER.info("Tarif-Cockpit: Store von 1.%s auf 1.2 migriert (%s Ablesungen)", old_minor_version, len(readings))
+        if old_major_version == 1 and old_minor_version < 3:
+            # 1.2 → 1.3: Tageswerte mit Zählerstand am Tagesende, Preise mit Brennwert/Abwasser, Abschlagsplan mit
+            # Höchstzahl. Neue Felder sind leer (unbekannt), bestehende Werte bleiben unverändert.
+            data["daily"] = [dict(d, end_value=d.get("end_value")) for d in data.get("daily", [])]
+            data["prices"] = [
+                dict(pr, **{k: pr.get(k) for k in ("calorific", "z_factor", "wastewater_price", "fixed_yearly", "demand_kw")})
+                for pr in data.get("prices", [])
+            ]
+            data["advance_plans"] = [dict(ap, max_per_period=ap.get("max_per_period")) for ap in data.get("advance_plans", [])]
+            _LOGGER.info("Tarif-Cockpit: Store auf 1.3 migriert")
         return data
 
     def schedule_save(self, dataset: Dataset) -> None:

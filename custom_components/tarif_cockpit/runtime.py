@@ -7,7 +7,7 @@ Alle Änderungen am Datenbestand laufen über diese Klasse: Ablesungen werden nu
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import logging
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -20,7 +20,8 @@ from homeassistant.util import dt as dt_util
 from .const import signal_updated
 from .engine import billing
 from .engine.model import (
-    BillingPeriod, Contract, DailyConsumption, Dataset, Household, Meter, PeriodStatus, Reading, ReadingSource, new_id,
+    AdvancePlan, AdvanceStep, BillingPeriod, Contract, DailyConsumption, Dataset, Household, Invoice, Meter, Payment,
+    PaymentStatus, PaymentType, PeriodStatus, PriceSegment, Reading, ReadingSource, new_id,
 )
 from .engine.quality import Quality, usable
 from .store import TarifStore
@@ -39,6 +40,8 @@ class TarifRuntime:
     subentry_ids: frozenset[str] = frozenset()
     unsubs: list[Any] = field(default_factory=list)
     aggregator: Any = None  # aggregation.Aggregator, gesetzt beim Setup
+    coordinator: Any = None  # coordinator.TarifCoordinator, gesetzt beim Setup
+    subentry_signature: str = ""
 
     # ------------------------------------------------------------ Hilfen
 
@@ -112,10 +115,15 @@ class TarifRuntime:
     # ------------------------------------------------------------ Änderungen
 
     @callback
-    def changed(self, save: bool = True) -> None:
+    def changed(self, save: bool = True, meter_id: str | None = None, flags: frozenset[str] | set[str] | None = None) -> None:
+        """Daten geändert: speichern und die betroffenen Zähler neu rechnen (Coordinator), dann Sensoren melden."""
         if save:
             self.store.schedule_save(self.data)
-        async_dispatcher_send(self.hass, signal_updated(self.entry.entry_id))
+        if self.coordinator is not None:
+            # flags=None: alles neu; leere Menge: nichts zu rechnen (z. B. Rechnung erfasst), nur speichern
+            self.coordinator.mark(meter_id, frozenset({"consumption", "forecast", "costs", "payments"}) if flags is None else flags)
+        else:
+            async_dispatcher_send(self.hass, signal_updated(self.entry.entry_id))
 
     def add_reading(
         self,
@@ -144,7 +152,7 @@ class TarifRuntime:
         if self.aggregator is not None and self.meters[meter_id].entity is None:
             await self.aggregator.async_run(meters=[meter_id], overwrite=True)
         else:
-            self.changed()
+            self.changed(meter_id=meter_id)
 
     def invalidate_reading(self, meter_id: str, reading_id: str, reason: str | None) -> Reading:
         """Ablesung als ungültig markieren. Der Wert bleibt erhalten (Regel 3)."""
@@ -224,3 +232,70 @@ class TarifRuntime:
                 self.data.daily.append(v)
                 changed += 1
         return changed
+
+    # ------------------------------------------------------------ Preise, Abschläge, Zahlungen, Rechnungen (0.6)
+
+    def _contract_for(self, meter_id: str, day: date) -> Contract:
+        contract = billing.contract_on(self.contracts(meter_id), day)
+        if contract is None:
+            raise billing.BillingError(f"Am {day} läuft für diesen Zähler kein Vertrag")
+        return contract
+
+    def _not_in_ended_period(self, meter_id: str, day: date, what: str) -> None:
+        ended = self.stored_periods(meter_id)
+        if ended and day <= max(p.end_date for p in ended):
+            raise billing.BillingError(
+                f"{what} ab {day} fällt in eine beendete Abrechnungsperiode; beendete Perioden werden nicht verändert"
+            )
+
+    def set_price(self, meter_id: str, valid_from: date, **values: Any) -> PriceSegment:
+        """Preisabschnitt ab ``valid_from``. Der vorherige Abschnitt endet am Vortag; gleicher Beginn ersetzt (Korrektur)."""
+        self._not_in_ended_period(meter_id, valid_from, "Ein Preis")
+        contract = self._contract_for(meter_id, valid_from)
+        seg = PriceSegment(contract_id=contract.contract_id, valid_from=valid_from, **values)
+        out: list[PriceSegment] = []
+        for s in self.data.prices:
+            if s.contract_id != contract.contract_id:
+                out.append(s)
+                continue
+            if s.valid_from == valid_from:
+                continue  # ersetzt
+            if s.valid_from < valid_from and (s.valid_to is None or s.valid_to >= valid_from):
+                s = replace(s, valid_to=valid_from - timedelta(days=1))
+            out.append(s)
+        out.append(seg)
+        self.data.prices = out
+        return seg
+
+    def set_advance(self, meter_id: str, valid_from: date, amount: float, pay_day: int | None = None,
+                    rhythm: int | None = None, max_per_period: int | None = None) -> AdvancePlan:
+        """Abschlag ab ``valid_from`` (neue Stufe im Plan). Zahltag, Rhythmus und Höchstzahl optional mitändern."""
+        self._not_in_ended_period(meter_id, valid_from, "Ein Abschlag")
+        contract = self._contract_for(meter_id, valid_from)
+        plan = next((p for p in self.data.advance_plans if p.contract_id == contract.contract_id), None)
+        if plan is None:
+            plan = AdvancePlan(contract.contract_id)
+        # Zahltag und Rhythmus gelten ab dieser Stufe, frühere Termine bleiben unverändert
+        steps = [s for s in plan.steps if s.from_date != valid_from] + [AdvanceStep(valid_from, float(amount), pay_day, rhythm)]
+        new = replace(
+            plan, steps=sorted(steps, key=lambda s: s.from_date),
+            max_per_period=max_per_period if max_per_period is not None else plan.max_per_period,
+        )
+        self.data.advance_plans = [p for p in self.data.advance_plans if p.contract_id != contract.contract_id] + [new]
+        return new
+
+    def add_payment(self, meter_id: str, day: date, amount: float, kind: PaymentType, status: PaymentStatus) -> Payment:
+        contract = self._contract_for(meter_id, day)
+        p = Payment(new_id(), contract.contract_id, day, float(amount), kind, status)
+        self.data.payments.append(p)
+        return p
+
+    def add_invoice(self, meter_id: str, invoice_date: date, period_from: date, period_to: date, amount: float,
+                    corrects: str | None = None) -> Invoice:
+        contract = self._contract_for(meter_id, period_from)
+        if corrects and not any(i.invoice_id == corrects for i in self.data.invoices):
+            raise KeyError(corrects)
+        inv = Invoice(new_id(), contract.contract_id, invoice_date, period_from, period_to, float(amount),
+                      is_correction=bool(corrects), corrects_invoice_id=corrects)
+        self.data.invoices.append(inv)
+        return inv

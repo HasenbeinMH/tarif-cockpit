@@ -18,7 +18,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .engine import billing
-from .engine.model import BillingRule, Contract, Medium, PeriodSpan, ReadingSource, VatMode, new_id
+from .engine.model import BillingRule, Contract, Medium, PaymentStatus, PaymentType, PeriodSpan, ReadingSource, VatMode, new_id
 from .engine.quality import Quality
 from .runtime import TarifRuntime
 
@@ -173,3 +173,101 @@ def async_setup_services(hass: HomeAssistant) -> None:
     reg(DOMAIN, "set_periodenende", period_end, SCHEMA_PERIOD_END, supports_response=SupportsResponse.OPTIONAL)
     reg(DOMAIN, "add_periode", add_period, SCHEMA_PERIOD_END, supports_response=SupportsResponse.OPTIONAL)
     reg(DOMAIN, "recalculate", recalculate, SCHEMA_RECALC)
+    async_setup_services_06(hass)
+
+
+# ---------------------------------------------------------------- Preise, Abschläge, Zahlungen, Rechnungen (0.6)
+
+SCHEMA_PRICE = vol.Schema({
+    vol.Required(ATTR_METER): cv.string,
+    vol.Required("ab"): cv.date,
+    vol.Required("arbeitspreis"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Required("grundpreis"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("messpreis"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("brennwert"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("zustandszahl"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("abwasserpreis"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("fest_jahr"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("leistungspreis"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("anschlussleistung"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+})
+SCHEMA_ADVANCE = vol.Schema({
+    vol.Required(ATTR_METER): cv.string,
+    vol.Required("ab"): cv.date,
+    vol.Required("betrag"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("zahltag"): vol.All(vol.Coerce(int), vol.Range(min=1, max=31)),
+    vol.Optional("rhythmus"): vol.All(vol.Coerce(int), vol.In([1, 2, 3])),
+    vol.Optional("anzahl_je_periode"): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
+})
+SCHEMA_PAYMENT = vol.Schema({
+    vol.Required(ATTR_METER): cv.string,
+    vol.Required("datum"): cv.date,
+    vol.Required("betrag"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("art", default="one_off"): vol.In([t.value for t in PaymentType]),
+    vol.Optional("status", default="paid"): vol.In([s.value for s in PaymentStatus]),
+})
+SCHEMA_INVOICE = vol.Schema({
+    vol.Required(ATTR_METER): cv.string,
+    vol.Required("datum"): cv.date,
+    vol.Required("von"): cv.date,
+    vol.Required("bis"): cv.date,
+    vol.Required("betrag"): vol.Coerce(float),
+    vol.Optional("korrigiert"): cv.string,
+})
+
+PRICE_FIELDS = {
+    "arbeitspreis": "work_price", "grundpreis": "base_price", "messpreis": "metering_price", "brennwert": "calorific",
+    "zustandszahl": "z_factor", "abwasserpreis": "wastewater_price", "fest_jahr": "fixed_yearly",
+    "leistungspreis": "demand_price", "anschlussleistung": "demand_kw",
+}
+
+
+@callback
+def async_setup_services_06(hass: HomeAssistant) -> None:
+    async def set_price(call: ServiceCall) -> ServiceResponse:
+        rt, meter_id = _resolve(hass, call.data[ATTR_METER])
+        values = {PRICE_FIELDS[k]: v for k, v in call.data.items() if k in PRICE_FIELDS}
+        try:
+            seg = rt.set_price(meter_id, call.data["ab"], **values)
+        except billing.BillingError as err:
+            raise _billing_error(err, "period_invalid") from err
+        rt.changed(meter_id=meter_id, flags={"costs"})
+        return {"vertrag_id": seg.contract_id, "ab": seg.valid_from.isoformat()}
+
+    async def set_advance(call: ServiceCall) -> ServiceResponse:
+        rt, meter_id = _resolve(hass, call.data[ATTR_METER])
+        try:
+            plan = rt.set_advance(meter_id, call.data["ab"], call.data["betrag"], call.data.get("zahltag"),
+                                  call.data.get("rhythmus"), call.data.get("anzahl_je_periode"))
+        except billing.BillingError as err:
+            raise _billing_error(err, "period_invalid") from err
+        rt.changed(meter_id=meter_id, flags={"payments"})
+        return {"stufen": [{"ab": s.from_date.isoformat(), "betrag": s.amount} for s in plan.steps]}
+
+    async def add_payment(call: ServiceCall) -> ServiceResponse:
+        rt, meter_id = _resolve(hass, call.data[ATTR_METER])
+        try:
+            p = rt.add_payment(meter_id, call.data["datum"], call.data["betrag"], PaymentType(call.data["art"]), PaymentStatus(call.data["status"]))
+        except billing.BillingError as err:
+            raise _billing_error(err, "period_invalid") from err
+        rt.changed(meter_id=meter_id, flags={"payments"})
+        return {"zahlung_id": p.payment_id}
+
+    async def add_invoice(call: ServiceCall) -> ServiceResponse:
+        rt, meter_id = _resolve(hass, call.data[ATTR_METER])
+        if call.data["bis"] < call.data["von"]:
+            raise _billing_error(billing.BillingError("'bis' liegt vor 'von'"), "period_invalid")
+        try:
+            inv = rt.add_invoice(meter_id, call.data["datum"], call.data["von"], call.data["bis"], call.data["betrag"], call.data.get("korrigiert"))
+        except billing.BillingError as err:
+            raise _billing_error(err, "period_invalid") from err
+        except KeyError as err:
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key="unknown_invoice", translation_placeholders={"id": str(err.args[0])}) from err
+        rt.changed(meter_id=meter_id, flags=set())
+        return {"rechnung_id": inv.invoice_id}
+
+    reg = hass.services.async_register
+    reg(DOMAIN, "set_preis", set_price, SCHEMA_PRICE, supports_response=SupportsResponse.OPTIONAL)
+    reg(DOMAIN, "set_abschlag", set_advance, SCHEMA_ADVANCE, supports_response=SupportsResponse.OPTIONAL)
+    reg(DOMAIN, "add_zahlung", add_payment, SCHEMA_PAYMENT, supports_response=SupportsResponse.OPTIONAL)
+    reg(DOMAIN, "add_rechnung", add_invoice, SCHEMA_INVOICE, supports_response=SupportsResponse.OPTIONAL)

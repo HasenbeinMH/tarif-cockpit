@@ -48,7 +48,7 @@ def meter_subentry(
     )
 
 
-def make_entry(*subentries: ConfigSubentryData, store_created: bool = False, minor_version: int = 2, household: dict | None = None) -> MockConfigEntry:
+def make_entry(*subentries: ConfigSubentryData, store_created: bool = False, minor_version: int = 3, household: dict | None = None) -> MockConfigEntry:
     data: dict[str, Any] = {CONF_HOUSEHOLD: household or dict(HOUSEHOLD)}
     if store_created:
         data[CONF_STORE_CREATED] = True

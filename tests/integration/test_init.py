@@ -81,7 +81,7 @@ async def test_store_migration_1_1_to_1_2(hass: HomeAssistant, hass_storage) -> 
     assert await setup(hass, entry)
     assert entry.runtime_data.readings("m1")[0].quality == Quality.REAL
     await hass.config_entries.async_unload(entry.entry_id)
-    assert hass_storage[KEY]["minor_version"] == 2
+    assert hass_storage[KEY]["minor_version"] == 3
     assert hass_storage[KEY]["data"]["readings"][0]["quality"] == "real"
 
 
@@ -89,8 +89,9 @@ async def test_config_entry_migration(hass: HomeAssistant) -> None:
     hh = {"name": "Alt", "heating_limit": 15.0, "indoor_ref": 20.0}
     entry = make_entry(meter_subentry("m1"), minor_version=1, household=hh)
     assert await setup(hass, entry)
-    assert entry.minor_version == 2
+    assert entry.minor_version == 3
     assert entry.data["household"]["tolerance_pct"] == 5.0
+    assert next(iter(entry.subentries.values())).data["meter"]["role"] == "main"
 
 
 async def test_lost_store_does_not_start_empty(hass: HomeAssistant, hass_storage) -> None:
@@ -110,7 +111,7 @@ async def test_invalid_store_is_reported_and_untouched(hass: HomeAssistant, hass
     assert entry.state is ConfigEntryState.SETUP_ERROR
     issue = ir.async_get(hass).async_get_issue(DOMAIN, f"{ISSUE_STORE_INVALID}_testentry")
     assert issue is not None and "Zahl erwartet" in issue.translation_placeholders["errors"]
-    assert hass_storage[KEY] == bad
+    assert hass_storage[KEY]["data"] == bad["data"]  # Inhalt unverändert (die Versionsnummer setzt HA beim Laden)
 
 
 async def test_without_recorder_days_are_missing_not_zero(hass: HomeAssistant) -> None:
@@ -120,7 +121,7 @@ async def test_without_recorder_days_are_missing_not_zero(hass: HomeAssistant) -
     assert await setup(hass, entry)
     assert "recorder" not in hass.config.components
     daily = entry.runtime_data.daily("m1")
-    assert len(daily) == 12  # 01.11. bis gestern (12.11.)
+    assert len(daily) == 400  # Zähler mit Sensor: 400 Tage zurück (Vorjahr für die Prognose)
     assert all(d.consumption is None and d.quality == Quality.MISSING for d in daily.values())
 
 

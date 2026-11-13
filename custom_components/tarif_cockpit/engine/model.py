@@ -147,6 +147,12 @@ class Meter:
     pulse_constant: float | None = None
     replacements: list[Replacement] = field(default_factory=list)
     interval: IntervalSource | None = None
+    # Ersatzquelle für fehlende Historie (z. B. Bezugszähler des Wechselrichters, solange der Zähler-Sensor neu ist)
+    history_entity: str | None = None
+    # Rolle: main (Hauptzähler), wallbox (Unterzähler, Sonderverbraucher), garden (Gartenwasser, kein Abwasser)
+    role: str = "main"
+    parent_meter_id: str | None = None  # bei wallbox/garden: der Hauptzähler
+    annual_consumption: float | None = None  # Jahresverbrauch laut letzter Rechnung (Rückfallebene der Prognose)
 
 
 @dataclass(slots=True)
@@ -190,6 +196,7 @@ class DailyConsumption:
     meter_id: str
     date: _Date
     consumption: float | None = None  # in der Zählereinheit; None = fehlend (nie 0 für fehlend)
+    end_value: float | None = None  # Zählerstand am Tagesende (aus der Statistik), Startwert für Perioden
     degree_days: float | None = None
     outdoor_temperature: float | None = None
     indoor_temperature: float | None = None
@@ -249,13 +256,20 @@ class PriceSegment:
     valid_to: date | None = None
     components: dict[str, float] = field(default_factory=dict)  # energy, grid_fee, taxes_levies
     demand_price: float | None = None  # Fernwärme: Leistungspreis je kW und Jahr
-    metering_price: float | None = None
+    metering_price: float | None = None  # Messpreis je Monat
+    calorific: float | None = None  # Gas: Brennwert in diesem Abschnitt (sonst vom Zähler)
+    z_factor: float | None = None  # Gas: Zustandszahl in diesem Abschnitt
+    wastewater_price: float | None = None  # Wasser: Abwasser je m³
+    fixed_yearly: float | None = None  # feste Jahresbeträge, z. B. Niederschlagswasser
+    demand_kw: float | None = None  # Fernwärme: Anschlussleistung kW für den Leistungspreis
 
 
 @dataclass(slots=True)
 class AdvanceStep:
     from_date: date
     amount: float
+    pay_day: int | None = None  # ab dieser Stufe anderer Zahltag (sonst der des Plans)
+    rhythm: int | None = None  # ab dieser Stufe anderer Rhythmus (sonst der des Plans)
 
 
 @dataclass(slots=True)
@@ -264,6 +278,7 @@ class AdvancePlan:
     steps: list[AdvanceStep] = field(default_factory=list)
     pay_day: int = 1
     rhythm: int = 1  # 1, 2 oder 3 Monate
+    max_per_period: int | None = None  # z. B. 11 Abschläge je Abrechnungsjahr
 
 
 @dataclass(slots=True)
@@ -293,7 +308,7 @@ class Invoice:
 class ForecastSnapshot:
     period_id: str
     taken_at: datetime
-    quality: Quality
+    quality: str  # Prognose-Qualität (annahme | unzureichend | vorlaeufig | gut | sehr_gut)
     forecast_kwh: float | None = None
     forecast_cost: float | None = None
     recommended_advance: float | None = None
@@ -341,6 +356,8 @@ class Dataset:
     generator_daily: list[GeneratorDaily] = field(default_factory=list)
     # Zähler, deren Startdaten aus der Einrichtung schon übernommen wurden
     imported_meters: list[str] = field(default_factory=list)
+    # Zähler, deren Tageswerte nach dem Update auf 0.6 einmal neu aus der Statistik geholt wurden (Zählerstand am Tagesende)
+    reaggregated_meters: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return to_dict(self)
@@ -522,7 +539,5 @@ def check_consistency(ds: Dataset) -> list[str]:
         for it in group:
             if it.contract_id not in contracts:
                 errors.append(f"{name}: Vertrag {it.contract_id} fehlt")
-    for s in ds.snapshots:
-        if s.period_id not in periods:
-            errors.append(f"Prognose-Schnappschuss: Periode {s.period_id} fehlt")
+    del periods  # Schnappschüsse dürfen auf die laufende, noch nicht gespeicherte Periode verweisen
     return errors

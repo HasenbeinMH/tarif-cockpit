@@ -9,6 +9,7 @@ Läuft täglich um 00:05 und beim Start (holt fehlende Tage nach). Bestehende Ta
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 import logging
 from typing import Any
@@ -42,8 +43,9 @@ class Aggregator:
     async def _fetch(
         self, ids: set[str], start: datetime, end: datetime, kind: str, units: dict[str, str] | None = None
     ) -> dict[str, Series]:
-        """Stundenwerte aus der Langzeitstatistik: kind 'sum' (Zähler) oder 'mean' (Temperatur).
+        """Stundenwerte aus der Langzeitstatistik: kind 'sum'/'state' (Zähler) oder 'mean' (Temperatur).
         ``units`` rechnet in die gewünschte Einheit um (z. B. Wh-Sensor → kWh-Zähler)."""
+        ids = {i for i in ids if i}
         if not ids or not self._recorder_ready():
             return {}
         from homeassistant.components.recorder import get_instance  # noqa: PLC0415 (Recorder ist optional)
@@ -73,10 +75,15 @@ class Aggregator:
 
     def _range(self, meter: Meter, start: date | None, end: date | None) -> tuple[date, date] | None:
         yesterday = self.rt.today() - timedelta(days=1)
+        horizon = self.rt.today() - timedelta(days=BACKFILL_DAYS)
         chain = self.rt.contracts(meter.meter_id)
-        if not chain:
+        if meter.entity:
+            # Zähler mit Sensor: auch vor Vertragsbeginn, denn die Prognose braucht das Vorjahr
+            first = horizon
+        elif chain:
+            first = max(chain[0].start_date, horizon)
+        else:
             return None
-        first = max(chain[0].start_date, self.rt.today() - timedelta(days=BACKFILL_DAYS))
         lo, hi = max(start or first, first), min(end or yesterday, yesterday)
         return (lo, hi) if lo <= hi else None
 
@@ -87,7 +94,9 @@ class Aggregator:
         d = lo
         while d <= hi:
             cur = existing.get(d)
-            if overwrite or cur is None or (cur.quality == Quality.MISSING and d >= retry_from):
+            # Mit Ersatzquelle werden fehlende Tage jeden Alters erneut versucht (Ersatzquelle kann nachträglich gesetzt werden)
+            retry = cur is not None and cur.quality == Quality.MISSING and (d >= retry_from or meter.history_entity)
+            if overwrite or cur is None or retry:
                 days.append(d)
             d += timedelta(days=1)
         return days
@@ -117,14 +126,27 @@ class Aggregator:
             temp_ids = {i for i in [hh.outdoor_temp_entity, *[r.entity for r in hh.rooms]] if i}
             temps = await self._fetch(temp_ids, q_start, q_end, "mean", {"temperature": "°C"})
             sums: Series = {}
+            states: Series = {}
+            hist: Series = {}
             if not readings_based:
-                sums = (await self._fetch({meter.entity}, q_start, q_end, "sum", _unit_class(meter.unit))).get(meter.entity, {})
+                units = _unit_class(meter.unit)
+                sums = (await self._fetch({meter.entity}, q_start, q_end, "sum", units)).get(meter.entity, {})
+                states = (await self._fetch({meter.entity}, q_start, q_end, "state", units)).get(meter.entity, {})
+                if meter.history_entity:
+                    hist = (await self._fetch({meter.history_entity}, q_start, q_end, "sum", units)).get(meter.history_entity, {})
                 self._check_statistics(meter, sums)
             outdoor = temps.get(hh.outdoor_temp_entity or "", {})
             indoor = [temps[r.entity] for r in hh.rooms if r.entity in temps]
-            values = [
-                aggregate_day(meter.meter_id, d, tz, sums, outdoor, indoor, hh.heating_limit, hh.indoor_ref) for d in days
-            ]
+            values = []
+            for d in days:
+                v = aggregate_day(meter.meter_id, d, tz, sums, outdoor, indoor, hh.heating_limit, hh.indoor_ref, states)
+                if hist and v.consumption is None and v.quality == Quality.MISSING:
+                    h = aggregate_day(meter.meter_id, d, tz, hist)
+                    if h.consumption is not None:
+                        # Ersatzquelle: anderer Zähler (z. B. Wechselrichter), daher nur "geschätzt"
+                        v = replace(v, consumption=h.consumption, quality=Quality.ESTIMATED,
+                                    quality_flags=[f for f in v.quality_flags if f != "randwert_fehlt"] + ["ersatzquelle"])
+                values.append(v)
             if readings_based:
                 by_day = {v.date: v for v in daily_from_readings(meter, rt.readings(meter.meter_id), days[0], days[-1], tz)}
                 values = [_merge_readings(v, by_day.get(v.date)) for v in values]
@@ -176,7 +198,14 @@ def async_setup_aggregation(hass: HomeAssistant, runtime: TarifRuntime) -> None:
     runtime.aggregator = agg
 
     async def _run(_: Any = None) -> None:
+        # einmalig nach dem Update auf 0.6: Tageswerte mit Zählerstand am Tagesende neu aus der Statistik holen
+        todo = [m.meter_id for m in runtime.meters.values() if m.entity and m.meter_id not in runtime.data.reaggregated_meters]
+        if todo:
+            await agg.async_run(meters=todo, overwrite=True)
+            runtime.data.reaggregated_meters.extend(todo)
         await agg.async_run()
+        if runtime.coordinator is not None:
+            runtime.coordinator.daily()
 
     @callback
     def _daily(_: Any = None) -> None:

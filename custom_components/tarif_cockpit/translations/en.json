@@ -44,7 +44,20 @@
           "description": "Choose the meter reading sensor (running total). Without a sensor you enter readings by hand (action “Add meter reading”).",
           "data": {
             "name": "Name",
-            "entity": "Meter reading sensor (empty = readings only)"
+            "entity": "Meter reading sensor (empty = readings only)",
+            "history_entity": "Fallback source for missing history",
+            "role": "Kind of meter"
+          },
+          "data_description": {
+            "history_entity": "Optional. Fills days the meter sensor has no statistics for yet, e.g. with the inverter's grid import meter. Such days count as estimated.",
+            "role": "A wallbox or garden meter is a sub-meter of a main meter without its own contract."
+          }
+        },
+        "unterzaehler": {
+          "title": "Main meter",
+          "description": "Which main meter does this sub-meter belong to?",
+          "data": {
+            "parent": "Main meter"
           }
         },
         "einheit": {
@@ -52,6 +65,42 @@
           "description": "Calorific value and conversion factor are on your gas bill. They are optional.",
           "data": {
             "unit": "Meter unit",
+            "calorific": "Calorific value",
+            "z_factor": "Conversion factor (Z)",
+            "annual_consumption": "Annual consumption according to the last bill"
+          },
+          "data_description": {
+            "annual_consumption": "Optional. Fallback for the forecast as long as there is no previous year and no 30 days of own data."
+          }
+        },
+        "preis": {
+          "title": "Prices",
+          "description": "Prices at the start of the contract, as in the contract (gross or net as chosen before). Later price changes with the action “Set price”.",
+          "data": {
+            "work_price": "Unit price",
+            "base_price": "Standing charge per month",
+            "metering_price": "Metering charge per month",
+            "wastewater_price": "Wastewater per m³",
+            "fixed_yearly": "Fixed amounts per year (e.g. rainwater)"
+          }
+        },
+        "abschlag": {
+          "title": "Advance payments",
+          "description": "Without an amount there are no advance payments. Later changes with the action “Set advance payment”.",
+          "data": {
+            "amount": "Advance payment",
+            "pay_day": "Day of month",
+            "rhythm": "Interval",
+            "max_per_period": "Payments per billing year (e.g. 11)"
+          }
+        },
+        "reconfigure": {
+          "title": "Change meter",
+          "description": "Change contracts, prices and advance payments with the Tarif-Cockpit actions.",
+          "data": {
+            "name": "Name",
+            "history_entity": "Fallback source for missing history",
+            "annual_consumption": "Annual consumption according to the last bill",
             "calorific": "Calorific value",
             "z_factor": "Conversion factor (Z)"
           }
@@ -84,7 +133,12 @@
         "already_configured": "This sensor is already assigned to a meter.",
         "invalid_billing": "The billing rule is invalid (e.g. fixed day is not a valid DD.MM; 29.02. is not allowed).",
         "required_for_manual": "“Manual” needs the end of the first period.",
-        "required_without_entity": "Without a meter sensor an initial reading is required."
+        "required_without_entity": "Without a meter sensor an initial reading is required.",
+        "no_main_meter": "There is no main meter of this utility yet.",
+        "required_for_m3": "A gas meter in m³ needs the calorific value and conversion factor (on your gas bill)."
+      },
+      "abort": {
+        "reconfigure_successful": "The meter was changed."
       }
     }
   },
@@ -116,6 +170,36 @@
         "real": "Read",
         "estimated": "Estimated"
       }
+    },
+    "role": {
+      "options": {
+        "main": "Main meter",
+        "wallbox": "Wallbox (sub-meter)",
+        "garden": "Garden water (sub-meter, no wastewater)"
+      }
+    },
+    "rhythm": {
+      "options": {
+        "1": "monthly",
+        "2": "every two months",
+        "3": "quarterly"
+      }
+    },
+    "payment_type": {
+      "options": {
+        "advance": "Advance payment",
+        "one_off": "One-off payment",
+        "credit": "Credit",
+        "final": "Final payment",
+        "refund": "Refund"
+      }
+    },
+    "payment_status": {
+      "options": {
+        "paid": "paid",
+        "planned": "planned",
+        "cancelled": "cancelled"
+      }
     }
   },
   "entity": {
@@ -131,6 +215,57 @@
       },
       "tageswerte_qualitaet": {
         "name": "Daily values complete"
+      },
+      "kosten_bisher": {
+        "name": "Costs so far"
+      },
+      "abschlaege_bisher": {
+        "name": "Advances paid so far"
+      },
+      "abschlaege_periode": {
+        "name": "Advances for the period"
+      },
+      "abschlag": {
+        "name": "Advance payment"
+      },
+      "prognose_verbrauch": {
+        "name": "Forecast consumption"
+      },
+      "prognose_kosten": {
+        "name": "Forecast costs"
+      },
+      "saldo": {
+        "name": "Balance"
+      },
+      "urteil": {
+        "name": "Verdict",
+        "state": {
+          "passt": "On track",
+          "rueckzahlung": "Refund",
+          "nachzahlung": "Back payment"
+        }
+      },
+      "abschlag_empfohlen": {
+        "name": "Recommended advance"
+      },
+      "prognose_qualitaet": {
+        "name": "Forecast quality",
+        "state": {
+          "annahme": "Assumption",
+          "unzureichend": "Insufficient",
+          "vorlaeufig": "Preliminary",
+          "gut": "Good",
+          "sehr_gut": "Very good"
+        }
+      },
+      "kennwert": {
+        "name": "Heat coefficient"
+      },
+      "ww_grundlast": {
+        "name": "Hot water base load"
+      },
+      "saldo_gesamt": {
+        "name": "Total balance"
       }
     }
   },
@@ -257,6 +392,142 @@
         }
       }
     },
+    "set_preis": {
+      "name": "Set price",
+      "description": "New price segment from a date (price change, or correction with the same date). The previous segment ends the day before. The consumption forecast stays unchanged.",
+      "fields": {
+        "zaehler": {
+          "name": "Meter",
+          "description": "Tarif-Cockpit meter device."
+        },
+        "ab": {
+          "name": "Valid from",
+          "description": "First day of the new price."
+        },
+        "arbeitspreis": {
+          "name": "Unit price",
+          "description": "Per kWh (water per m³)."
+        },
+        "grundpreis": {
+          "name": "Standing charge",
+          "description": "Per month."
+        },
+        "messpreis": {
+          "name": "Metering charge",
+          "description": "Per month."
+        },
+        "brennwert": {
+          "name": "Calorific value",
+          "description": "Gas, kWh/m³, from this date."
+        },
+        "zustandszahl": {
+          "name": "Conversion factor (Z)",
+          "description": "Gas, from this date."
+        },
+        "abwasserpreis": {
+          "name": "Wastewater price",
+          "description": "Per m³."
+        },
+        "fest_jahr": {
+          "name": "Fixed amounts per year",
+          "description": "E.g. rainwater."
+        },
+        "leistungspreis": {
+          "name": "Demand charge",
+          "description": "District heating, per kW and year."
+        },
+        "anschlussleistung": {
+          "name": "Connected load",
+          "description": "District heating, kW."
+        }
+      }
+    },
+    "set_abschlag": {
+      "name": "Set advance payment",
+      "description": "New advance payment step from a date; optionally change day, interval and count.",
+      "fields": {
+        "zaehler": {
+          "name": "Meter",
+          "description": "Tarif-Cockpit meter device."
+        },
+        "ab": {
+          "name": "Valid from",
+          "description": "First payment day with the new amount."
+        },
+        "betrag": {
+          "name": "Amount",
+          "description": "Amount per payment day."
+        },
+        "zahltag": {
+          "name": "Payment day",
+          "description": "Day of month."
+        },
+        "rhythmus": {
+          "name": "Interval",
+          "description": "Every 1, 2 or 3 months."
+        },
+        "anzahl_je_periode": {
+          "name": "Count per period",
+          "description": "E.g. 11 payments per billing year."
+        }
+      }
+    },
+    "add_zahlung": {
+      "name": "Add payment",
+      "description": "Actual payment, one-off payment, credit or refund. A recorded advance replaces the planned one in the same month.",
+      "fields": {
+        "zaehler": {
+          "name": "Meter",
+          "description": "Tarif-Cockpit meter device."
+        },
+        "datum": {
+          "name": "Date",
+          "description": "Day of payment."
+        },
+        "betrag": {
+          "name": "Amount",
+          "description": "Always positive; credits and refunds reduce payments."
+        },
+        "art": {
+          "name": "Kind",
+          "description": "Advance, one-off, credit, final, refund."
+        },
+        "status": {
+          "name": "Status",
+          "description": "Paid, planned or cancelled."
+        }
+      }
+    },
+    "add_rechnung": {
+      "name": "Add invoice",
+      "description": "Supplier invoice (separate from payments). With “corrects” as a correction invoice.",
+      "fields": {
+        "zaehler": {
+          "name": "Meter",
+          "description": "Tarif-Cockpit meter device."
+        },
+        "datum": {
+          "name": "Invoice date",
+          "description": "Invoice date."
+        },
+        "von": {
+          "name": "From",
+          "description": "Billing period start."
+        },
+        "bis": {
+          "name": "To",
+          "description": "Billing period end."
+        },
+        "betrag": {
+          "name": "Amount",
+          "description": "Invoice amount."
+        },
+        "korrigiert": {
+          "name": "Corrects",
+          "description": "ID of the corrected invoice."
+        }
+      }
+    },
     "recalculate": {
       "name": "Recalculate daily values",
       "description": "Recalculates daily values from statistics and readings. Readings and contracts stay unchanged.",
@@ -310,6 +581,9 @@
     },
     "contract_invalid": {
       "message": "Follow-up contract not possible: {error}"
+    },
+    "unknown_invoice": {
+      "message": "Unknown invoice: {id}"
     },
     "period_invalid": {
       "message": "Period cannot be changed: {error}"

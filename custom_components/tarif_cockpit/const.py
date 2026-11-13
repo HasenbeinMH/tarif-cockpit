@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 DOMAIN: Final = "tarif_cockpit"
-VERSION: Final = "0.5.0"
+VERSION: Final = "0.6.0"
 
 SUBENTRY_METER: Final = "zaehler"
 
@@ -16,10 +16,12 @@ CONF_STORE_CREATED: Final = "store_created"
 CONF_METER: Final = "meter"
 CONF_INITIAL_CONTRACT: Final = "initial_contract"
 CONF_INITIAL_READING: Final = "initial_reading"
+CONF_INITIAL_PRICE: Final = "initial_price"
+CONF_INITIAL_PLAN: Final = "initial_plan"
 
 # Store
 STORAGE_VERSION: Final = 1
-STORAGE_MINOR_VERSION: Final = 2
+STORAGE_MINOR_VERSION: Final = 3
 STORAGE_SAVE_DELAY: Final = 10
 
 # Frontend

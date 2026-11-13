@@ -124,6 +124,192 @@ add_periode:
       required: true
       selector:
         date:
+set_preis:
+  fields:
+    zaehler:
+      required: true
+      selector:
+        device:
+          integration: tarif_cockpit
+    ab:
+      required: true
+      selector:
+        date:
+    arbeitspreis:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: any
+          mode: box
+    grundpreis:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 10000
+          step: any
+          mode: box
+    messpreis:
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: any
+          mode: box
+    brennwert:
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: any
+          mode: box
+    zustandszahl:
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: any
+          mode: box
+    abwasserpreis:
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: any
+          mode: box
+    fest_jahr:
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: any
+          mode: box
+    leistungspreis:
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: any
+          mode: box
+    anschlussleistung:
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: any
+          mode: box
+set_abschlag:
+  fields:
+    zaehler:
+      required: true
+      selector:
+        device:
+          integration: tarif_cockpit
+    ab:
+      required: true
+      selector:
+        date:
+    betrag:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          step: any
+          mode: box
+    zahltag:
+      selector:
+        number:
+          min: 1
+          max: 31
+          step: 1
+          mode: box
+    rhythmus:
+      selector:
+        select:
+          translation_key: rhythm
+          options:
+            - "1"
+            - "2"
+            - "3"
+    anzahl_je_periode:
+      selector:
+        number:
+          min: 1
+          max: 12
+          step: 1
+          mode: box
+add_zahlung:
+  fields:
+    zaehler:
+      required: true
+      selector:
+        device:
+          integration: tarif_cockpit
+    datum:
+      required: true
+      selector:
+        date:
+    betrag:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          step: any
+          mode: box
+    art:
+      default: one_off
+      selector:
+        select:
+          translation_key: payment_type
+          options:
+            - advance
+            - one_off
+            - credit
+            - final
+            - refund
+    status:
+      default: paid
+      selector:
+        select:
+          translation_key: payment_status
+          options:
+            - paid
+            - planned
+            - cancelled
+add_rechnung:
+  fields:
+    zaehler:
+      required: true
+      selector:
+        device:
+          integration: tarif_cockpit
+    datum:
+      required: true
+      selector:
+        date:
+    von:
+      required: true
+      selector:
+        date:
+    bis:
+      required: true
+      selector:
+        date:
+    betrag:
+      required: true
+      selector:
+        number:
+          min: -100000
+          max: 100000
+          step: any
+          mode: box
+    korrigiert:
+      selector:
+        text:
 recalculate:
   fields:
     zaehler:

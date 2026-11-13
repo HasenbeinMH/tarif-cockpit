@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.6.0 – 2026-11-13
+
+Die Integration **rechnet selbst**: Kosten, Abschläge, Prognose, Saldo, Urteil und empfohlener Abschlag. Template-Sensoren, Helfer und die tägliche Automation werden für die Prognose nicht mehr gebraucht. Umstieg mit Parallelbetrieb: [docs/MIGRATION.md](docs/MIGRATION.md).
+
+### Neu
+- **Rechenkern** in vier getrennten Bereichen: Verbrauch → Prognose (nur Mengen) → Kosten und Zahlungen → Ergebnis.
+- **Kosten** tagesgenau je Preisabschnitt: Arbeits-, Grund- und Messpreis, brutto/netto, Gas mit Brennwert/Zustandszahl je Abschnitt, Wasser mit Abwasser (ohne Gartenzähler) und festen Jahresbeträgen, Fernwärme mit Leistungspreis.
+- **Abschläge und Zahlungen**: Plan mit Stufen, Zahltag, Rhythmus 1/2/3 Monate und Höchstzahl je Periode (z. B. 11), Einmalzahlungen, Gutschriften, Erstattungen, Stornos; Rechnungen getrennt erfasst.
+- **Prognose** bis zum Ende der laufenden Periode: Strom und Wasser über das Vorjahr im gleichen Kalenderfenster (mit Rückfallebenen), **Wallbox** als Unterzähler getrennt fortgeschrieben, Gas und Fernwärme über einen **gelernten Kennwert** je Gradtag mit Warmwasser-Grundlast und **Qualitätsstufen** (annahme … sehr gut). Ohne belastbaren Kennwert keine Gasprognose.
+- **Ersatzquelle für fehlende Historie** je Zähler (z. B. Wechselrichter-Bezugszähler, solange der Zähler-Sensor neu ist).
+- **Sensoren je Zähler:** Kosten bisher, Abschläge bisher, Abschlag, Abschläge Periode, Prognose Verbrauch, Prognose Kosten, Saldo, Urteil, Abschlag empfohlen, Prognose-Qualität, bei Wärme Kennwert und Warmwasser-Grundlast; **Saldo gesamt** am Gerät Haushalt.
+- **Aktionen:** `set_preis`, `set_abschlag`, `add_zahlung`, `add_rechnung`.
+- **Coordinator ereignisgesteuert** mit Dirty-Flags je Zähler: Zählerstand (entprellt 30 s), Ablesung, Preis, Abschlag/Zahlung; täglich 00:05 vollständige Neuberechnung. Eine Preisänderung rechnet die Prognose-Mengen nicht neu.
+- **Prognose-Schnappschüsse** am 1. jedes Monats und am Periodenende.
+- **Einrichtung:** Zähler-Dialog mit Preisen und Abschlägen, Unterzähler (Wallbox, Gartenwasser), Jahresverbrauch laut Rechnung, Ersatzquelle; „Neu konfigurieren“ für die Stammdaten des Zählers.
+- **Abgleich mit 0.3:** Mit Daniels Werten stimmen Kosten, Abschläge, Strom-Prognose, Differenz und passender Abschlag auf ±1 % (Tabelle in [docs/RECHNUNG.md](docs/RECHNUNG.md)).
+
+- **Keine Aussagen ohne Daten:**
+  - Ohne Abschlagsplan gibt es keinen Saldo.
+  - Gas in m³ braucht Brennwert und Zustandszahl.
+  - Ist der Zähler-Sensor nicht verfügbar, gilt der Stand vom Ende des Vortags, nie still der Startstand.
+  - Der Gesamtsaldo bleibt leer, solange ein Zähler noch keinen Saldo hat.
+- Abschlagsstufen mit eigenem Zahltag und Rhythmus. Der erste Termin ist der erste Zahltag ab Beginn der Stufe; frühere Termine ändern sich nie rückwirkend.
+
+### Geändert
+- Tagesaggregation: Eine nachträglich gesetzte Ersatzquelle füllt auch ältere fehlende Tage. Nach dem Update werden Tageswerte einmal neu aus der Statistik geholt, mit dem Zählerstand am Tagesende.
+- Tagesaggregation: Zähler mit Sensor werden 400 Tage zurück nachgeholt, unabhängig vom Vertragsbeginn (für das Vorjahr), mit Zählerstand am Tagesende.
+- Store 1.3 und Eintrag 1.3 mit Migration (neue Felder, bestehende Zähler sind Hauptzähler).
+
 ## 0.5.0 – 2026-11-13
 
 Tarif-Cockpit ist jetzt eine **Integration**, die beide Karten mitliefert. Umstieg von der Dashboard-Installation: [docs/MIGRATION.md](docs/MIGRATION.md). Voraussetzung: Home Assistant 2026.11.

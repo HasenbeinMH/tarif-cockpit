@@ -17,6 +17,18 @@
     },
     "add_periode": {
       "service": "mdi:calendar-plus"
+    },
+    "set_preis": {
+      "service": "mdi:currency-eur"
+    },
+    "set_abschlag": {
+      "service": "mdi:cash-sync"
+    },
+    "add_zahlung": {
+      "service": "mdi:cash-plus"
+    },
+    "add_rechnung": {
+      "service": "mdi:file-document-outline"
     }
   },
   "entity": {
@@ -32,6 +44,45 @@
       },
       "tageswerte_qualitaet": {
         "default": "mdi:check-decagram-outline"
+      },
+      "kosten_bisher": {
+        "default": "mdi:cash"
+      },
+      "abschlaege_bisher": {
+        "default": "mdi:cash-check"
+      },
+      "abschlaege_periode": {
+        "default": "mdi:cash-multiple"
+      },
+      "prognose_verbrauch": {
+        "default": "mdi:chart-line"
+      },
+      "prognose_kosten": {
+        "default": "mdi:cash-clock"
+      },
+      "saldo": {
+        "default": "mdi:scale-balance"
+      },
+      "urteil": {
+        "default": "mdi:gavel"
+      },
+      "abschlag_empfohlen": {
+        "default": "mdi:cash-edit"
+      },
+      "prognose_qualitaet": {
+        "default": "mdi:check-decagram"
+      },
+      "kennwert": {
+        "default": "mdi:thermometer-lines"
+      },
+      "ww_grundlast": {
+        "default": "mdi:water-boiler"
+      },
+      "saldo_gesamt": {
+        "default": "mdi:scale-balance"
+      },
+      "abschlag": {
+        "default": "mdi:cash-sync"
       }
     }
   }

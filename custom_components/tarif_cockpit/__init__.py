@@ -1,12 +1,13 @@
 """Tarif-Cockpit: Tarife, Kosten und Abschlagsprognose für Strom, Gas und Wasser.
 
-Die Integration hält die Daten (Haushalt, Zähler, Verträge, Perioden, Ablesungen, Tageswerte) und liefert die
-Karten mit. In 0.5: Datenhaltung, Perioden und Tagesaggregation; Kosten und Prognose folgen in 0.6.
+Die Integration hält die Daten (Haushalt, Zähler, Verträge, Perioden, Ablesungen, Tageswerte), rechnet Kosten,
+Abschläge, Prognose und Ergebnis (ab 0.6) und liefert die Karten mit.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+import json
 import logging
 from typing import Any
 
@@ -20,11 +21,13 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
 from .aggregation import async_setup_aggregation
+from .coordinator import TarifCoordinator
 from .const import (
-    CONF_HOUSEHOLD, CONF_INITIAL_CONTRACT, CONF_INITIAL_READING, CONF_METER, CONF_STORE_CREATED, DOMAIN,
+    CONF_HOUSEHOLD, CONF_INITIAL_CONTRACT, CONF_INITIAL_PLAN, CONF_INITIAL_PRICE, CONF_INITIAL_READING, CONF_METER,
+    CONF_STORE_CREATED, DOMAIN,
     ISSUE_STORE_INVALID, ISSUE_STORE_LOST, ISSUE_STORE_TOO_NEW, SUBENTRY_METER,
 )
-from .engine.model import Contract, Dataset, Household, Meter, ReadingSource, from_dict, new_id
+from .engine.model import AdvancePlan, Contract, Dataset, Household, Meter, PriceSegment, ReadingSource, from_dict, new_id
 from .engine.quality import Quality
 from .frontend import async_register_frontend
 from .runtime import TarifRuntime
@@ -122,6 +125,25 @@ def _import_initial(runtime: TarifRuntime) -> bool:
                 _LOGGER.error("Tarif-Cockpit: Startvertrag von %s ungültig: %s", sub.title, "; ".join(errors))
                 continue
             runtime.data.contracts.append(contract)
+            raw_price: dict[str, Any] | None = sub.data.get(CONF_INITIAL_PRICE)
+            if raw_price:
+                seg, errs = from_dict(PriceSegment, dict(raw_price, contract_id=contract.contract_id, valid_from=contract.start_date.isoformat()))
+                if seg is not None:
+                    runtime.data.prices.append(seg)
+                else:
+                    _LOGGER.error("Tarif-Cockpit: Startpreis von %s ungültig: %s", sub.title, "; ".join(errs))
+            raw_plan: dict[str, Any] | None = sub.data.get(CONF_INITIAL_PLAN)
+            if raw_plan:
+                plan, errs = from_dict(AdvancePlan, {
+                    "contract_id": contract.contract_id,
+                    "steps": [{"from_date": contract.start_date.isoformat(), "amount": raw_plan["amount"]}],
+                    "pay_day": raw_plan.get("pay_day", 1), "rhythm": raw_plan.get("rhythm", 1),
+                    "max_per_period": raw_plan.get("max_per_period"),
+                })
+                if plan is not None:
+                    runtime.data.advance_plans.append(plan)
+                else:
+                    _LOGGER.error("Tarif-Cockpit: Abschlagsplan von %s ungültig: %s", sub.title, "; ".join(errs))
         raw_reading: dict[str, Any] | None = sub.data.get(CONF_INITIAL_READING)
         if raw_reading:
             ts = dt_util.parse_datetime(raw_reading["timestamp"]) or datetime.fromisoformat(raw_reading["timestamp"])
@@ -145,6 +167,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TarifConfigEntry) -> boo
         household=household_from_entry(entry),
         meters=meters_from_entry(entry),
         subentry_ids=frozenset(entry.subentries),
+        subentry_signature=_subentry_signature(entry),
     )
     imported = _import_initial(runtime)
     if runtime.sync_periods() or imported or not entry.data.get(CONF_STORE_CREATED):
@@ -152,6 +175,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: TarifConfigEntry) -> boo
         if not entry.data.get(CONF_STORE_CREATED):
             hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_STORE_CREATED: True})
     entry.runtime_data = runtime
+    runtime.coordinator = TarifCoordinator(hass, runtime)
+    runtime.coordinator.async_start()
+    runtime.coordinator.async_refresh_now()
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     async_setup_aggregation(hass, runtime)
@@ -159,10 +185,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: TarifConfigEntry) -> boo
     return True
 
 
+def _subentry_signature(entry: ConfigEntry) -> str:
+    return json.dumps(sorted((sid, dict(sub.data), sub.title) for sid, sub in entry.subentries.items()), sort_keys=True, default=str)
+
+
 async def _async_update_listener(hass: HomeAssistant, entry: TarifConfigEntry) -> None:
-    """Neu laden, wenn Zähler hinzukommen oder wegfallen (Subentries)."""
+    """Neu laden, wenn Zähler hinzukommen, wegfallen oder neu konfiguriert werden (Subentries)."""
     runtime: TarifRuntime | None = getattr(entry, "runtime_data", None)
-    if runtime is None or frozenset(entry.subentries) != runtime.subentry_ids:
+    if runtime is None or _subentry_signature(entry) != runtime.subentry_signature:
         await hass.config_entries.async_reload(entry.entry_id)
 
 
@@ -189,4 +219,15 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         household.setdefault("tolerance_pct", 5.0)
         hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_HOUSEHOLD: household}, minor_version=2)
         _LOGGER.info("Tarif-Cockpit: Eintrag auf Version 1.2 migriert")
+    if entry.version == 1 and entry.minor_version < 3:
+        # 1.2 → 1.3: Zähler haben eine Rolle (Hauptzähler, Wallbox, Garten); bestehende Zähler sind Hauptzähler
+        for sub in entry.subentries.values():
+            if sub.subentry_type != SUBENTRY_METER:
+                continue
+            meter = dict(sub.data.get(CONF_METER, {}))
+            if "role" not in meter:
+                meter["role"] = "main"
+                hass.config_entries.async_update_subentry(entry, sub, data={**sub.data, CONF_METER: meter})
+        hass.config_entries.async_update_entry(entry, minor_version=3)
+        _LOGGER.info("Tarif-Cockpit: Eintrag auf Version 1.3 migriert")
     return True

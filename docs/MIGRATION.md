@@ -33,6 +33,18 @@ Der Block `analysis` in `tarif-cockpit-card` ist veraltet. Er wird weiter angeze
 
 Alle Felder bleiben gleich: `title`, `kennwert`, `kennwert_previous`, `consumption`, `temperature`, `degree_days`, `extras`, `explain`, `pending_text`, `months`, `history`, `color`. Neu sind `theme`, `subtitle`, `icon` und `label`.
 
+## 0.5 → 0.6: von den Template-Sensoren zur Integration
+
+Ab 0.6 rechnet die Integration Kosten, Abschläge, Prognose und Urteil selbst. Die Template-Sensoren, die Helfer für die Prognose und die tägliche Automation werden nicht mehr gebraucht. Empfohlen ist ein **Parallelbetrieb von zwei Wochen**:
+
+1. Update auf 0.6 einspielen, Home Assistant neu starten.
+2. Für jeden Zähler (Strom, Gas, Wasser) „Zähler hinzufügen“: Zählerstand-Sensor, Vertrag mit Abrechnungsbeginn und Regel (z. B. fester Stichtag), Preise wie in den Tarif-Helfern, Abschlag und Zahltag, Startstand zu Abrechnungsbeginn (wie `abrechnung_*_startstand`).
+3. Hat der Zählerstand-Sensor noch keine Jahreshistorie, unter „Neu konfigurieren“ die **Ersatzquelle für fehlende Historie** setzen (die Entität, aus der die Automation bisher die Vorjahreswerte holte). Die fehlenden Tage werden danach automatisch nachgeholt.
+4. Zwei Wochen lang die neuen Sensoren (`sensor.<zähler>_kosten_bisher`, `_abschlage_bisher`, `_prognose_kosten`, `_saldo` …) mit den Template-Sensoren vergleichen. Strom und Kosten sollten auf ±1 % übereinstimmen. Gas weicht ab, sobald die Integration einen eigenen Kennwert gelernt hat, statt mit der Annahme 6,5 zu rechnen; bis dahin zeigt sie für Gas keine Prognose.
+5. Karte auf die neuen Sensoren umstellen (YAML im README), danach Automation, Template-Sensoren und Prognose-Helfer abschalten.
+
+Preis- und Abschlagsänderungen laufen ab jetzt über die Aktionen `set_preis` und `set_abschlag`, Ablesungen über `add_ablesung` (z. B. aus der Telegram-Automation).
+
 ## 0.4 → 0.5: von der Dashboard-Karte zur Integration
 
 Ab 0.5 ist Tarif-Cockpit eine **Integration**, die beide Karten mitliefert. Im Marketplace gehört ein Repository immer zu genau einer Kategorie; die bisherige Installation als **Dashboard** bekommt deshalb keine Updates mehr.

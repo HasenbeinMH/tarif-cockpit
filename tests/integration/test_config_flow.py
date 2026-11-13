@@ -44,6 +44,10 @@ async def test_meter_subentry_readings_only(hass: HomeAssistant) -> None:
     assert r["errors"] == {"fixed_day": "invalid_billing"}
     good = {k: v for k, v in bad.items() if k != "fixed_day"}
     r = await flow.async_configure(r["flow_id"], {**good, "billing_rule": "calendar_year"})
+    assert r["step_id"] == "preis"
+    r = await flow.async_configure(r["flow_id"], {"work_price": 0.0952, "base_price": 19.04})
+    assert r["step_id"] == "abschlag"
+    r = await flow.async_configure(r["flow_id"], {"amount": 166, "pay_day": 1, "rhythm": "1"})
     assert r["step_id"] == "startstand"
     assert "15.03.2026 – 31.12.2026 *" in r["description_placeholders"]["preview"]
     # ohne Sensor ist der Startstand Pflicht
@@ -57,6 +61,8 @@ async def test_meter_subentry_readings_only(hass: HomeAssistant) -> None:
     assert sub.data[CONF_METER]["conversion"] == {"calorific": 11.4, "z_factor": 0.95}
     assert sub.data[CONF_INITIAL_CONTRACT]["billing_rule"] == "calendar_year"
     assert sub.data[CONF_INITIAL_READING]["value"] == 1000.0
+    assert sub.data["initial_price"] == {"work_price": 0.0952, "base_price": 19.04}
+    assert sub.data["initial_plan"] == {"amount": 166.0, "pay_day": 1, "rhythm": 1}
     # nach dem Neuladen: Vertrag und Startstand im Store, Sensor zeigt die Periode
     rt = entry.runtime_data
     assert sub.subentry_id in rt.meters
@@ -81,8 +87,10 @@ async def test_meter_with_entity_duplicate(hass: HomeAssistant) -> None:
 
     r = await add()
     assert r["step_id"] == "einheit"
-    r = await flow.async_configure(r["flow_id"], {"unit": "m³"})
+    r = await flow.async_configure(r["flow_id"], {"unit": "m³", "calorific": 11.3, "z_factor": 0.96})
     r = await flow.async_configure(r["flow_id"], {"supplier": "SW", "start_date": "2026-07-30", "billing_rule": "fixed_day", "fixed_day": "30.07", "vat_mode": "gross", "vat_rate": 19})
+    r = await flow.async_configure(r["flow_id"], {"work_price": 0.1, "base_price": 10})
+    r = await flow.async_configure(r["flow_id"], {"pay_day": 1, "rhythm": "1"})  # ohne Betrag: keine Abschläge
     r = await flow.async_configure(r["flow_id"], {"quality": "real"})  # mit Sensor: Startstand optional
     assert r["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()

@@ -11,6 +11,7 @@ Grundsätze: Fehlende Daten sind ``None`` mit Qualität "missing", nie 0 (Regel 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 
 from .degree_days import degree_days
@@ -51,8 +52,11 @@ def aggregate_day(
     indoor: Iterable[Mapping[datetime, float]] = (),
     heating_limit: float = 15.0,
     indoor_ref: float = 20.0,
+    states: Mapping[datetime, float] | None = None,
 ) -> DailyConsumption:
     """Tageswert aus Stundenwerten.
+
+    ``states``: optional der Zählerstand am Ende jeder Stunde; daraus wird ``end_value`` (Stand am Tagesende).
 
     ``sums``: Zählerstand als laufende Summe am Ende jeder Stunde, Schlüssel = Stundenbeginn (aware).
     Verbrauch = Summe am Ende des Tages − Summe am Ende des Vortags. Fehlt einer der beiden Randwerte,
@@ -68,6 +72,7 @@ def aggregate_day(
     prev_last = _floor_hour(start) - timedelta(hours=1)
     norm = {k.astimezone(UTC): v for k, v in sums.items()}
     s_end, s_prev = norm.get(last_hour), norm.get(prev_last)
+    end_value = {k.astimezone(UTC): v for k, v in (states or {}).items()}.get(last_hour)
     consumption: float | None = None
     quality = Quality.MISSING
     if s_end is not None and s_prev is not None:
@@ -102,6 +107,7 @@ def aggregate_day(
         meter_id=meter_id,
         date=day,
         consumption=consumption,
+        end_value=end_value,
         degree_days=degree_days(t_out, heating_limit, indoor_ref),
         outdoor_temperature=t_out,
         indoor_temperature=t_in,
@@ -182,3 +188,121 @@ def daily_from_readings(meter: Meter, readings: Iterable[Reading], first: date, 
 def latest_reading(readings: Iterable[Reading], meter_id: str) -> Reading | None:
     rs = valid_readings(readings, meter_id)
     return rs[-1] if rs else None
+
+
+# ---------------------------------------------------------------- Verbrauch der laufenden Periode (0.6)
+
+
+@dataclass(slots=True)
+class ConsumptionState:
+    """Verbrauch seit Periodenbeginn bis ``known_until`` in der Zählereinheit."""
+
+    start_value: float | None = None
+    start_source: str | None = None  # reading | daily_end_value
+    known_until: datetime | None = None  # bei Zählern mit Sensor: jetzt; sonst Zeitpunkt der letzten Ablesung
+    used: float | None = None
+    quality: Quality = Quality.MISSING
+    flags: list[str] = field(default_factory=list)
+
+
+def _offset_on(meter: Meter, day: date) -> float:
+    return sum(rep.old_end - rep.new_start for rep in meter.replacements if rep.date <= day)
+
+
+def value_at(meter: Meter, readings: Iterable[Reading], t: datetime, tz: tzinfo, tolerance: timedelta = timedelta(hours=24)) -> float | None:
+    """Durchlaufender Zählerstand zum Zeitpunkt t: zwischen zwei Ablesungen linear, sonst die nächste Ablesung
+    innerhalb ``tolerance``. None, wenn keine passende Ablesung da ist."""
+    rs = valid_readings(readings, meter.meter_id)
+    pts = [(r.timestamp.astimezone(UTC), continuous_value(meter, r, tz)) for r in rs]
+    t = t.astimezone(UTC)
+    for (t0, v0), (t1, v1) in zip(pts, pts[1:]):
+        if t0 <= t <= t1:
+            return v0 if t1 == t0 else v0 + (v1 - v0) * (t - t0).total_seconds() / (t1 - t0).total_seconds()
+    near = [(abs((tp - t).total_seconds()), v) for tp, v in pts if abs(tp - t) <= tolerance]
+    return min(near)[1] if near else None
+
+
+def calculate_consumption(
+    meter: Meter,
+    readings: Iterable[Reading],
+    daily: Mapping[date, DailyConsumption],
+    period_start: date,
+    tz: tzinfo,
+    current: tuple[datetime, float] | None,
+) -> ConsumptionState:
+    """Verbrauch seit Periodenbeginn.
+
+    Startwert: Ablesung zum Periodenbeginn (bzw. linear dazwischen), sonst Zählerstand am Ende des Vortags aus
+    den Tageswerten. Endwert: ``current`` (Zählerstand jetzt, in der Zählereinheit) oder die letzte Ablesung.
+    """
+    readings = list(readings)
+    st = ConsumptionState()
+    t0 = day_bounds(period_start, tz)[0]
+    start = value_at(meter, readings, t0, tz)
+    if start is not None:
+        st.start_value, st.start_source = start, "reading"
+    else:
+        prev = daily.get(period_start - timedelta(days=1))
+        if prev is not None and prev.end_value is not None:
+            st.start_value = prev.end_value + _offset_on(meter, period_start - timedelta(days=1))
+            st.start_source = "daily_end_value"
+            st.flags.append("startwert_aus_statistik")
+    if current is None and meter.entity:
+        # Zähler mit Sensor, aber Sensor gerade nicht verfügbar: nicht still auf eine alte Ablesung zurückfallen
+        st.flags.append("sensor_nicht_verfuegbar")
+        return st
+    if current is not None:
+        when, raw = current
+        end_value = raw + _offset_on(meter, when.astimezone(tz).date())
+        st.known_until = when
+        quality = Quality.REAL
+    else:
+        last = latest_reading(readings, meter.meter_id)
+        if last is None or last.timestamp.astimezone(tz).date() < period_start:
+            st.flags.append("keine_ablesung_in_periode")
+            return st
+        end_value = continuous_value(meter, last, tz)
+        st.known_until = last.timestamp
+        quality = Quality(last.quality) if last.quality != Quality.REAL else Quality.REAL
+    if st.start_value is None:
+        st.flags.append("kein_startwert")
+        return st
+    used = end_value - st.start_value
+    if used < 0:
+        st.quality = Quality.INVALID
+        st.flags.append("rueckwaerts")
+        return st
+    st.used = round(used, 6)
+    st.quality = quality
+    return st
+
+
+@dataclass(slots=True)
+class WindowSum:
+    """Summe der Tageswerte in einem Zeitfenster, mit Abdeckung."""
+
+    total: float | None
+    days: int
+    covered: int
+    scaled: bool = False
+
+    @property
+    def coverage(self) -> float:
+        return self.covered / self.days if self.days else 0.0
+
+
+def window_sum(values: Mapping[date, float | None], first: date, last: date, min_coverage: float = 0.8) -> WindowSum:
+    """Summe von ``first`` bis ``last`` (einschließlich). Fehlende Tage werden bei ausreichender Abdeckung auf die
+    volle Tageszahl hochgerechnet (``scaled``); darunter ist die Summe None (fehlend, nicht 0)."""
+    if last < first:
+        return WindowSum(0.0, 0, 0)
+    n = (last - first).days + 1
+    vals = [values.get(first + timedelta(days=i)) for i in range(n)]
+    got = [v for v in vals if v is not None]
+    if not got or len(got) / n < min_coverage:
+        return WindowSum(None, n, len(got))
+    total = sum(got)
+    scaled = len(got) < n
+    if scaled:
+        total = total * n / len(got)
+    return WindowSum(round(total, 6), n, len(got), scaled)

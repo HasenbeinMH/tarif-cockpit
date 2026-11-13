@@ -21,19 +21,22 @@ Der erste Vertrag und der Startstand stehen nur einmal in der Einrichtung. Beim 
 - Ein Anbieterwechsel ändert am alten Vertrag nur das Ende.
 - Fehlt der Store, nachdem er schon einmal gespeichert wurde, oder ist er beschädigt, startet die Integration **nicht** mit leeren Daten. Unter Reparaturen steht, was zu tun ist (Sicherung zurückspielen). Home Assistant benennt eine beschädigte Datei in `….corrupt.<Zeit>` um, der Inhalt bleibt also erhalten.
 - Ist der Inhalt ungültig (z. B. Text statt Zahl), wird nichts gespeichert, bis das Problem behoben ist.
-- Der Store hat eine Versionsnummer (aktuell 1.2) und Migrationen; Daten werden dabei nur ergänzt. Stammt die Datei von einer neueren Version, bleibt sie unverändert und die Integration meldet sich unter Reparaturen.
+- Der Store hat eine Versionsnummer (aktuell 1.3) und Migrationen; Daten werden dabei nur ergänzt. Stammt die Datei von einer neueren Version, bleibt sie unverändert und die Integration meldet sich unter Reparaturen.
 - Wird der Eintrag „Tarif-Cockpit“ gelöscht, bleibt die Datei unter `.storage` erhalten.
 
 ## Objekte
 
 | Objekt | Wichtige Felder |
 |---|---|
-| Zähler | `medium` (strom, gas, wasser, fernwaerme), `entity` (oder keiner: nur Ablesungen), `unit`, `conversion` (Brennwert, Zustandszahl), `replacements` (Zählertausch: alter Endstand, neuer Startstand), `interval` (vorbereitet für dynamische Tarife) |
+| Zähler | `medium` (strom, gas, wasser, fernwaerme), `entity` (oder keiner: nur Ablesungen), `unit`, `conversion` (Brennwert, Zustandszahl), `replacements` (Zählertausch: alter Endstand, neuer Startstand), `history_entity` (Ersatzquelle für fehlende Historie), `role` (main, wallbox, garden) mit `parent_meter_id`, `annual_consumption` (Jahresverbrauch laut Rechnung), `interval` (vorbereitet für dynamische Tarife) |
 | Ablesung | Zeitpunkt, Stand, `quality`, `source` (initial, manual, switch, import, entity), Notiz, `superseded_by` |
-| Tageswert | Datum, Verbrauch (Zählereinheit), Gradtage, Außen- und Innentemperatur, `quality`, `quality_flags` |
+| Tageswert | Datum, Verbrauch (Zählereinheit), Zählerstand am Tagesende (`end_value`), Gradtage, Außen- und Innentemperatur, `quality`, `quality_flags` |
 | Vertrag | Lieferant, Tarif, Beginn, Ende, `billing_rule`, `fixed_day`, brutto/netto, MwSt. |
 | Abrechnungsperiode | Beginn, Ende, `status` (open, closing, closed), `is_partial` (Rumpfjahr), `is_final` (Schlussrechnung), Archiv |
-| Preisabschnitt, Abschlagsplan, Zahlung, Rechnung, Prognose-Schnappschuss | im Modell vorhanden, genutzt ab 0.6 |
+| Preisabschnitt | gültig ab/bis, Arbeits-, Grund-, Messpreis, Brennwert/Zustandszahl (Gas), Abwasserpreis, feste Jahresbeträge, Leistungspreis und Anschlussleistung (Fernwärme) |
+| Abschlagsplan | Stufen (ab Datum, Betrag), Zahltag, Rhythmus, Höchstzahl je Periode |
+| Zahlung, Rechnung | getrennt: Zahlung (Abschlag, Einmalzahlung, Gutschrift, Schlusszahlung, Erstattung; bezahlt, geplant, storniert), Rechnung (Zeitraum, Betrag, Korrektur) |
+| Prognose-Schnappschuss | Periode, Zeitpunkt, Prognose kWh und €, empfohlener Abschlag, Qualität |
 
 Rechnung, Zahlung und Abschlag sind getrennte Dinge: Eine Rechnung ist keine Periode, ein Abschlag ist keine Rechnung, eine Rechnung ist keine Zahlung.
 

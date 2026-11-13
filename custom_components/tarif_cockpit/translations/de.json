@@ -44,7 +44,20 @@
           "description": "Wähle den Zählerstand-Sensor (laufende Summe). Ohne Sensor gibst du Ablesungen von Hand ein (Aktion „Ablesung hinzufügen“).",
           "data": {
             "name": "Name",
-            "entity": "Zählerstand-Sensor (leer = nur Ablesungen)"
+            "entity": "Zählerstand-Sensor (leer = nur Ablesungen)",
+            "history_entity": "Ersatzquelle für fehlende Historie",
+            "role": "Art des Zählers"
+          },
+          "data_description": {
+            "history_entity": "Optional. Füllt Tage, für die der Zähler-Sensor noch keine Statistik hat, z. B. mit dem Bezugszähler des Wechselrichters. Solche Tage gelten als geschätzt.",
+            "role": "Wallbox bzw. Gartenzähler sind Unterzähler eines Hauptzählers ohne eigenen Vertrag."
+          }
+        },
+        "unterzaehler": {
+          "title": "Hauptzähler",
+          "description": "Zu welchem Hauptzähler gehört dieser Unterzähler?",
+          "data": {
+            "parent": "Hauptzähler"
           }
         },
         "einheit": {
@@ -52,6 +65,42 @@
           "description": "Brennwert und Zustandszahl stehen auf der Gasrechnung. Sie sind optional.",
           "data": {
             "unit": "Einheit des Zählers",
+            "calorific": "Brennwert",
+            "z_factor": "Zustandszahl",
+            "annual_consumption": "Jahresverbrauch laut letzter Rechnung"
+          },
+          "data_description": {
+            "annual_consumption": "Optional. Rückfallebene für die Prognose, solange es kein Vorjahr und keine 30 Tage eigene Daten gibt."
+          }
+        },
+        "preis": {
+          "title": "Preise",
+          "description": "Preise zu Vertragsbeginn, wie im Vertrag (brutto oder netto, wie zuvor gewählt). Spätere Preisänderungen mit der Aktion „Preis ändern“.",
+          "data": {
+            "work_price": "Arbeitspreis",
+            "base_price": "Grundpreis je Monat",
+            "metering_price": "Messpreis je Monat",
+            "wastewater_price": "Abwasser je m³",
+            "fixed_yearly": "Feste Beträge je Jahr (z. B. Niederschlagswasser)"
+          }
+        },
+        "abschlag": {
+          "title": "Abschläge",
+          "description": "Ohne Betrag gibt es keine Abschläge (z. B. bei Abrechnung über den Vermieter). Änderungen später mit der Aktion „Abschlag ändern“.",
+          "data": {
+            "amount": "Abschlag",
+            "pay_day": "Zahltag im Monat",
+            "rhythm": "Rhythmus",
+            "max_per_period": "Abschläge je Abrechnungsjahr (z. B. 11)"
+          }
+        },
+        "reconfigure": {
+          "title": "Zähler ändern",
+          "description": "Verträge, Preise und Abschläge änderst du mit den Aktionen des Tarif-Cockpits.",
+          "data": {
+            "name": "Name",
+            "history_entity": "Ersatzquelle für fehlende Historie",
+            "annual_consumption": "Jahresverbrauch laut letzter Rechnung",
             "calorific": "Brennwert",
             "z_factor": "Zustandszahl"
           }
@@ -84,7 +133,12 @@
         "already_configured": "Dieser Sensor ist schon einem Zähler zugeordnet.",
         "invalid_billing": "Die Abrechnungsregel passt nicht (z. B. Stichtag kein gültiges TT.MM, 29.02. nicht erlaubt).",
         "required_for_manual": "Bei „von Hand“ wird das Ende der ersten Periode gebraucht.",
-        "required_without_entity": "Ohne Zählerstand-Sensor wird ein Startstand gebraucht."
+        "required_without_entity": "Ohne Zählerstand-Sensor wird ein Startstand gebraucht.",
+        "no_main_meter": "Es gibt noch keinen Hauptzähler dieses Mediums.",
+        "required_for_m3": "Bei einem Gaszähler in m³ werden Brennwert und Zustandszahl gebraucht (stehen auf der Gasrechnung)."
+      },
+      "abort": {
+        "reconfigure_successful": "Der Zähler wurde geändert."
       }
     }
   },
@@ -116,6 +170,36 @@
         "real": "Abgelesen",
         "estimated": "Geschätzt"
       }
+    },
+    "role": {
+      "options": {
+        "main": "Hauptzähler",
+        "wallbox": "Wallbox (Unterzähler)",
+        "garden": "Gartenwasser (Unterzähler, ohne Abwasser)"
+      }
+    },
+    "rhythm": {
+      "options": {
+        "1": "monatlich",
+        "2": "alle zwei Monate",
+        "3": "vierteljährlich"
+      }
+    },
+    "payment_type": {
+      "options": {
+        "advance": "Abschlag",
+        "one_off": "Einmalzahlung",
+        "credit": "Gutschrift",
+        "final": "Schlusszahlung",
+        "refund": "Erstattung"
+      }
+    },
+    "payment_status": {
+      "options": {
+        "paid": "bezahlt",
+        "planned": "geplant",
+        "cancelled": "storniert"
+      }
     }
   },
   "entity": {
@@ -131,6 +215,57 @@
       },
       "tageswerte_qualitaet": {
         "name": "Tageswerte vollständig"
+      },
+      "kosten_bisher": {
+        "name": "Kosten bisher"
+      },
+      "abschlaege_bisher": {
+        "name": "Abschläge bisher"
+      },
+      "abschlaege_periode": {
+        "name": "Abschläge Periode"
+      },
+      "abschlag": {
+        "name": "Abschlag"
+      },
+      "prognose_verbrauch": {
+        "name": "Prognose Verbrauch"
+      },
+      "prognose_kosten": {
+        "name": "Prognose Kosten"
+      },
+      "saldo": {
+        "name": "Saldo"
+      },
+      "urteil": {
+        "name": "Urteil",
+        "state": {
+          "passt": "Passt",
+          "rueckzahlung": "Rückzahlung",
+          "nachzahlung": "Nachzahlung"
+        }
+      },
+      "abschlag_empfohlen": {
+        "name": "Abschlag empfohlen"
+      },
+      "prognose_qualitaet": {
+        "name": "Prognose-Qualität",
+        "state": {
+          "annahme": "Annahme",
+          "unzureichend": "Unzureichend",
+          "vorlaeufig": "Vorläufig",
+          "gut": "Gut",
+          "sehr_gut": "Sehr gut"
+        }
+      },
+      "kennwert": {
+        "name": "Kennwert"
+      },
+      "ww_grundlast": {
+        "name": "Warmwasser-Grundlast"
+      },
+      "saldo_gesamt": {
+        "name": "Saldo gesamt"
       }
     }
   },
@@ -257,6 +392,142 @@
         }
       }
     },
+    "set_preis": {
+      "name": "Preis ändern",
+      "description": "Neuer Preisabschnitt ab einem Datum (Preisänderung oder Korrektur bei gleichem Datum). Der bisherige Abschnitt endet am Vortag. Die Verbrauchsprognose bleibt unverändert.",
+      "fields": {
+        "zaehler": {
+          "name": "Zähler",
+          "description": "Zähler-Gerät des Tarif-Cockpits."
+        },
+        "ab": {
+          "name": "Gültig ab",
+          "description": "Erster Tag des neuen Preises."
+        },
+        "arbeitspreis": {
+          "name": "Arbeitspreis",
+          "description": "Je kWh (Wasser je m³)."
+        },
+        "grundpreis": {
+          "name": "Grundpreis",
+          "description": "Je Monat."
+        },
+        "messpreis": {
+          "name": "Messpreis",
+          "description": "Je Monat."
+        },
+        "brennwert": {
+          "name": "Brennwert",
+          "description": "Gas, kWh/m³, ab diesem Datum."
+        },
+        "zustandszahl": {
+          "name": "Zustandszahl",
+          "description": "Gas, ab diesem Datum."
+        },
+        "abwasserpreis": {
+          "name": "Abwasserpreis",
+          "description": "Je m³."
+        },
+        "fest_jahr": {
+          "name": "Feste Beträge je Jahr",
+          "description": "Z. B. Niederschlagswasser."
+        },
+        "leistungspreis": {
+          "name": "Leistungspreis",
+          "description": "Fernwärme, je kW und Jahr."
+        },
+        "anschlussleistung": {
+          "name": "Anschlussleistung",
+          "description": "Fernwärme, kW."
+        }
+      }
+    },
+    "set_abschlag": {
+      "name": "Abschlag ändern",
+      "description": "Neue Abschlagsstufe ab einem Datum; Zahltag, Rhythmus und Anzahl optional mitändern.",
+      "fields": {
+        "zaehler": {
+          "name": "Zähler",
+          "description": "Zähler-Gerät des Tarif-Cockpits."
+        },
+        "ab": {
+          "name": "Gültig ab",
+          "description": "Erster Zahltag mit dem neuen Betrag."
+        },
+        "betrag": {
+          "name": "Betrag",
+          "description": "Abschlag je Zahltag."
+        },
+        "zahltag": {
+          "name": "Zahltag",
+          "description": "Tag im Monat."
+        },
+        "rhythmus": {
+          "name": "Rhythmus",
+          "description": "Alle 1, 2 oder 3 Monate."
+        },
+        "anzahl_je_periode": {
+          "name": "Anzahl je Periode",
+          "description": "Z. B. 11 Abschläge je Abrechnungsjahr."
+        }
+      }
+    },
+    "add_zahlung": {
+      "name": "Zahlung erfassen",
+      "description": "Tatsächliche Zahlung, Einmalzahlung, Gutschrift oder Erstattung. Ein erfasster Abschlag ersetzt den geplanten im selben Monat.",
+      "fields": {
+        "zaehler": {
+          "name": "Zähler",
+          "description": "Zähler-Gerät des Tarif-Cockpits."
+        },
+        "datum": {
+          "name": "Datum",
+          "description": "Tag der Zahlung."
+        },
+        "betrag": {
+          "name": "Betrag",
+          "description": "Immer positiv; Gutschrift und Erstattung mindern die Zahlungen."
+        },
+        "art": {
+          "name": "Art",
+          "description": "Abschlag, Einmalzahlung, Gutschrift, Schlusszahlung, Erstattung."
+        },
+        "status": {
+          "name": "Status",
+          "description": "Bezahlt, geplant oder storniert."
+        }
+      }
+    },
+    "add_rechnung": {
+      "name": "Rechnung erfassen",
+      "description": "Rechnung des Versorgers (getrennt von Zahlungen). Mit „korrigiert“ als Korrekturrechnung.",
+      "fields": {
+        "zaehler": {
+          "name": "Zähler",
+          "description": "Zähler-Gerät des Tarif-Cockpits."
+        },
+        "datum": {
+          "name": "Rechnungsdatum",
+          "description": "Datum der Rechnung."
+        },
+        "von": {
+          "name": "Von",
+          "description": "Abrechnungszeitraum Beginn."
+        },
+        "bis": {
+          "name": "Bis",
+          "description": "Abrechnungszeitraum Ende."
+        },
+        "betrag": {
+          "name": "Betrag",
+          "description": "Rechnungsbetrag."
+        },
+        "korrigiert": {
+          "name": "Korrigiert",
+          "description": "ID der korrigierten Rechnung."
+        }
+      }
+    },
     "recalculate": {
       "name": "Tageswerte neu berechnen",
       "description": "Berechnet Tageswerte aus Statistik und Ablesungen neu. Ablesungen und Verträge bleiben unverändert.",
@@ -310,6 +581,9 @@
     },
     "contract_invalid": {
       "message": "Folgevertrag nicht möglich: {error}"
+    },
+    "unknown_invoice": {
+      "message": "Unbekannte Rechnung: {id}"
     },
     "period_invalid": {
       "message": "Periode nicht änderbar: {error}"

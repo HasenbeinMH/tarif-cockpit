@@ -5,13 +5,13 @@ Eine Integration für Home Assistant, die Zähler, Verträge, Abrechnungsperiode
 
 ![Tarifübersicht](docs/img/overview-dunkel.png)
 
-> **Stand 0.5:** Die Integration hält die Daten (Haushalt, Zähler, Verträge, Perioden, Ablesungen, Tageswerte). Kosten, Prognose und Urteil rechnet sie ab 0.6; bis dahin zeigen die Karten wie bisher die Werte deiner eigenen Sensoren (Sensor-Modus). Umstieg von 0.4: [docs/MIGRATION.md](docs/MIGRATION.md).
+> **Stand 0.6:** Die Integration rechnet selbst: Kosten bisher, Abschläge, Prognose bis zum Ende der Abrechnungsperiode, Saldo, Urteil und empfohlener Abschlag. Template-Sensoren, Helfer und die tägliche Automation werden für die Prognose nicht mehr gebraucht. Umstieg: [docs/MIGRATION.md](docs/MIGRATION.md).
 
 ## Was du bekommst
 
 | Teil | Inhalt |
 |---|---|
-| Integration `tarif_cockpit` | Haushalt mit Zählern (Strom, Gas, Wasser, Fernwärme), Vertragskette je Zähler, **Abrechnungsperioden** nach der Regel deines Versorgers (Vertragsjahr, Kalenderjahr mit Rumpfjahr, fester Stichtag, von Hand), Anbieterwechsel mit Schlussperiode, Ablesungen von Hand mit Qualität, Tageswerte aus der Langzeitstatistik oder aus Ablesungen. Daten liegen in einem eigenen Speicher und überstehen Neustarts und Updates. |
+| Integration `tarif_cockpit` | Haushalt mit Zählern (Strom, Gas, Wasser, Fernwärme), Vertragskette je Zähler, **Abrechnungsperioden** nach der Regel deines Versorgers (Vertragsjahr, Kalenderjahr mit Rumpfjahr, fester Stichtag, von Hand), Anbieterwechsel mit Schlussperiode, Ablesungen mit Qualität, Tageswerte. **Rechnet** Kosten (Preise mit Gültigkeit, brutto/netto, Abwasser), Abschläge und Zahlungen, die Prognose (Strom und Wasser über das Vorjahr, Gas und Fernwärme über einen gelernten Kennwert je Gradtag, Wallbox getrennt) und das Ergebnis mit Qualitätsangabe. Daten liegen in einem eigenen Speicher und überstehen Neustarts und Updates. |
 | Karte `custom:tarif-cockpit-card` | Je Medium Urteil, Betrag und vier Balken: Kosten bisher, Abschläge bisher (grün), Hochrechnung und Abschläge fürs Jahr, passender Abschlag, Gesamturteil, frei wählbare Kacheln. |
 | Karte `custom:tarif-cockpit-analyse-card` | Gas witterungsbereinigt: Kennwert je Gradtag, Vergleich mit der Vorperiode, Verlauf aus der Langzeitstatistik. |
 
@@ -25,20 +25,33 @@ Ab Home Assistant 2026.11 heißt HACS **Marketplace** und ist eingebaut (Einstel
    **Als eigenes Repository** (bis dahin): Einstellungen → Marketplace → Menü oben rechts → **Benutzerdefinierte Repositories**, `https://github.com/HasenbeinMH/tarif-cockpit` eintragen, Kategorie **Integration**, dann „Tarif-Cockpit“ herunterladen. Dafür muss der Marketplace mit GitHub verbunden sein.
 2. Home Assistant **neu starten**.
 3. Einstellungen → Geräte & Dienste → **Integration hinzufügen** → „Tarif-Cockpit“: Haushalt anlegen.
-4. Beim Eintrag „Tarif-Cockpit“ → **Zähler hinzufügen**: Medium, Zählerstand-Sensor (oder „nur Ablesungen“), Einheit, Vertrag mit der Frage „Wann rechnet dein Versorger ab?“ und Startstand. Die Vorschau zeigt die ersten Abrechnungsperioden.
+4. Beim Eintrag „Tarif-Cockpit“ → **Zähler hinzufügen**: Medium, Zählerstand-Sensor (oder „nur Ablesungen“), Einheit, Vertrag mit der Frage „Wann rechnet dein Versorger ab?“, Preise, Abschläge und Startstand. Die Vorschau zeigt die ersten Abrechnungsperioden. Eine Wallbox oder ein Gartenwasserzähler wird als Unterzähler eines Hauptzählers angelegt.
 5. Browser-Cache leeren (Strg+F5). Die Karten lädt die Integration selbst, ein Eintrag unter Dashboard-Ressourcen ist nicht nötig.
 
 | Haushalt anlegen | Zähler hinzufügen | Vertrag |
 |---|---|---|
 | ![Haushalt](docs/img/einrichtung-1-haushalt.png) | ![Zähler](docs/img/einrichtung-2-zaehler.png) | ![Vertrag](docs/img/einrichtung-3-vertrag.png) |
 
+| Preise | Abschläge |
+|---|---|
+| ![Preise](docs/img/einrichtung-4-preis.png) | ![Abschläge](docs/img/einrichtung-5-abschlag.png) |
+
 Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tarif-Cockpit ab 0.5 setzt aber 2026.11 voraus. Die Beschriftung der Menüpunkte kann je nach Version leicht abweichen.
 
-## Die Integration (0.5)
+## Die Integration
 
-**Sensoren je Zähler**
+**Sensoren je Zähler** (Beispiel-IDs für einen Zähler „Strom“: `sensor.strom_kosten_bisher`, `sensor.strom_abschlage_bisher`, `sensor.strom_prognose_kosten` usw.)
 | Sensor | Inhalt |
 |---|---|
+| Kosten bisher | Arbeits-, Grund- und Messpreis (bei Wasser auch Abwasser) seit Periodenbeginn, tagesgenau je Preisabschnitt |
+| Abschläge bisher / Abschläge Periode | fällige bzw. alle Abschläge der Periode, mit Einmalzahlungen und Gutschriften |
+| Abschlag | aktueller Abschlag je Zahltag (Attribut `anzahl_je_periode`) |
+| Prognose Verbrauch / Prognose Kosten | bis zum Ende der laufenden Periode; Attribute: Methode, Qualität, Vorjahreswerte bzw. Gradtage |
+| Saldo, Urteil | Saldo = Abschläge der Periode − Prognose Kosten; Urteil `passt`, `rueckzahlung` oder `nachzahlung` (Toleranz des Haushalts) |
+| Abschlag empfohlen | ab dem nächsten Zahltag, damit die Periode ausgeglichen endet; Attribut `vorlaeufig` je nach Prognose-Qualität |
+| Prognose-Qualität | `annahme`, `unzureichend`, `vorlaeufig`, `gut`, `sehr_gut` (Diagnose) |
+| Kennwert, Warmwasser-Grundlast | nur Gas und Fernwärme: gelernter Kennwert (kWh je Gradtag) mit R², Anzahl Tage, Temperaturspanne |
+| Saldo gesamt | am Gerät „Haushalt“: Summe über alle Zähler; leer, solange ein Zähler noch keinen Saldo hat (Attribut `ohne_prognose`) |
 | Periodenende | Ende der laufenden Abrechnungsperiode. Attribute: `beginn`, `rumpfjahr`, `schlussperiode`, `status`, `regel`, `stichtag`, `lieferant`, `tarif`, `tage_bis_ende` |
 | Letzte Ablesung | Zeitpunkt der letzten gültigen Ablesung. Attribute: `stand`, `qualitaet`, `quelle`, `ablesung_id` |
 | Zählerstand (abgelesen) | Letzter gültiger abgelesener Stand |
@@ -52,6 +65,10 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 | `tarif_cockpit.add_folgevertrag` | Anbieterwechsel: alter Vertrag endet am Vortag (Schlussperiode), neuer Vertrag mit eigener Abrechnungsregel; optional `wechselstand`. Ein Wechsel in eine bereits beendete Periode wird abgelehnt. |
 | `tarif_cockpit.set_periodenende` | Der Versorger hat ein paar Tage früher oder später abgelesen: Ende der laufenden oder zuletzt beendeten Periode verschieben (±10 Tage). |
 | `tarif_cockpit.add_periode` | Nur bei Abrechnung „von Hand“: nächste Periode anhängen. |
+| `tarif_cockpit.set_preis` | Preisänderung ab einem Datum (Arbeits-, Grund-, Messpreis, Brennwert/Zustandszahl, Abwasser, feste Jahresbeträge, Fernwärme-Leistungspreis). Die Verbrauchsprognose bleibt unverändert. |
+| `tarif_cockpit.set_abschlag` | Neuer Abschlag ab einem Datum, optional Zahltag, Rhythmus (1/2/3 Monate) und Anzahl je Periode (z. B. 11). |
+| `tarif_cockpit.add_zahlung` | Zahlung erfassen: Abschlag (ersetzt den geplanten im selben Monat), Einmalzahlung, Gutschrift, Schlusszahlung, Erstattung; bezahlt, geplant oder storniert. |
+| `tarif_cockpit.add_rechnung` | Rechnung des Versorgers erfassen (getrennt von Zahlungen), auch als Korrektur einer früheren Rechnung. |
 | `tarif_cockpit.recalculate` | Tageswerte neu berechnen (Ablesungen und Verträge bleiben unverändert). |
 
 Beispiel, Ablesung aus einer Automation (z. B. nach einer Telegram-Nachricht):
@@ -62,15 +79,38 @@ data:
   stand: 9812.4
 ```
 
+**Prognose ohne belastbare Daten:** Bei Gas und Fernwärme gibt es erst eine Prognose, wenn der Kennwert aus deinen eigenen Daten mindestens „vorläufig“ ist (genug Tage oder Ableseperioden, mindestens 5 K Temperaturspanne, R² ≥ 0,6). Eine Annahme wird nicht verwendet. Bei Strom und Wasser gilt: Vorjahr im gleichen Kalenderfenster, sonst der Durchschnitt seit Periodenbeginn (ab 30 Tagen, „vorläufig“), sonst der Jahresverbrauch laut letzter Rechnung („Annahme“). Hat ein Zählerstand-Sensor noch keine Jahreshistorie, kannst du beim Zähler eine **Ersatzquelle für fehlende Historie** eintragen (z. B. den Bezugszähler des Wechselrichters).
+
 **Wichtig:** Fehlende Daten sind „fehlend“, nie 0. Hat ein Zählerstand-Sensor keine Langzeitstatistik (`state_class: total_increasing`), meldet die Integration das unter Einstellungen → Reparaturen. Gespeicherte Daten werden nie still verworfen: Fehlt die Datei oder ist sie beschädigt, startet die Integration nicht mit leeren Daten, sondern meldet sich ebenfalls unter Reparaturen.
 
 Wie Perioden, Rumpfjahr, Anbieterwechsel, Qualitätsstufen und Gradtage genau funktionieren: [docs/DATENMODELL.md](docs/DATENMODELL.md) und [docs/RECHNUNG.md](docs/RECHNUNG.md).
 
 ## Die Karten
 
-Die Karten **rechnen in 0.5 noch nicht selbst** (Sensor-Modus). Sie zeigen, was deine Sensoren liefern, und bilden daraus nur das Urteil:
-`Differenz = Abschlag × Monate − Hochrechnung`. Positiv heißt Rückzahlung, negativ Nachzahlung. Liegt die Differenz unter 5 % der Abschläge, steht dort „Passt“.
-Wie man die Sensoren baut, steht in [docs/SENSOR-MODUS.md](docs/SENSOR-MODUS.md). Ab 0.6 liefert die Integration diese Werte selbst; der Sensor-Modus bleibt als Rückfallebene erhalten.
+Die Karten zeigen in 0.6 die Sensoren an, die du einträgst (Sensor-Modus), und bilden daraus nur das Urteil:
+`Differenz = Abschlag × Monate − Hochrechnung`. Mit den Sensoren der Integration sieht das so aus (Zähler „Strom“ und „Gas“, deutsche Oberfläche):
+
+```yaml
+type: custom:tarif-cockpit-card
+strom:
+  cost: sensor.strom_kosten_bisher
+  advance_paid: sensor.strom_abschlage_bisher
+  forecast_cost: sensor.strom_prognose_kosten
+  forecast_kwh: sensor.strom_prognose_verbrauch
+  advance: sensor.strom_abschlag
+  months: 12            # Abschläge je Periode (Attribut anzahl_je_periode des Sensors „Abschlag“)
+gas:
+  cost: sensor.gas_kosten_bisher
+  advance_paid: sensor.gas_abschlage_bisher
+  forecast_cost: sensor.gas_prognose_kosten
+  forecast_kwh: sensor.gas_prognose_verbrauch
+  advance: sensor.gas_abschlag
+  months: 12
+```
+
+Die Entitäts-IDs bildet Home Assistant aus Zählername und Sensorname (Umlaute ohne Punkte, z. B. `sensor.strom_abschlage_bisher`); unter Einstellungen → Geräte & Dienste → Tarif-Cockpit stehen die genauen IDs. Die Karte bildet ihr Urteil aus „Abschlag × Anzahl“; bei Abschlagsstufen kann es vom Sensor „Urteil“ der Integration abweichen, maßgeblich ist der Sensor.
+
+Ab 0.7 wählt man im Karten-Editor nur noch den Zähler der Integration. Ohne Integration funktioniert die Karte weiter mit eigenen Template-Sensoren, siehe [docs/SENSOR-MODUS.md](docs/SENSOR-MODUS.md).
 
 ### Einrichten mit dem Editor
 
