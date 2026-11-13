@@ -1,12 +1,20 @@
-// Baut tarif-cockpit.js (Hauptverzeichnis, so erwartet es der Marketplace/HACS) aus den Dateien in src/.
+// Baut custom_components/tarif_cockpit/frontend/tarif-cockpit.js (wird von der Integration ausgeliefert) aus den Dateien in src/.
 // Aufruf: node tools/build.mjs   (keine Abhängigkeiten, die Dateien werden in fester Reihenfolge aneinandergefügt)
 // Aufbau nach energy-cockpit/tools/build.mjs (MIT, Copyright (c) 2026 Musicmaker3112).
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+const OUT_DIR = join(root, 'custom_components', 'tarif_cockpit', 'frontend');
+const OUT = join(OUT_DIR, 'tarif-cockpit.js');
+// Version der Karten und der Integration müssen gleich sein
+const manifest = JSON.parse(readFileSync(join(root, 'custom_components', 'tarif_cockpit', 'manifest.json'), 'utf8'));
+if (manifest.version !== pkg.version) {
+  console.error(`Version passt nicht: package.json ${pkg.version}, manifest.json ${manifest.version}`);
+  process.exit(1);
+}
 
 // Reihenfolge: gemeinsame Teile zuerst, dann Karten und Editoren.
 const ORDER = [
@@ -37,5 +45,6 @@ const parts = ORDER.map((f) => `/* ---- ${f} ---- */\n` + readFileSync(join(root
 const banner = `/*! tarif-cockpit v${pkg.version} - MIT License - https://github.com/HasenbeinMH/tarif-cockpit\n`
   + `    Editor-Baukasten und Assistent nach energy-cockpit, MIT License, Copyright (c) 2026 Musicmaker3112\n`
   + `    Diese Datei wird gebaut: Quellen in src/, Aufruf node tools/build.mjs */\n`;
-writeFileSync(join(root, 'tarif-cockpit.js'), banner + parts.join('\n\n') + '\n');
-console.log(`tarif-cockpit.js gebaut (${parts.length} Teile, v${pkg.version})`);
+mkdirSync(OUT_DIR, { recursive: true });
+writeFileSync(OUT, banner + parts.join('\n\n') + '\n');
+console.log(`custom_components/tarif_cockpit/frontend/tarif-cockpit.js gebaut (${parts.length} Teile, v${pkg.version})`);

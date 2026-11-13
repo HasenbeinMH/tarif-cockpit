@@ -1,0 +1,2 @@
+# Integrationstests gegen die kleinste unterstützte Home-Assistant-Version (hacs.json "homeassistant")
+pytest-homeassistant==2026.11.0

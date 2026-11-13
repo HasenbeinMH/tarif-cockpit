@@ -1,0 +1,22 @@
+{
+  "beschreibung": "Haus mit Strom und Gas, Abrechnung zum festen Stichtag 30.07., Gas mit eigenem Beginn",
+  "heute": "2026-11-13",
+  "zaehler": [
+    {"meter_id": "strom", "medium": "strom", "unit": "kWh", "entity": "sensor.zaehler_strom", "data_level": 2},
+    {"meter_id": "gas", "medium": "gas", "unit": "m³", "entity": "sensor.zaehler_gas", "data_level": 2, "conversion": {"calorific": 11.4, "z_factor": 0.95}}
+  ],
+  "dataset": {
+    "contracts": [
+      {"contract_id": "s1", "meter_id": "strom", "supplier": "Stadtwerke", "start_date": "2026-07-30", "billing_rule": "fixed_day", "fixed_day": "30.07"},
+      {"contract_id": "g1", "meter_id": "gas", "supplier": "Stadtwerke", "start_date": "2026-08-15", "billing_rule": "fixed_day", "fixed_day": "30.07"}
+    ],
+    "readings": [
+      {"reading_id": "rs0", "meter_id": "strom", "timestamp": "2026-07-30T08:00:00+02:00", "value": 5900.0, "source": "initial"},
+      {"reading_id": "rg0", "meter_id": "gas", "timestamp": "2026-08-15T08:00:00+02:00", "value": 9500.0, "source": "initial"}
+    ]
+  },
+  "erwartet": {
+    "strom": [["2026-07-30", "2027-07-29", false, false]],
+    "gas": [["2026-08-15", "2027-07-29", true, false]]
+  }
+}

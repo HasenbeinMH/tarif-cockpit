@@ -1,0 +1,38 @@
+{
+  "services": {
+    "add_ablesung": {
+      "service": "mdi:counter"
+    },
+    "ablesung_ungueltig": {
+      "service": "mdi:close-octagon-outline"
+    },
+    "add_folgevertrag": {
+      "service": "mdi:file-swap-outline"
+    },
+    "recalculate": {
+      "service": "mdi:refresh"
+    },
+    "set_periodenende": {
+      "service": "mdi:calendar-edit"
+    },
+    "add_periode": {
+      "service": "mdi:calendar-plus"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "periode_ende": {
+        "default": "mdi:calendar-end"
+      },
+      "letzte_ablesung": {
+        "default": "mdi:clipboard-text-clock-outline"
+      },
+      "zaehlerstand": {
+        "default": "mdi:counter"
+      },
+      "tageswerte_qualitaet": {
+        "default": "mdi:check-decagram-outline"
+      }
+    }
+  }
+}

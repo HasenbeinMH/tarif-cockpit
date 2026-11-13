@@ -1,0 +1,16 @@
+[project]
+name = "tarif-cockpit"
+version = "0.5.0"
+description = "Home-Assistant-Integration: Tarife, Kosten und Abschlagsprognose für Strom, Gas und Wasser"
+requires-python = ">=3.13"
+license = "MIT"
+
+[tool.pytest.ini_options]
+# Rechenkern: läuft ohne Home Assistant (python -m pytest tests/engine)
+# Integration: braucht pytest-homeassistant und Python 3.14 (tools/test-ha.ps1 bzw. CI)
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-p no:respx -p no:cacheprovider"
+filterwarnings = ["ignore::pytest.PytestConfigWarning"]

@@ -1,0 +1,321 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Haushalt anlegen",
+        "description": "Grunddaten für alle Zähler. Zähler mit Vertrag fügst du danach über „Zähler hinzufügen“ hinzu.",
+        "data": {
+          "name": "Name",
+          "outdoor_temp_entity": "Außentemperatur-Sensor",
+          "weather_entity": "Wetter-Entität",
+          "rooms": "Raumtemperaturen",
+          "heating_limit": "Heizgrenze",
+          "indoor_ref": "Innentemperatur für Gradtage",
+          "tolerance_pct": "Toleranz für „Passt“"
+        },
+        "data_description": {
+          "outdoor_temp_entity": "Für Gradtage und Tageswerte. Optional.",
+          "heating_limit": "Tage mit einem Tagesmittel darunter zählen als Heiztage (üblich 15 °C).",
+          "indoor_ref": "Üblich 20 °C (Gradtagzahl G20/15).",
+          "tolerance_pct": "Abweichung, bis zu der das Urteil „Passt“ lautet."
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Es gibt schon einen Haushalt. Weitere Zähler fügst du dort über „Zähler hinzufügen“ hinzu."
+    }
+  },
+  "config_subentries": {
+    "zaehler": {
+      "initiate_flow": {
+        "user": "Zähler hinzufügen"
+      },
+      "entry_type": "Zähler",
+      "step": {
+        "user": {
+          "title": "Zähler hinzufügen",
+          "description": "Was misst der Zähler?",
+          "data": {
+            "medium": "Medium"
+          }
+        },
+        "quelle": {
+          "title": "Woher kommt der Zählerstand?",
+          "description": "Wähle den Zählerstand-Sensor (laufende Summe). Ohne Sensor gibst du Ablesungen von Hand ein (Aktion „Ablesung hinzufügen“).",
+          "data": {
+            "name": "Name",
+            "entity": "Zählerstand-Sensor (leer = nur Ablesungen)"
+          }
+        },
+        "einheit": {
+          "title": "Einheit",
+          "description": "Brennwert und Zustandszahl stehen auf der Gasrechnung. Sie sind optional.",
+          "data": {
+            "unit": "Einheit des Zählers",
+            "calorific": "Brennwert",
+            "z_factor": "Zustandszahl"
+          }
+        },
+        "vertrag": {
+          "title": "Vertrag",
+          "description": "Wann rechnet dein Versorger ab? Bei „fester Stichtag“ den ersten Tag der neuen Abrechnungsperiode als TT.MM angeben, z. B. 30.06. (dann endet jede Periode am 29.06.). Bei „von Hand“ das Ende der ersten Periode, weitere Perioden mit der Aktion „Periode anhängen“.",
+          "data": {
+            "supplier": "Lieferant",
+            "tariff": "Tarif",
+            "start_date": "Vertragsbeginn",
+            "billing_rule": "Abrechnung",
+            "fixed_day": "Stichtag (TT.MM)",
+            "first_period_end": "Ende der ersten Periode",
+            "vat_mode": "Preise",
+            "vat_rate": "Mehrwertsteuer"
+          }
+        },
+        "startstand": {
+          "title": "Startstand",
+          "description": "Erste Abrechnungsperioden: {preview} (* = Rumpfjahr). Den Zählerstand zu Vertragsbeginn eintragen; bei einem Zähler mit Sensor ist er optional.",
+          "data": {
+            "value": "Zählerstand",
+            "timestamp": "Zeitpunkt",
+            "quality": "Qualität"
+          }
+        }
+      },
+      "error": {
+        "already_configured": "Dieser Sensor ist schon einem Zähler zugeordnet.",
+        "invalid_billing": "Die Abrechnungsregel passt nicht (z. B. Stichtag kein gültiges TT.MM, 29.02. nicht erlaubt).",
+        "required_for_manual": "Bei „von Hand“ wird das Ende der ersten Periode gebraucht.",
+        "required_without_entity": "Ohne Zählerstand-Sensor wird ein Startstand gebraucht."
+      }
+    }
+  },
+  "selector": {
+    "medium": {
+      "options": {
+        "strom": "Strom",
+        "gas": "Gas",
+        "wasser": "Wasser",
+        "fernwaerme": "Fernwärme"
+      }
+    },
+    "billing_rule": {
+      "options": {
+        "contract_year": "Vertragsjahr (12 Monate ab Beginn)",
+        "calendar_year": "Kalenderjahr (erstes Jahr als Rumpfjahr)",
+        "fixed_day": "Fester Stichtag",
+        "manual": "Von Hand"
+      }
+    },
+    "vat_mode": {
+      "options": {
+        "gross": "Brutto (mit MwSt.)",
+        "net": "Netto (ohne MwSt.)"
+      }
+    },
+    "quality": {
+      "options": {
+        "real": "Abgelesen",
+        "estimated": "Geschätzt"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "periode_ende": {
+        "name": "Periodenende"
+      },
+      "letzte_ablesung": {
+        "name": "Letzte Ablesung"
+      },
+      "zaehlerstand": {
+        "name": "Zählerstand (abgelesen)"
+      },
+      "tageswerte_qualitaet": {
+        "name": "Tageswerte vollständig"
+      }
+    }
+  },
+  "services": {
+    "add_ablesung": {
+      "name": "Ablesung hinzufügen",
+      "description": "Trägt einen Zählerstand ein. Mit „Ersetzt“ wird eine frühere Ablesung korrigiert, ohne sie zu löschen.",
+      "fields": {
+        "zaehler": {
+          "name": "Zähler",
+          "description": "Zähler-Gerät des Tarif-Cockpits."
+        },
+        "stand": {
+          "name": "Stand",
+          "description": "Zählerstand in der Einheit des Zählers."
+        },
+        "zeitpunkt": {
+          "name": "Zeitpunkt",
+          "description": "Standard: jetzt."
+        },
+        "qualitaet": {
+          "name": "Qualität",
+          "description": "Abgelesen oder geschätzt."
+        },
+        "notiz": {
+          "name": "Notiz",
+          "description": "Freier Text."
+        },
+        "ersetzt": {
+          "name": "Ersetzt",
+          "description": "ID der Ablesung, die korrigiert wird (Attribut ablesung_id)."
+        }
+      }
+    },
+    "ablesung_ungueltig": {
+      "name": "Ablesung ungültig",
+      "description": "Markiert eine Ablesung als ungültig. Sie bleibt gespeichert, geht aber nicht mehr in Rechnungen ein.",
+      "fields": {
+        "zaehler": {
+          "name": "Zähler",
+          "description": "Zähler-Gerät des Tarif-Cockpits."
+        },
+        "ablesung_id": {
+          "name": "Ablesung",
+          "description": "ID der Ablesung."
+        },
+        "grund": {
+          "name": "Grund",
+          "description": "Wird als Notiz gespeichert."
+        }
+      }
+    },
+    "add_folgevertrag": {
+      "name": "Folgevertrag (Anbieterwechsel)",
+      "description": "Der laufende Vertrag endet am Vortag des Beginns (Schlussrechnung), der neue Vertrag beginnt.",
+      "fields": {
+        "zaehler": {
+          "name": "Zähler",
+          "description": "Zähler-Gerät des Tarif-Cockpits."
+        },
+        "lieferant": {
+          "name": "Lieferant",
+          "description": "Neuer Lieferant."
+        },
+        "tarif": {
+          "name": "Tarif",
+          "description": "Name des Tarifs."
+        },
+        "beginn": {
+          "name": "Beginn",
+          "description": "Erster Liefertag."
+        },
+        "abrechnungsregel": {
+          "name": "Abrechnung",
+          "description": "Wann rechnet der neue Versorger ab?"
+        },
+        "stichtag": {
+          "name": "Stichtag",
+          "description": "Bei „fester Stichtag“: erster Tag der Periode als TT.MM."
+        },
+        "erste_periode_ende": {
+          "name": "Ende der ersten Periode",
+          "description": "Nur bei „von Hand“."
+        },
+        "vat_mode": {
+          "name": "Preise",
+          "description": "Brutto oder netto."
+        },
+        "vat_rate": {
+          "name": "Mehrwertsteuer",
+          "description": "In Prozent. Standard: 19 %, Wasser 7 %."
+        },
+        "wechselstand": {
+          "name": "Wechselstand",
+          "description": "Zählerstand zum Wechsel. Fehlt er, kann er später als Ablesung nachgetragen werden."
+        }
+      }
+    },
+    "set_periodenende": {
+      "name": "Periodenende (Ablesetermin)",
+      "description": "Der Versorger hat ein paar Tage früher oder später abgelesen: Ende der laufenden oder der zuletzt beendeten Periode verschieben (höchstens ±10 Tage). Die Regel bleibt.",
+      "fields": {
+        "zaehler": {
+          "name": "Zähler",
+          "description": "Zähler-Gerät des Tarif-Cockpits."
+        },
+        "ende": {
+          "name": "Ende",
+          "description": "Letzter Tag der Periode laut Rechnung."
+        }
+      }
+    },
+    "add_periode": {
+      "name": "Periode anhängen (von Hand)",
+      "description": "Nur bei der Abrechnung „von Hand“: nächste Periode anhängen. Sie beginnt am Tag nach dem Ende der letzten.",
+      "fields": {
+        "zaehler": {
+          "name": "Zähler",
+          "description": "Zähler-Gerät des Tarif-Cockpits."
+        },
+        "ende": {
+          "name": "Ende",
+          "description": "Letzter Tag der neuen Periode."
+        }
+      }
+    },
+    "recalculate": {
+      "name": "Tageswerte neu berechnen",
+      "description": "Berechnet Tageswerte aus Statistik und Ablesungen neu. Ablesungen und Verträge bleiben unverändert.",
+      "fields": {
+        "zaehler": {
+          "name": "Zähler",
+          "description": "Leer = alle Zähler."
+        },
+        "von": {
+          "name": "Von",
+          "description": "Erster Tag."
+        },
+        "bis": {
+          "name": "Bis",
+          "description": "Letzter Tag."
+        }
+      }
+    }
+  },
+  "issues": {
+    "store_verloren": {
+      "title": "Tarif-Cockpit: gespeicherte Daten fehlen",
+      "description": "Die Datei `.storage/{key}` fehlt oder war beschädigt (Home Assistant benennt sie dann in `{key}.corrupt.…` um). Damit nichts verloren geht, startet das Tarif-Cockpit nicht mit leeren Daten. Bitte die Datei aus einer Sicherung wiederherstellen und Home Assistant neu starten."
+    },
+    "store_ungueltig": {
+      "title": "Tarif-Cockpit: gespeicherte Daten ungültig",
+      "description": "In `.storage/{key}` wurden {count} Fehler gefunden, z. B.: {errors}. Die Datei wurde nicht verändert. Bitte die Diagnose herunterladen und ein Issue melden oder eine Sicherung wiederherstellen."
+    },
+    "alte_dashboard_installation": {
+      "title": "Tarif-Cockpit: alte Dashboard-Installation",
+      "description": "Die Karten werden jetzt von der Integration geladen. Die frühere Dashboard-Installation lädt sie ein zweites Mal (`/hacsfiles/tarif-cockpit/`). Bitte im Marketplace die Dashboard-Installation entfernen, siehe MIGRATION.md."
+    },
+    "store_zu_neu": {
+      "title": "Tarif-Cockpit: Daten aus einer neueren Version",
+      "description": "`.storage/{key}` wurde von einer neueren Version des Tarif-Cockpits geschrieben. Die Datei bleibt unverändert. Bitte die neuere Version wieder installieren."
+    },
+    "zaehler_ohne_statistik": {
+      "title": "Tarif-Cockpit: keine Statistik für {meter}",
+      "description": "Für `{entity}` gibt es keine Langzeitstatistik mit laufender Summe. Der Sensor braucht `state_class: total_increasing` (oder `total`). Bis dahin fehlen die Tageswerte dieses Zählers; sie werden nicht als 0 gezählt."
+    }
+  },
+  "exceptions": {
+    "unknown_meter": {
+      "message": "Unbekannter Zähler: {id}"
+    },
+    "unknown_reading": {
+      "message": "Unbekannte Ablesung: {id}"
+    },
+    "reading_in_future": {
+      "message": "Der Zeitpunkt der Ablesung liegt in der Zukunft."
+    },
+    "contract_invalid": {
+      "message": "Folgevertrag nicht möglich: {error}"
+    },
+    "period_invalid": {
+      "message": "Periode nicht änderbar: {error}"
+    },
+    "reading_already_replaced": {
+      "message": "Diese Ablesung ist schon ersetzt oder ungültig ({id}). Bitte die aktuell gültige Ablesung angeben."
+    }
+  }
+}

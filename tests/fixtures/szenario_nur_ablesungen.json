@@ -1,0 +1,15 @@
+{
+  "beschreibung": "Haus ohne Zähler-Sensor, nur Ablesungen von Hand, Kalenderjahr",
+  "heute": "2026-11-13",
+  "zaehler": [{"meter_id": "gas", "medium": "gas", "unit": "m³", "data_level": 1}],
+  "dataset": {
+    "contracts": [{"contract_id": "g1", "meter_id": "gas", "supplier": "Gasversorger", "start_date": "2026-01-01", "billing_rule": "calendar_year"}],
+    "readings": [
+      {"reading_id": "r0", "meter_id": "gas", "timestamp": "2026-01-01T00:00:00+01:00", "value": 1000.0, "source": "initial"},
+      {"reading_id": "r1", "meter_id": "gas", "timestamp": "2026-02-01T00:00:00+01:00", "value": 1310.0},
+      {"reading_id": "r2", "meter_id": "gas", "timestamp": "2026-03-01T00:00:00+01:00", "value": 1590.0, "quality": "estimated"}
+    ]
+  },
+  "erwartet": {"gas": [["2026-01-01", "2026-12-31", false, false]]},
+  "tageswerte": {"von": "2026-01-01", "bis": "2026-03-02", "januar_tag": 10.0, "februar_tag": 10.0, "fehlend_ab": "2026-03-01"}
+}

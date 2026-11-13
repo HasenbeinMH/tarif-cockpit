@@ -1,0 +1,20 @@
+{
+  "beschreibung": "Anbieterwechsel zum 01.09.2026 mit Rumpfjahr: alter Vertrag Kalenderjahr, neuer Vertrag Kalenderjahr",
+  "heute": "2026-11-13",
+  "zaehler": [{"meter_id": "strom", "medium": "strom", "unit": "kWh", "entity": "sensor.zaehler", "data_level": 2}],
+  "dataset": {
+    "contracts": [
+      {"contract_id": "alt", "meter_id": "strom", "supplier": "Alt GmbH", "start_date": "2025-01-01", "end_date": "2026-08-31", "billing_rule": "calendar_year"},
+      {"contract_id": "neu", "meter_id": "strom", "supplier": "Neu AG", "start_date": "2026-09-01", "billing_rule": "calendar_year"}
+    ],
+    "readings": [
+      {"reading_id": "r0", "meter_id": "strom", "timestamp": "2025-01-01T00:00:00+01:00", "value": 0.0, "source": "initial"},
+      {"reading_id": "rw", "meter_id": "strom", "timestamp": "2026-09-01T00:00:00+02:00", "value": 5400.0, "source": "switch", "quality": "interpolated"}
+    ]
+  },
+  "erwartet": {"strom": [
+    ["2025-01-01", "2025-12-31", false, false],
+    ["2026-01-01", "2026-08-31", true, true],
+    ["2026-09-01", "2026-12-31", true, false]
+  ]}
+}

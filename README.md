@@ -1,37 +1,78 @@
 # Tarif-Cockpit
 
 Kosten, Abschläge und Jahresprognose für Strom, Gas und Wasser auf einen Blick: **passt, Nachzahlung oder Rückzahlung**.
-Zwei Karten für Home Assistant im Stil von [energy-cockpit](https://github.com/msucimaker3112/energy-cockpit), mit denselben Farbschemen, auf Deutsch und Englisch.
+Eine Integration für Home Assistant, die Zähler, Verträge, Abrechnungsperioden und Ablesungen verwaltet, dazu zwei Karten im Stil von [energy-cockpit](https://github.com/msucimaker3112/energy-cockpit), auf Deutsch und Englisch.
 
 ![Tarifübersicht](docs/img/overview-dunkel.png)
 
-## Die zwei Karten
+> **Stand 0.5:** Die Integration hält die Daten (Haushalt, Zähler, Verträge, Perioden, Ablesungen, Tageswerte). Kosten, Prognose und Urteil rechnet sie ab 0.6; bis dahin zeigen die Karten wie bisher die Werte deiner eigenen Sensoren (Sensor-Modus). Umstieg von 0.4: [docs/MIGRATION.md](docs/MIGRATION.md).
 
-| Karte | Zeigt |
+## Was du bekommst
+
+| Teil | Inhalt |
 |---|---|
-| `custom:tarif-cockpit-card` (Tarifübersicht) | Je Medium eine Kachel mit Urteil, Betrag und vier Balken: Kosten bisher, Abschläge bisher, Hochrechnung fürs Jahr, Abschläge fürs Jahr (grün). Dazu den passenden monatlichen Abschlag, oben das Gesamturteil, unten frei wählbare Kacheln. |
-| `custom:tarif-cockpit-analyse-card` (Auswertung) | Gas witterungsbereinigt: Kennwert je Gradtag, Vergleich mit der Vorperiode, Kacheln für Verbrauch, Außentemperatur und Gradtage sowie Verlauf aus der Langzeitstatistik. |
+| Integration `tarif_cockpit` | Haushalt mit Zählern (Strom, Gas, Wasser, Fernwärme), Vertragskette je Zähler, **Abrechnungsperioden** nach der Regel deines Versorgers (Vertragsjahr, Kalenderjahr mit Rumpfjahr, fester Stichtag, von Hand), Anbieterwechsel mit Schlussperiode, Ablesungen von Hand mit Qualität, Tageswerte aus der Langzeitstatistik oder aus Ablesungen. Daten liegen in einem eigenen Speicher und überstehen Neustarts und Updates. |
+| Karte `custom:tarif-cockpit-card` | Je Medium Urteil, Betrag und vier Balken: Kosten bisher, Abschläge bisher (grün), Hochrechnung und Abschläge fürs Jahr, passender Abschlag, Gesamturteil, frei wählbare Kacheln. |
+| Karte `custom:tarif-cockpit-analyse-card` | Gas witterungsbereinigt: Kennwert je Gradtag, Vergleich mit der Vorperiode, Verlauf aus der Langzeitstatistik. |
 
 ![Auswertung](docs/img/analyse-dunkel.png)
 
-Die Karten **rechnen die Prognose nicht selbst** (Sensor-Modus). Sie zeigen, was deine Sensoren liefern, und bilden daraus nur das Urteil:
-`Differenz = Abschlag × Monate − Hochrechnung`. Positiv heißt Rückzahlung, negativ Nachzahlung. Liegt die Differenz unter 5 % der Abschläge, steht dort „Passt“.
-Wie man die Sensoren baut, steht in [docs/SENSOR-MODUS.md](docs/SENSOR-MODUS.md). Ab Version 0.6 rechnet eine mitgelieferte Integration die Prognose selbst; der Sensor-Modus bleibt als Rückfallebene erhalten.
-
 ## Installation
 
-Ab Home Assistant 2026.11 heißt HACS **Marketplace** und ist eingebaut (Einstellungen → Marketplace).
+Ab Home Assistant 2026.11 heißt HACS **Marketplace** und ist eingebaut (Einstellungen → Marketplace). Tarif-Cockpit braucht Home Assistant 2026.11 oder neuer.
 
 1. **Aus dem Katalog** (sobald Tarif-Cockpit dort gelistet ist): Einstellungen → Marketplace, nach „Tarif-Cockpit“ suchen, herunterladen.
-2. **Als eigenes Repository** (bis dahin): Einstellungen → Marketplace → Menü oben rechts → **Benutzerdefinierte Repositories**, `https://github.com/HasenbeinMH/tarif-cockpit` eintragen, Kategorie **Dashboard**, dann „Tarif-Cockpit“ herunterladen. Dafür muss der Marketplace mit GitHub verbunden sein (fragt er bei der Einrichtung ab).
-3. Browser-Cache leeren (Strg+F5).
-4. Dashboard bearbeiten → Karte hinzufügen → **Tarif-Cockpit** bzw. **Tarif-Cockpit Auswertung**.
+   **Als eigenes Repository** (bis dahin): Einstellungen → Marketplace → Menü oben rechts → **Benutzerdefinierte Repositories**, `https://github.com/HasenbeinMH/tarif-cockpit` eintragen, Kategorie **Integration**, dann „Tarif-Cockpit“ herunterladen. Dafür muss der Marketplace mit GitHub verbunden sein.
+2. Home Assistant **neu starten**.
+3. Einstellungen → Geräte & Dienste → **Integration hinzufügen** → „Tarif-Cockpit“: Haushalt anlegen.
+4. Beim Eintrag „Tarif-Cockpit“ → **Zähler hinzufügen**: Medium, Zählerstand-Sensor (oder „nur Ablesungen“), Einheit, Vertrag mit der Frage „Wann rechnet dein Versorger ab?“ und Startstand. Die Vorschau zeigt die ersten Abrechnungsperioden.
+5. Browser-Cache leeren (Strg+F5). Die Karten lädt die Integration selbst, ein Eintrag unter Dashboard-Ressourcen ist nicht nötig.
 
-Mit Home Assistant 2026.10 oder älter gilt derselbe Weg über **HACS** (HACS → Menü → Benutzerdefinierte Repositories, Kategorie Dashboard).
+| Haushalt anlegen | Zähler hinzufügen | Vertrag |
+|---|---|---|
+| ![Haushalt](docs/img/einrichtung-1-haushalt.png) | ![Zähler](docs/img/einrichtung-2-zaehler.png) | ![Vertrag](docs/img/einrichtung-3-vertrag.png) |
 
-Die Beschriftung des Menüpunkts kann je nach Version leicht abweichen. Siehst du einen anderen Weg, freue ich mich über ein Issue.
+Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tarif-Cockpit ab 0.5 setzt aber 2026.11 voraus. Die Beschriftung der Menüpunkte kann je nach Version leicht abweichen.
 
-## Einrichten mit dem Editor
+## Die Integration (0.5)
+
+**Sensoren je Zähler**
+| Sensor | Inhalt |
+|---|---|
+| Periodenende | Ende der laufenden Abrechnungsperiode. Attribute: `beginn`, `rumpfjahr`, `schlussperiode`, `status`, `regel`, `stichtag`, `lieferant`, `tarif`, `tage_bis_ende` |
+| Letzte Ablesung | Zeitpunkt der letzten gültigen Ablesung. Attribute: `stand`, `qualitaet`, `quelle`, `ablesung_id` |
+| Zählerstand (abgelesen) | Letzter gültiger abgelesener Stand |
+| Tageswerte vollständig | Diagnose: Anteil verwendbarer Tageswerte der letzten 30 Tage |
+
+**Aktionen** (Entwicklerwerkzeuge → Aktionen, oder in Automationen)
+| Aktion | Wozu |
+|---|---|
+| `tarif_cockpit.add_ablesung` | Zählerstand eintragen (`zaehler`, `stand`, optional `zeitpunkt`, `qualitaet`, `notiz`). Mit `ersetzt` wird eine frühere Ablesung korrigiert, ohne sie zu löschen. Antwort: `ablesung_id`. |
+| `tarif_cockpit.ablesung_ungueltig` | Ablesung als ungültig markieren; sie bleibt gespeichert. |
+| `tarif_cockpit.add_folgevertrag` | Anbieterwechsel: alter Vertrag endet am Vortag (Schlussperiode), neuer Vertrag mit eigener Abrechnungsregel; optional `wechselstand`. Ein Wechsel in eine bereits beendete Periode wird abgelehnt. |
+| `tarif_cockpit.set_periodenende` | Der Versorger hat ein paar Tage früher oder später abgelesen: Ende der laufenden oder zuletzt beendeten Periode verschieben (±10 Tage). |
+| `tarif_cockpit.add_periode` | Nur bei Abrechnung „von Hand“: nächste Periode anhängen. |
+| `tarif_cockpit.recalculate` | Tageswerte neu berechnen (Ablesungen und Verträge bleiben unverändert). |
+
+Beispiel, Ablesung aus einer Automation (z. B. nach einer Telegram-Nachricht):
+```yaml
+action: tarif_cockpit.add_ablesung
+data:
+  zaehler: 1a2b3c…          # Gerät „Gas“ des Tarif-Cockpits
+  stand: 9812.4
+```
+
+**Wichtig:** Fehlende Daten sind „fehlend“, nie 0. Hat ein Zählerstand-Sensor keine Langzeitstatistik (`state_class: total_increasing`), meldet die Integration das unter Einstellungen → Reparaturen. Gespeicherte Daten werden nie still verworfen: Fehlt die Datei oder ist sie beschädigt, startet die Integration nicht mit leeren Daten, sondern meldet sich ebenfalls unter Reparaturen.
+
+Wie Perioden, Rumpfjahr, Anbieterwechsel, Qualitätsstufen und Gradtage genau funktionieren: [docs/DATENMODELL.md](docs/DATENMODELL.md) und [docs/RECHNUNG.md](docs/RECHNUNG.md).
+
+## Die Karten
+
+Die Karten **rechnen in 0.5 noch nicht selbst** (Sensor-Modus). Sie zeigen, was deine Sensoren liefern, und bilden daraus nur das Urteil:
+`Differenz = Abschlag × Monate − Hochrechnung`. Positiv heißt Rückzahlung, negativ Nachzahlung. Liegt die Differenz unter 5 % der Abschläge, steht dort „Passt“.
+Wie man die Sensoren baut, steht in [docs/SENSOR-MODUS.md](docs/SENSOR-MODUS.md). Ab 0.6 liefert die Integration diese Werte selbst; der Sensor-Modus bleibt als Rückfallebene erhalten.
+
+### Einrichten mit dem Editor
 
 Beim Hinzufügen schlägt die Karte passende Sensoren aus deinem Home Assistant vor. Fehlen sie, steht dort „Noch nicht eingerichtet“, und der Karten-Editor öffnet mit dem **Assistenten**:
 
@@ -43,9 +84,9 @@ Beim Hinzufügen schlägt die Karte passende Sensoren aus deinem Home Assistant 
 - Schritte für nicht gewählte Medien entfallen.
 - Der Reiter **Alle Felder** zeigt das Formular von Home Assistant mit allen Optionen.
 
-## Konfiguration in YAML
+### Konfiguration in YAML
 
-### Tarifübersicht
+#### Tarifübersicht
 
 ```yaml
 type: custom:tarif-cockpit-card
@@ -87,7 +128,7 @@ Die Entitätsnamen sind Beispiele. Die Karte nimmt jeden Sensor, den du einträg
 
 Fehlt ein Sensor oder ist er nicht verfügbar, zeigt die Kachel „Noch keine Prognose“ bzw. „—“. Nicht eingetragene Zeilen entfallen.
 
-### Auswertung
+#### Auswertung
 
 ```yaml
 type: custom:tarif-cockpit-analyse-card
@@ -108,7 +149,7 @@ theme: dunkel
 
 Weitere Optionen: `subtitle`, `icon`, `label` (Überschrift im Panel, Standard „Kennwert“), `pending_text` (Text, solange kein Kennwert vorliegt).
 
-## Farbschemen
+### Farbschemen
 
 | dunkel | hell | warm |
 |---|---|---|
@@ -120,7 +161,10 @@ Weitere Beispiele (Mietwohnung nur Strom, Strom/Gas/Wasser, Nachzahlung, fehlend
 
 ## Entwickeln und testen
 
-- Quellen in `src/`, Build ohne Abhängigkeiten: `node tools/build.mjs` erzeugt `tarif-cockpit.js`. Die gebaute Datei wird mit eingecheckt, der Marketplace lädt sie direkt.
+- Karten: Quellen in `src/`, Build ohne Abhängigkeiten: `node tools/build.mjs` erzeugt `custom_components/tarif_cockpit/frontend/tarif-cockpit.js` (wird mit eingecheckt).
+- Rechenkern: `custom_components/tarif_cockpit/engine/`, ohne Home-Assistant-Imports. Tests: `python -m pytest tests/engine`.
+- Integration: Tests mit `pytest-homeassistant` in Docker (Python 3.14): `tools/test-ha.ps1` bzw. `tools/test-ha.sh`, mit `min` gegen die kleinste unterstützte HA-Version.
+- Übersetzungen der Integration entstehen aus `tools/gen_translations.py`.
 - Testseiten: `python -m http.server` im Repo, dann `http://localhost:8000/test/` öffnen. Szenarien und Farbschemen lassen sich oben umschalten.
 - Screenshots: `pip install playwright`, `python -m playwright install chromium`, dann `python tools/make-screenshots.py` (schreibt nach `docs/img/`).
 - Änderungen: [CHANGELOG.md](CHANGELOG.md).

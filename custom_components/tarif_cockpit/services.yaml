@@ -1,0 +1,138 @@
+add_ablesung:
+  fields:
+    zaehler:
+      required: true
+      selector:
+        device:
+          integration: tarif_cockpit
+    stand:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 1000000000
+          step: 0.001
+          mode: box
+    zeitpunkt:
+      selector:
+        datetime:
+    qualitaet:
+      default: real
+      selector:
+        select:
+          translation_key: quality
+          options:
+            - real
+            - estimated
+    notiz:
+      selector:
+        text:
+    ersetzt:
+      selector:
+        text:
+ablesung_ungueltig:
+  fields:
+    zaehler:
+      required: true
+      selector:
+        device:
+          integration: tarif_cockpit
+    ablesung_id:
+      required: true
+      selector:
+        text:
+    grund:
+      selector:
+        text:
+add_folgevertrag:
+  fields:
+    zaehler:
+      required: true
+      selector:
+        device:
+          integration: tarif_cockpit
+    lieferant:
+      required: true
+      selector:
+        text:
+    tarif:
+      selector:
+        text:
+    beginn:
+      required: true
+      selector:
+        date:
+    abrechnungsregel:
+      required: true
+      default: calendar_year
+      selector:
+        select:
+          translation_key: billing_rule
+          options:
+            - contract_year
+            - calendar_year
+            - fixed_day
+            - manual
+    stichtag:
+      selector:
+        text:
+    erste_periode_ende:
+      selector:
+        date:
+    vat_mode:
+      default: gross
+      selector:
+        select:
+          translation_key: vat_mode
+          options:
+            - gross
+            - net
+    vat_rate:
+      selector:
+        number:
+          min: 0
+          max: 30
+          step: 0.1
+          unit_of_measurement: "%"
+          mode: box
+    wechselstand:
+      selector:
+        number:
+          min: 0
+          max: 1000000000
+          step: 0.001
+          mode: box
+set_periodenende:
+  fields:
+    zaehler:
+      required: true
+      selector:
+        device:
+          integration: tarif_cockpit
+    ende:
+      required: true
+      selector:
+        date:
+add_periode:
+  fields:
+    zaehler:
+      required: true
+      selector:
+        device:
+          integration: tarif_cockpit
+    ende:
+      required: true
+      selector:
+        date:
+recalculate:
+  fields:
+    zaehler:
+      selector:
+        device:
+          integration: tarif_cockpit
+    von:
+      selector:
+        date:
+    bis:
+      selector:
+        date:

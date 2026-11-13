@@ -1,0 +1,1 @@
+"""Tests des Tarif-Cockpits."""

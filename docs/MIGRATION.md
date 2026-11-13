@@ -33,6 +33,18 @@ Der Block `analysis` in `tarif-cockpit-card` ist veraltet. Er wird weiter angeze
 
 Alle Felder bleiben gleich: `title`, `kennwert`, `kennwert_previous`, `consumption`, `temperature`, `degree_days`, `extras`, `explain`, `pending_text`, `months`, `history`, `color`. Neu sind `theme`, `subtitle`, `icon` und `label`.
 
-## 0.4 → 0.5 (Vorschau)
+## 0.4 → 0.5: von der Dashboard-Karte zur Integration
 
-Mit 0.5 wird das Repo zu einer Integration, die beide Karten mitliefert. Wie der Umstieg im Marketplace geht, steht dann hier.
+Ab 0.5 ist Tarif-Cockpit eine **Integration**, die beide Karten mitliefert. Im Marketplace gehört ein Repository immer zu genau einer Kategorie; die bisherige Installation als **Dashboard** bekommt deshalb keine Updates mehr.
+
+> **Wichtig:** Das 0.5-Update **nicht** in der Dashboard-Installation einspielen. Erst umstellen, wie unten beschrieben.
+
+1. **Dashboard-Installation entfernen:** Einstellungen → Marketplace → „Tarif-Cockpit“ (Dashboard) → Menü → **Entfernen**. Damit verschwindet auch die Dashboard-Ressource `/hacsfiles/tarif-cockpit/tarif-cockpit.js`. Danach im Marketplace-Menü unter **Benutzerdefinierte Repositories** den Eintrag `HasenbeinMH/tarif-cockpit` löschen.
+2. **Als Integration hinzufügen:** Benutzerdefinierte Repositories → `https://github.com/HasenbeinMH/tarif-cockpit`, Kategorie **Integration** → „Tarif-Cockpit“ herunterladen.
+3. Home Assistant **neu starten**.
+4. Einstellungen → Geräte & Dienste → Integration hinzufügen → **Tarif-Cockpit**: Haushalt anlegen. Das genügt, damit die Karten wieder geladen werden. Zähler kannst du sofort oder später hinzufügen.
+5. Browser-Cache leeren (Strg+F5).
+
+Deine Dashboards und das YAML der Karten bleiben unverändert gültig. Bis 0.6 zeigen die Karten weiterhin die Werte deiner Template-Sensoren (Sensor-Modus); die Automation und die Template-Helfer also noch nicht abschalten.
+
+Findet die Integration noch die alte Ressource, steht unter Einstellungen → Reparaturen der Hinweis „alte Dashboard-Installation“. Er verschwindet nach dem nächsten Neustart, sobald die Ressource entfernt ist.

@@ -1,0 +1,23 @@
+{
+  "domain": "tarif_cockpit",
+  "name": "Tarif-Cockpit",
+  "after_dependencies": [
+    "frontend",
+    "lovelace",
+    "recorder"
+  ],
+  "codeowners": [
+    "@HasenbeinMH"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "http"
+  ],
+  "documentation": "https://github.com/HasenbeinMH/tarif-cockpit",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/HasenbeinMH/tarif-cockpit/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.5.0"
+}

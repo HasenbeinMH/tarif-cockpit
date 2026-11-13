@@ -1,0 +1,321 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up household",
+        "description": "Basic data for all meters. Add meters with their contract afterwards via “Add meter”.",
+        "data": {
+          "name": "Name",
+          "outdoor_temp_entity": "Outdoor temperature sensor",
+          "weather_entity": "Weather entity",
+          "rooms": "Room temperatures",
+          "heating_limit": "Heating limit",
+          "indoor_ref": "Indoor reference for degree days",
+          "tolerance_pct": "Tolerance for “on track”"
+        },
+        "data_description": {
+          "outdoor_temp_entity": "For degree days and daily values. Optional.",
+          "heating_limit": "Days with a mean below this count as heating days (usually 15 °C).",
+          "indoor_ref": "Usually 20 °C (degree days G20/15).",
+          "tolerance_pct": "Deviation up to which the verdict is “on track”."
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "A household already exists. Add more meters there via “Add meter”."
+    }
+  },
+  "config_subentries": {
+    "zaehler": {
+      "initiate_flow": {
+        "user": "Add meter"
+      },
+      "entry_type": "Meter",
+      "step": {
+        "user": {
+          "title": "Add meter",
+          "description": "What does the meter measure?",
+          "data": {
+            "medium": "Utility"
+          }
+        },
+        "quelle": {
+          "title": "Where does the meter reading come from?",
+          "description": "Choose the meter reading sensor (running total). Without a sensor you enter readings by hand (action “Add meter reading”).",
+          "data": {
+            "name": "Name",
+            "entity": "Meter reading sensor (empty = readings only)"
+          }
+        },
+        "einheit": {
+          "title": "Unit",
+          "description": "Calorific value and conversion factor are on your gas bill. They are optional.",
+          "data": {
+            "unit": "Meter unit",
+            "calorific": "Calorific value",
+            "z_factor": "Conversion factor (Z)"
+          }
+        },
+        "vertrag": {
+          "title": "Contract",
+          "description": "When does your supplier bill? For “fixed day” enter the first day of the new billing period as DD.MM, e.g. 30.06. (each period then ends on 29.06.). For “manual” enter the end of the first period; add further periods with the action “Append period”.",
+          "data": {
+            "supplier": "Supplier",
+            "tariff": "Tariff",
+            "start_date": "Contract start",
+            "billing_rule": "Billing",
+            "fixed_day": "Fixed day (DD.MM)",
+            "first_period_end": "End of the first period",
+            "vat_mode": "Prices",
+            "vat_rate": "VAT"
+          }
+        },
+        "startstand": {
+          "title": "Initial reading",
+          "description": "First billing periods: {preview} (* = short year). Enter the meter reading at the start of the contract; optional for a meter with a sensor.",
+          "data": {
+            "value": "Meter reading",
+            "timestamp": "Time",
+            "quality": "Quality"
+          }
+        }
+      },
+      "error": {
+        "already_configured": "This sensor is already assigned to a meter.",
+        "invalid_billing": "The billing rule is invalid (e.g. fixed day is not a valid DD.MM; 29.02. is not allowed).",
+        "required_for_manual": "“Manual” needs the end of the first period.",
+        "required_without_entity": "Without a meter sensor an initial reading is required."
+      }
+    }
+  },
+  "selector": {
+    "medium": {
+      "options": {
+        "strom": "Electricity",
+        "gas": "Gas",
+        "wasser": "Water",
+        "fernwaerme": "District heating"
+      }
+    },
+    "billing_rule": {
+      "options": {
+        "contract_year": "Contract year (12 months from start)",
+        "calendar_year": "Calendar year (first year shortened)",
+        "fixed_day": "Fixed day",
+        "manual": "Manual"
+      }
+    },
+    "vat_mode": {
+      "options": {
+        "gross": "Gross (incl. VAT)",
+        "net": "Net (excl. VAT)"
+      }
+    },
+    "quality": {
+      "options": {
+        "real": "Read",
+        "estimated": "Estimated"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "periode_ende": {
+        "name": "Billing period end"
+      },
+      "letzte_ablesung": {
+        "name": "Last reading"
+      },
+      "zaehlerstand": {
+        "name": "Meter reading (read)"
+      },
+      "tageswerte_qualitaet": {
+        "name": "Daily values complete"
+      }
+    }
+  },
+  "services": {
+    "add_ablesung": {
+      "name": "Add meter reading",
+      "description": "Adds a meter reading. With “Replaces” an earlier reading is corrected without deleting it.",
+      "fields": {
+        "zaehler": {
+          "name": "Meter",
+          "description": "Tarif-Cockpit meter device."
+        },
+        "stand": {
+          "name": "Reading",
+          "description": "Meter reading in the meter unit."
+        },
+        "zeitpunkt": {
+          "name": "Time",
+          "description": "Default: now."
+        },
+        "qualitaet": {
+          "name": "Quality",
+          "description": "Read or estimated."
+        },
+        "notiz": {
+          "name": "Note",
+          "description": "Free text."
+        },
+        "ersetzt": {
+          "name": "Replaces",
+          "description": "ID of the reading being corrected (attribute ablesung_id)."
+        }
+      }
+    },
+    "ablesung_ungueltig": {
+      "name": "Mark reading invalid",
+      "description": "Marks a reading as invalid. It is kept but no longer used in calculations.",
+      "fields": {
+        "zaehler": {
+          "name": "Meter",
+          "description": "Tarif-Cockpit meter device."
+        },
+        "ablesung_id": {
+          "name": "Reading",
+          "description": "ID of the reading."
+        },
+        "grund": {
+          "name": "Reason",
+          "description": "Stored as a note."
+        }
+      }
+    },
+    "add_folgevertrag": {
+      "name": "Follow-up contract (supplier change)",
+      "description": "The current contract ends the day before the start (final bill); the new contract begins.",
+      "fields": {
+        "zaehler": {
+          "name": "Meter",
+          "description": "Tarif-Cockpit meter device."
+        },
+        "lieferant": {
+          "name": "Supplier",
+          "description": "New supplier."
+        },
+        "tarif": {
+          "name": "Tariff",
+          "description": "Tariff name."
+        },
+        "beginn": {
+          "name": "Start",
+          "description": "First day of supply."
+        },
+        "abrechnungsregel": {
+          "name": "Billing",
+          "description": "When does the new supplier bill?"
+        },
+        "stichtag": {
+          "name": "Fixed day",
+          "description": "For “fixed day”: first day of the period as DD.MM."
+        },
+        "erste_periode_ende": {
+          "name": "End of the first period",
+          "description": "Only for “manual”."
+        },
+        "vat_mode": {
+          "name": "Prices",
+          "description": "Gross or net."
+        },
+        "vat_rate": {
+          "name": "VAT",
+          "description": "In percent. Default: 19 %, water 7 %."
+        },
+        "wechselstand": {
+          "name": "Switch reading",
+          "description": "Meter reading at the switch. If missing, add it later as a reading."
+        }
+      }
+    },
+    "set_periodenende": {
+      "name": "Billing period end (reading date)",
+      "description": "The supplier read the meter a few days earlier or later: shift the end of the current or the last ended period (at most ±10 days). The rule stays.",
+      "fields": {
+        "zaehler": {
+          "name": "Meter",
+          "description": "Tarif-Cockpit meter device."
+        },
+        "ende": {
+          "name": "End",
+          "description": "Last day of the period according to the bill."
+        }
+      }
+    },
+    "add_periode": {
+      "name": "Append period (manual)",
+      "description": "Only for “manual” billing: append the next period. It starts the day after the last one ends.",
+      "fields": {
+        "zaehler": {
+          "name": "Meter",
+          "description": "Tarif-Cockpit meter device."
+        },
+        "ende": {
+          "name": "End",
+          "description": "Last day of the new period."
+        }
+      }
+    },
+    "recalculate": {
+      "name": "Recalculate daily values",
+      "description": "Recalculates daily values from statistics and readings. Readings and contracts stay unchanged.",
+      "fields": {
+        "zaehler": {
+          "name": "Meter",
+          "description": "Empty = all meters."
+        },
+        "von": {
+          "name": "From",
+          "description": "First day."
+        },
+        "bis": {
+          "name": "To",
+          "description": "Last day."
+        }
+      }
+    }
+  },
+  "issues": {
+    "store_verloren": {
+      "title": "Tarif-Cockpit: stored data missing",
+      "description": "The file `.storage/{key}` is missing or was corrupt (Home Assistant then renames it to `{key}.corrupt.…`). To avoid data loss, Tarif-Cockpit does not start with empty data. Please restore the file from a backup and restart Home Assistant."
+    },
+    "store_ungueltig": {
+      "title": "Tarif-Cockpit: stored data invalid",
+      "description": "{count} errors were found in `.storage/{key}`, e.g.: {errors}. The file was not changed. Please download the diagnostics and open an issue, or restore a backup."
+    },
+    "alte_dashboard_installation": {
+      "title": "Tarif-Cockpit: old dashboard installation",
+      "description": "The cards are now loaded by the integration. The earlier dashboard installation loads them a second time (`/hacsfiles/tarif-cockpit/`). Please remove the dashboard installation in the Marketplace, see MIGRATION.md."
+    },
+    "store_zu_neu": {
+      "title": "Tarif-Cockpit: data from a newer version",
+      "description": "`.storage/{key}` was written by a newer version of Tarif-Cockpit. The file stays unchanged. Please install the newer version again."
+    },
+    "zaehler_ohne_statistik": {
+      "title": "Tarif-Cockpit: no statistics for {meter}",
+      "description": "There are no long-term statistics with a running sum for `{entity}`. The sensor needs `state_class: total_increasing` (or `total`). Until then the daily values of this meter are missing; they are not counted as 0."
+    }
+  },
+  "exceptions": {
+    "unknown_meter": {
+      "message": "Unknown meter: {id}"
+    },
+    "unknown_reading": {
+      "message": "Unknown reading: {id}"
+    },
+    "reading_in_future": {
+      "message": "The reading time is in the future."
+    },
+    "contract_invalid": {
+      "message": "Follow-up contract not possible: {error}"
+    },
+    "period_invalid": {
+      "message": "Period cannot be changed: {error}"
+    },
+    "reading_already_replaced": {
+      "message": "This reading is already replaced or invalid ({id}). Please refer to the currently valid reading."
+    }
+  }
+}

@@ -48,7 +48,7 @@ JOBS = [
 def main(filters):
     OUT.mkdir(parents=True, exist_ok=True)
     jobs = [j for j in JOBS if not filters or any(f in j[1] for f in filters)]
-    if not (ROOT / 'tarif-cockpit.js').exists():
+    if not (ROOT / 'custom_components' / 'tarif_cockpit' / 'frontend' / 'tarif-cockpit.js').exists():
         sys.exit('tarif-cockpit.js fehlt: zuerst node tools/build.mjs')
     with sync_playwright() as p:
         browser = p.chromium.launch()

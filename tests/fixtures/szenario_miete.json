@@ -1,0 +1,10 @@
+{
+  "beschreibung": "Mietwohnung nur Strom, Vertragsjahr ab 15.03.",
+  "heute": "2026-11-13",
+  "zaehler": [{"meter_id": "strom", "medium": "strom", "unit": "kWh", "entity": "sensor.stromzaehler", "data_level": 2}],
+  "dataset": {
+    "contracts": [{"contract_id": "s1", "meter_id": "strom", "supplier": "Ökostrom AG", "start_date": "2025-03-15", "billing_rule": "contract_year"}],
+    "readings": [{"reading_id": "r0", "meter_id": "strom", "timestamp": "2025-03-15T10:00:00+01:00", "value": 120.0, "source": "initial"}]
+  },
+  "erwartet": {"strom": [["2025-03-15", "2026-03-14", false, false], ["2026-03-15", "2027-03-14", false, false]]}
+}

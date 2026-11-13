@@ -1,4 +1,4 @@
-/* Testdaten für die Testseiten: nachgebautes hass-Objekt und Szenarien. Wird vor ../tarif-cockpit.js geladen.
+/* Testdaten für die Testseiten: nachgebautes hass-Objekt und Szenarien. Wird vor ../custom_components/tarif_cockpit/frontend/tarif-cockpit.js geladen.
    URL-Parameter: scene (haus, miete, wasser, nachzahlung, ohne, leer, en), theme, shot (ohne Knopfleiste), narrow */
 (() => {
   // Platzhalter für HA-Elemente
