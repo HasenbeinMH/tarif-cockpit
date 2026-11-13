@@ -107,6 +107,8 @@ class Household:
     indoor_ref: float = 20.0
     tolerance_pct: float = 5.0
     rooms: list[Room] = field(default_factory=list)
+    # Antworten des Fragen-Assistenten: heating, hot_water, extras, tenure, rhythm (Abschnitt 1a)
+    situation: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

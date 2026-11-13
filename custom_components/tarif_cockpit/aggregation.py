@@ -121,41 +121,52 @@ class Aggregator:
             days = self._targets(meter, rng[0], rng[1], overwrite or readings_based)
             if not days:
                 continue
-            q_start = day_bounds(days[0], tz)[0] - timedelta(hours=1)
-            q_end = day_bounds(days[-1], tz)[1]
-            temp_ids = {i for i in [hh.outdoor_temp_entity, *[r.entity for r in hh.rooms]] if i}
-            temps = await self._fetch(temp_ids, q_start, q_end, "mean", {"temperature": "°C"})
-            sums: Series = {}
-            states: Series = {}
-            hist: Series = {}
-            if not readings_based:
-                units = _unit_class(meter.unit)
-                sums = (await self._fetch({meter.entity}, q_start, q_end, "sum", units)).get(meter.entity, {})
-                states = (await self._fetch({meter.entity}, q_start, q_end, "state", units)).get(meter.entity, {})
-                if meter.history_entity:
-                    hist = (await self._fetch({meter.history_entity}, q_start, q_end, "sum", units)).get(meter.history_entity, {})
-                self._check_statistics(meter, sums)
-            outdoor = temps.get(hh.outdoor_temp_entity or "", {})
-            indoor = [temps[r.entity] for r in hh.rooms if r.entity in temps]
-            values = []
-            for d in days:
-                v = aggregate_day(meter.meter_id, d, tz, sums, outdoor, indoor, hh.heating_limit, hh.indoor_ref, states)
-                if hist and v.consumption is None and v.quality == Quality.MISSING:
-                    h = aggregate_day(meter.meter_id, d, tz, hist)
-                    if h.consumption is not None:
-                        # Ersatzquelle: anderer Zähler (z. B. Wechselrichter), daher nur "geschätzt"
-                        v = replace(v, consumption=h.consumption, quality=Quality.ESTIMATED,
-                                    quality_flags=[f for f in v.quality_flags if f != "randwert_fehlt"] + ["ersatzquelle"])
-                values.append(v)
-            if readings_based:
-                by_day = {v.date: v for v in daily_from_readings(meter, rt.readings(meter.meter_id), days[0], days[-1], tz)}
-                values = [_merge_readings(v, by_day.get(v.date)) for v in values]
+            values = await self.async_compute(meter, days, rt.readings(meter.meter_id), check=True)
             changed += rt.put_daily(values)
         periods = rt.sync_periods()
         if changed:
             _LOGGER.debug("Tarif-Cockpit: %s Tageswerte aktualisiert", changed)
         rt.changed(save=changed > 0 or periods)
         return changed
+
+    async def async_compute(self, meter: Meter, days: list[date], readings: list, check: bool = False) -> list[DailyConsumption]:
+        """Tageswerte für ``days`` berechnen, ohne zu speichern (auch für die Probe-Prognose in der Einrichtung)."""
+        if not days:
+            return []
+        hh = self.rt.household
+        tz = self.rt.tz
+        readings_based = meter.entity is None
+        q_start = day_bounds(days[0], tz)[0] - timedelta(hours=1)
+        q_end = day_bounds(days[-1], tz)[1]
+        temp_ids = {i for i in [hh.outdoor_temp_entity, *[r.entity for r in hh.rooms]] if i}
+        temps = await self._fetch(temp_ids, q_start, q_end, "mean", {"temperature": "°C"})
+        sums: Series = {}
+        states: Series = {}
+        hist: Series = {}
+        if not readings_based:
+            units = _unit_class(meter.unit)
+            sums = (await self._fetch({meter.entity}, q_start, q_end, "sum", units)).get(meter.entity, {})
+            states = (await self._fetch({meter.entity}, q_start, q_end, "state", units)).get(meter.entity, {})
+            if meter.history_entity:
+                hist = (await self._fetch({meter.history_entity}, q_start, q_end, "sum", units)).get(meter.history_entity, {})
+            if check:
+                self._check_statistics(meter, sums)
+        outdoor = temps.get(hh.outdoor_temp_entity or "", {})
+        indoor = [temps[r.entity] for r in hh.rooms if r.entity in temps]
+        values = []
+        for d in days:
+            v = aggregate_day(meter.meter_id, d, tz, sums, outdoor, indoor, hh.heating_limit, hh.indoor_ref, states)
+            if hist and v.consumption is None and v.quality == Quality.MISSING:
+                h = aggregate_day(meter.meter_id, d, tz, hist)
+                if h.consumption is not None:
+                    # Ersatzquelle: anderer Zähler (z. B. Wechselrichter), daher nur "geschätzt"
+                    v = replace(v, consumption=h.consumption, quality=Quality.ESTIMATED,
+                                quality_flags=[f for f in v.quality_flags if f != "randwert_fehlt"] + ["ersatzquelle"])
+            values.append(v)
+        if readings_based:
+            by_day = {v.date: v for v in daily_from_readings(meter, readings, days[0], days[-1], tz)}
+            values = [_merge_readings(v, by_day.get(v.date)) for v in values]
+        return values
 
     @callback
     def _check_statistics(self, meter: Meter, sums: Series) -> None:

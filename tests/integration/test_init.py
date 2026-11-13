@@ -89,8 +89,9 @@ async def test_config_entry_migration(hass: HomeAssistant) -> None:
     hh = {"name": "Alt", "heating_limit": 15.0, "indoor_ref": 20.0}
     entry = make_entry(meter_subentry("m1"), minor_version=1, household=hh)
     assert await setup(hass, entry)
-    assert entry.minor_version == 3
+    assert entry.minor_version == 4
     assert entry.data["household"]["tolerance_pct"] == 5.0
+    assert entry.data["household"]["situation"] == {}
     assert next(iter(entry.subentries.values())).data["meter"]["role"] == "main"
 
 

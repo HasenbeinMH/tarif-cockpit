@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfVolume
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
@@ -352,6 +352,7 @@ class ForecastQualitySensor(ResultSensor):
 
 class HeatCoefficientSensor(ResultSensor):
     key = "kennwert"
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "kWh/Kd"
     _attr_suggested_display_precision = 2
 
@@ -365,6 +366,7 @@ class HeatCoefficientSensor(ResultSensor):
 
 class HotWaterSensor(ResultSensor):
     key = "ww_grundlast"
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "kWh/d"
     _attr_suggested_display_precision = 1
 

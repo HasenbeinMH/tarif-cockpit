@@ -13,8 +13,13 @@ async def _create_household(hass: HomeAssistant):
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     assert result["type"] is FlowResultType.FORM
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"name": "Zuhause", "heating_limit": 15, "indoor_ref": 20, "tolerance_pct": 5}
+        result["flow_id"], {"name": "Zuhause", "heating": ["gas"], "hot_water": "heizung", "extras": ["wallbox"], "tenure": "eigentuemer", "rhythm": "1"}
     )
+    assert result["step_id"] == "klima"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"heating_limit": 15, "indoor_ref": 20})
+    assert result["step_id"] == "abschluss"
+    assert "Gas" in result["description_placeholders"]["zaehler"] and "Wallbox" in result["description_placeholders"]["zaehler"]
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"tolerance_pct": 5})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     return result["result"]
@@ -24,6 +29,7 @@ async def test_household_and_single_instance(hass: HomeAssistant) -> None:
     entry = await _create_household(hass)
     assert entry.data["household"]["name"] == "Zuhause"
     assert entry.data["household"]["tolerance_pct"] == 5.0
+    assert entry.data["household"]["situation"] == {"heating": ["gas"], "hot_water": "heizung", "extras": ["wallbox"], "tenure": "eigentuemer", "rhythm": 1}
     again = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     assert again["type"] is FlowResultType.ABORT and again["reason"] == "single_instance_allowed"
 
@@ -49,11 +55,14 @@ async def test_meter_subentry_readings_only(hass: HomeAssistant) -> None:
     assert r["step_id"] == "abschlag"
     r = await flow.async_configure(r["flow_id"], {"amount": 166, "pay_day": 1, "rhythm": "1"})
     assert r["step_id"] == "startstand"
-    assert "15.03.2026 – 31.12.2026 *" in r["description_placeholders"]["preview"]
+    assert "15.03.2026 – 31.12.2026¹" in r["description_placeholders"]["preview"]
     # ohne Sensor ist der Startstand Pflicht
     r = await flow.async_configure(r["flow_id"], {"quality": "real"})
     assert r["errors"] == {"value": "required_without_entity"}
     r = await flow.async_configure(r["flow_id"], {"value": 1000.0, "timestamp": "2026-03-15 00:00:00", "quality": "real"})
+    assert r["step_id"] == "zusammenfassung"
+    assert "15.03.2026 – 31.12.2026¹" in r["description_placeholders"]["perioden"]
+    r = await flow.async_configure(r["flow_id"], {})
     assert r["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
 
@@ -92,6 +101,8 @@ async def test_meter_with_entity_duplicate(hass: HomeAssistant) -> None:
     r = await flow.async_configure(r["flow_id"], {"work_price": 0.1, "base_price": 10})
     r = await flow.async_configure(r["flow_id"], {"pay_day": 1, "rhythm": "1"})  # ohne Betrag: keine Abschläge
     r = await flow.async_configure(r["flow_id"], {"quality": "real"})  # mit Sensor: Startstand optional
+    assert r["step_id"] == "zusammenfassung"
+    r = await flow.async_configure(r["flow_id"], {})
     assert r["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     r = await add()

@@ -56,21 +56,21 @@ S = {
                              "data": {"parent": T("Hauptzähler", "Main meter")}},
             "einheit": {
                 "title": T("Einheit", "Unit"),
-                "description": T("Brennwert und Zustandszahl stehen auf der Gasrechnung. Sie sind optional.",
-                                 "Calorific value and conversion factor are on your gas bill. They are optional."),
+                "description": T("In welcher Einheit zählt der Zähler? Zählt ein Gaszähler in m³, braucht es den Brennwert von der Gasrechnung (Zustandszahl optional).",
+                                 "Which unit does the meter count in? A gas meter counting in m³ needs the calorific value from your gas bill (conversion factor optional)."),
                 "data": {"unit": T("Einheit des Zählers", "Meter unit"), "calorific": T("Brennwert", "Calorific value"),
                          "z_factor": T("Zustandszahl", "Conversion factor (Z)"),
                          "annual_consumption": T("Jahresverbrauch laut letzter Rechnung", "Annual consumption according to the last bill")},
                 "data_description": {"annual_consumption": T("Optional. Rückfallebene für die Prognose, solange es kein Vorjahr und keine 30 Tage eigene Daten gibt.",
                                                              "Optional. Fallback for the forecast as long as there is no previous year and no 30 days of own data.")},
             },
-            "preis": {"title": T("Preise", "Prices"), "description": T("Preise zu Vertragsbeginn, wie im Vertrag (brutto oder netto, wie zuvor gewählt). Spätere Preisänderungen mit der Aktion „Preis ändern“.",
-                                                                    "Prices at the start of the contract, as in the contract (gross or net as chosen before). Later price changes with the action “Set price”."),
+            "preis": {"title": T("Preise", "Prices"), "description": T("Preise zu Vertragsbeginn, wie im Vertrag (brutto oder netto, wie zuvor gewählt). Spätere Preisänderungen über „Neu konfigurieren“ am Zähler (oder die Aktion „Preis ändern“).",
+                                                                    "Prices at the start of the contract, as in the contract (gross or net as chosen before). Later price changes via “Reconfigure” on the meter (or the action “Set price”)."),
                       "data": {"work_price": T("Arbeitspreis", "Unit price"), "base_price": T("Grundpreis je Monat", "Standing charge per month"),
                                "metering_price": T("Messpreis je Monat", "Metering charge per month"), "wastewater_price": T("Abwasser je m³", "Wastewater per m³"),
                                "fixed_yearly": T("Feste Beträge je Jahr (z. B. Niederschlagswasser)", "Fixed amounts per year (e.g. rainwater)")}},
-            "abschlag": {"title": T("Abschläge", "Advance payments"), "description": T("Ohne Betrag gibt es keine Abschläge (z. B. bei Abrechnung über den Vermieter). Änderungen später mit der Aktion „Abschlag ändern“.",
-                                                                                     "Without an amount there are no advance payments. Later changes with the action “Set advance payment”."),
+            "abschlag": {"title": T("Abschläge", "Advance payments"), "description": T("Ohne Betrag gibt es keine Abschläge (z. B. bei Abrechnung über den Vermieter). Änderungen später über „Neu konfigurieren“ am Zähler, in der Karte oder mit der Aktion „Abschlag ändern“.",
+                                                                                     "Without an amount there are no advance payments. Later changes via “Reconfigure” on the meter, in the card or with the action “Set advance payment”."),
                          "data": {"amount": T("Abschlag", "Advance payment"), "pay_day": T("Zahltag im Monat", "Day of month"),
                                   "rhythm": T("Rhythmus", "Interval"), "max_per_period": T("Abschläge je Abrechnungsjahr (z. B. 11)", "Payments per billing year (e.g. 11)")}},
             "reconfigure": {"title": T("Zähler ändern", "Change meter"), "description": T("Verträge, Preise und Abschläge änderst du mit den Aktionen des Tarif-Cockpits.",
@@ -89,8 +89,8 @@ S = {
             },
             "startstand": {
                 "title": T("Startstand", "Initial reading"),
-                "description": T("Erste Abrechnungsperioden: {preview} (* = Rumpfjahr). Den Zählerstand zu Vertragsbeginn eintragen; bei einem Zähler mit Sensor ist er optional.",
-                                 "First billing periods: {preview} (* = short year). Enter the meter reading at the start of the contract; optional for a meter with a sensor."),
+                "description": T("Erste Abrechnungsperioden: {preview} (¹ = Rumpfjahr). Den Zählerstand zu Vertragsbeginn eintragen; bei einem Zähler mit Sensor ist er optional.",
+                                 "First billing periods: {preview} (¹ = short year). Enter the meter reading at the start of the contract; optional for a meter with a sensor."),
                 "data": {"value": T("Zählerstand", "Meter reading"), "timestamp": T("Zeitpunkt", "Time"), "quality": T("Qualität", "Quality")},
             },
         },
@@ -299,6 +299,113 @@ S = {
         "reading_already_replaced": {"message": T("Diese Ablesung ist schon ersetzt oder ungültig ({id}). Bitte die aktuell gültige Ablesung angeben.", "This reading is already replaced or invalid ({id}). Please refer to the currently valid reading.")},
     },
 }
+
+
+# ---------------------------------------------------------------- 0.7: Fragen-Assistent, Optionen, Menü am Zähler
+
+SITUATION_DATA = {
+    "heating": T("Womit heizt du?", "How do you heat?"),
+    "hot_water": T("Wie wird Warmwasser erzeugt?", "How is hot water produced?"),
+    "extras": T("Was hast du noch?", "What else do you have?"),
+    "tenure": T("Wohnst du als …", "You live as …"),
+    "rhythm": T("Wie oft zahlst du Abschläge?", "How often do you pay advances?"),
+}
+CLIMATE_DATA = {
+    "outdoor_temp_entity": T("Außentemperatur-Sensor", "Outdoor temperature sensor"),
+    "weather_entity": T("Wetter-Entität", "Weather entity"),
+    "rooms": T("Raumtemperaturen", "Room temperatures"),
+    "heating_limit": T("Heizgrenze", "Heating limit"),
+    "indoor_ref": T("Innentemperatur für Gradtage", "Indoor reference for degree days"),
+}
+CLIMATE_DESC = {
+    "outdoor_temp_entity": T("Für Gradtage und den gelernten Kennwert. Ohne Außentemperatur gibt es keine Heizprognose.", "For degree days and the learned coefficient. Without an outdoor temperature there is no heating forecast."),
+    "heating_limit": T("Tage mit einem Tagesmittel darunter zählen als Heiztage (üblich 15 °C).", "Days with a mean below this count as heating days (usually 15 °C)."),
+    "indoor_ref": T("Üblich 20 °C (Gradtagzahl G20/15).", "Usually 20 °C (degree days G20/15)."),
+}
+S["config"]["step"] = {
+    "user": {
+        "title": T("Haushalt anlegen", "Set up household"),
+        "description": T("Ein paar Fragen zu deinem Haushalt. Danach fragt die Einrichtung nur noch, was dazu passt.",
+                         "A few questions about your household. Afterwards the setup only asks what fits."),
+        "data": {"name": T("Name", "Name"), **SITUATION_DATA},
+    },
+    "klima": {
+        "title": T("Heizung und Temperatur", "Heating and temperature"),
+        "description": T("Für die Heizprognose: Tagesmittel der Außentemperatur und Gradtage.", "For the heating forecast: daily mean outdoor temperature and degree days."),
+        "data": CLIMATE_DATA, "data_description": CLIMATE_DESC,
+    },
+    "abschluss": {
+        "title": T("Fast fertig", "Almost done"),
+        "description": T("Danach legst du beim Eintrag „Tarif-Cockpit“ über „Zähler hinzufügen“ deine Zähler an. Passend zu deinen Antworten: {zaehler}.",
+                         "Afterwards add your meters via “Add meter” on the “Tarif-Cockpit” entry. Matching your answers: {zaehler}."),
+        "data": {"tolerance_pct": T("Toleranz für „Passt“", "Tolerance for “on track”")},
+        "data_description": {"tolerance_pct": T("Abweichung, bis zu der das Urteil „Passt“ lautet.", "Deviation up to which the verdict is “on track”.")},
+    },
+}
+S["options"] = {"step": {"init": {
+    "title": T("Haushalt ändern", "Change household"),
+    "description": T("Änderungen laden das Tarif-Cockpit neu. Zähler, Verträge und Daten bleiben erhalten.", "Changes reload Tarif-Cockpit. Meters, contracts and data are kept."),
+    "data": {**SITUATION_DATA, **CLIMATE_DATA, "tolerance_pct": T("Toleranz für „Passt“", "Tolerance for “on track”")},
+    "data_description": CLIMATE_DESC,
+}}}
+S["selector"].update({
+    "heating": {"options": {"gas": T("Gas", "Gas"), "fernwaerme": T("Fernwärme", "District heating"), "waermepumpe": T("Wärmepumpe", "Heat pump"),
+                            "strom": T("Strom (Elektro, Split-Klima)", "Electricity (direct, split AC)"), "kaminofen": T("Kaminofen", "Wood stove"),
+                            "oel_pellets": T("Öl oder Pellets (folgt nach 1.0)", "Oil or pellets (after 1.0)"), "keine": T("Keine eigene Heizung", "No own heating")}},
+    "hot_water": {"options": {"heizung": T("Über die Heizung", "Via the heating"), "strom": T("Durchlauferhitzer oder Boiler (Strom)", "Instantaneous or boiler (electric)"),
+                              "waermepumpe": T("Wärmepumpe", "Heat pump"), "solarthermie": T("Solarthermie (unterstützend)", "Solar thermal (supporting)")}},
+    "extras": {"options": {"pv": T("PV-Anlage", "PV system"), "speicher": T("Batteriespeicher", "Battery storage"), "wallbox": T("Wallbox", "Wallbox")}},
+    "tenure": {"options": {"eigentuemer": T("Eigentümer", "Owner"), "mieter": T("Mieter", "Tenant")}},
+})
+SUB = S["config_subentries"]["zaehler"]
+SUB["step"]["user"]["description"] = T("Was misst der Zähler? Passend zu deinem Haushalt fehlen noch: {fehlen}.", "What does the meter measure? Still missing for your household: {fehlen}.")
+SUB["step"]["stammdaten"] = SUB["step"].pop("reconfigure")
+SUB["step"]["reconfigure"] = {"title": T("Zähler ändern", "Change meter"), "description": T("Was möchtest du ändern?", "What do you want to change?"),
+                              "menu_options": {"stammdaten": T("Name, Ersatzquelle, Brennwert", "Name, fallback source, calorific value"),
+                                               "anbieterwechsel": T("Anbieter wechseln", "Change supplier"),
+                                               "preis_aendern": T("Preis ändern", "Change price"),
+                                               "abschlag_aendern": T("Abschlag ändern", "Change advance payment")}}
+PRICE_DATA = {"valid_from": T("Gültig ab", "Valid from"), "work_price": T("Arbeitspreis", "Unit price"), "base_price": T("Grundpreis je Monat", "Standing charge per month"),
+              "metering_price": T("Messpreis je Monat", "Metering charge per month"), "calorific": T("Brennwert", "Calorific value"), "z_factor": T("Zustandszahl", "Conversion factor (Z)"),
+              "wastewater_price": T("Abwasser je m³", "Wastewater per m³"), "fixed_yearly": T("Feste Beträge je Jahr (z. B. Niederschlagswasser)", "Fixed amounts per year (e.g. rainwater)"),
+              "demand_price": T("Leistungspreis", "Demand charge"), "demand_kw": T("Anschlussleistung", "Connected load")}
+ADV_DATA = {"valid_from": T("Gültig ab", "Valid from"), "amount": T("Abschlag", "Advance payment"), "pay_day": T("Zahltag im Monat", "Day of month"),
+            "rhythm": T("Rhythmus", "Interval"), "max_per_period": T("Abschläge je Abrechnungsjahr (z. B. 11)", "Payments per billing year (e.g. 11)")}
+SUB["step"]["preis"]["data"] = PRICE_DATA
+SUB["step"]["abschlag"]["data"] = ADV_DATA
+SUB["step"]["zusammenfassung"] = {
+    "title": T("Zusammenfassung", "Summary"),
+    "description": T("**Perioden:** {perioden} (¹ = Rumpfjahr)\n\n**Preise:** {preis}\n\n**Abschläge:** {abschlag}\n\n**Erste Prognose:** {prognose}\n\nMit „OK“ wird der Zähler angelegt.",
+                     "**Periods:** {perioden} (¹ = short year)\n\n**Prices:** {preis}\n\n**Advances:** {abschlag}\n\n**First forecast:** {prognose}\n\n“OK” creates the meter."),
+}
+SUB["step"]["preis_aendern"] = {"title": T("Preis ändern", "Change price"),
+                                "description": T("Neuer Preis ab einem Datum; der bisherige endet am Vortag. Beendete Perioden bleiben unverändert. {error}", "New price from a date; the previous one ends the day before. Ended periods stay unchanged. {error}"),
+                                "data": PRICE_DATA}
+SUB["step"]["abschlag_aendern"] = {"title": T("Abschlag ändern", "Change advance payment"),
+                                   "description": T("Neuer Abschlag ab einem Zahltag; frühere Termine bleiben unverändert. {error}", "New advance from a payment day; earlier dates stay unchanged. {error}"),
+                                   "data": ADV_DATA}
+SUB["step"]["anbieterwechsel"] = {"title": T("Anbieter wechseln", "Change supplier"),
+                                  "description": T("Der bisherige Vertrag endet am Vortag des Wechsels (Schlussrechnung). Die Wechselablesung ist optional; liegt der Wechsel in der Zukunft, trägst du sie danach mit der Aktion „Ablesung hinzufügen“ nach. {error}",
+                                                   "The current contract ends the day before the switch (final bill). The switch reading is optional; if the switch is in the future, add it afterwards with the action “Add reading”. {error}"),
+                                  "data": {"switch_date": T("Erster Liefertag beim neuen Anbieter", "First day with the new supplier"),
+                                           "value": T("Zählerstand zum Wechsel", "Meter reading at the switch"), "quality": T("Qualität", "Quality")}}
+SUB["step"]["wechsel_vertrag"] = {"title": T("Neuer Vertrag", "New contract"),
+                                  "description": T("Neuer Vertrag ab {datum}. Wann rechnet der neue Versorger ab? Stichtag als TT.MM (erster Tag der Periode).",
+                                                   "New contract from {datum}. When does the new supplier bill? Fixed day as DD.MM (first day of the period)."),
+                                  "data": dict(SUB["step"]["vertrag"]["data"])}
+SUB["step"]["wechsel_preis"] = {"title": T("Preise und Abschlag des neuen Vertrags", "Prices and advance of the new contract"),
+                                "description": T("Erste Perioden: {preview} (¹ = Rumpfjahr). {error}", "First periods: {preview} (¹ = short year). {error}"),
+                                "data": {**PRICE_DATA, **ADV_DATA}}
+SUB["error"]["billing_error"] = T("Nicht möglich, siehe Hinweis oben.", "Not possible, see the note above.")
+SUB["error"]["switch_invalid"] = T("Wechsel an diesem Datum nicht möglich, siehe Hinweis oben.", "A switch on this date is not possible, see the note above.")
+SUB["error"]["switch_reading_future"] = T("Der Wechsel liegt in der Zukunft: den Zählerstand bitte erst nach dem Wechsel eintragen (Aktion „Ablesung hinzufügen“).",
+                                          "The switch is in the future: please enter the meter reading after the switch (action “Add reading”).")
+SUB["step"]["stammdaten"].setdefault("data", {})
+SUB["abort"].update({"price_saved": T("Der Preis wurde gespeichert.", "The price was saved."),
+                     "advance_saved": T("Der Abschlag wurde gespeichert.", "The advance payment was saved."),
+                     "switch_saved": T("Der Anbieterwechsel wurde gespeichert.", "The supplier change was saved."),
+                     "not_loaded": T("Die Integration ist gerade nicht geladen. Bitte unter Einstellungen → Geräte & Dienste prüfen und neu laden.",
+                                     "The integration is not loaded right now. Please check and reload it under Settings → Devices & services.")})
 
 
 def pick(o, i):

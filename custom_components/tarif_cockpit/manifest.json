@@ -11,7 +11,8 @@
   ],
   "config_flow": true,
   "dependencies": [
-    "http"
+    "http",
+    "websocket_api"
   ],
   "documentation": "https://github.com/HasenbeinMH/tarif-cockpit",
   "integration_type": "service",
@@ -19,5 +20,5 @@
   "issue_tracker": "https://github.com/HasenbeinMH/tarif-cockpit/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.6.0"
+  "version": "0.7.0"
 }

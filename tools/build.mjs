@@ -22,6 +22,7 @@ const ORDER = [
   'i18n.js',
   'chart.js',
   'base-card.js',
+  'integration.js',
   'wizard.js',
   'editor-kit.js',
   'overview-card.js',

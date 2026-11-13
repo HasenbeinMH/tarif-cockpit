@@ -164,7 +164,8 @@ async def test_subentry_flow_wallbox_and_reconfigure(hass: HomeAssistant) -> Non
     assert wb.parent_meter_id == "m1" and not rt.contracts(wb.meter_id)
     # Neu konfigurieren: Ersatzquelle setzen
     r = await flow.async_init((entry.entry_id, SUBENTRY_METER), context={"source": "reconfigure", "subentry_id": "m1"})
-    assert r["step_id"] == "reconfigure"
+    assert r["type"] is FlowResultType.MENU
+    r = await flow.async_configure(r["flow_id"], {"next_step_id": "stammdaten"})
     r = await flow.async_configure(r["flow_id"], {"name": "Strom", "history_entity": "sensor.zaehler", "annual_consumption": 3500})
     assert r["type"] is FlowResultType.ABORT and r["reason"] == "reconfigure_successful"
     await hass.async_block_till_done()

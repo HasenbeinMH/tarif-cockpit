@@ -7,6 +7,7 @@ ersetzt eine frühere Ablesung, ohne sie zu löschen. Beendete Perioden werden n
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+from typing import Any
 
 import voluptuous as vol
 
@@ -14,6 +15,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
+from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
@@ -166,7 +168,10 @@ def async_setup_services(hass: HomeAssistant) -> None:
         for rt, meters in targets:
             await rt.aggregator.async_run(meters=meters, start=call.data.get("von"), end=call.data.get("bis"), overwrite=True)
 
-    reg = hass.services.async_register
+    def reg(domain: str, name: str, func: Any, schema: Any, supports_response: SupportsResponse = SupportsResponse.NONE) -> None:
+        # Schreibende Aktionen nur für Administratoren; Automationen und Skripte laufen ohne Benutzer und sind nicht betroffen
+        async_register_admin_service(hass, domain, name, func, schema, supports_response)
+
     reg(DOMAIN, "add_ablesung", add_reading, SCHEMA_ADD_READING, supports_response=SupportsResponse.OPTIONAL)
     reg(DOMAIN, "ablesung_ungueltig", invalidate, SCHEMA_INVALIDATE)
     reg(DOMAIN, "add_folgevertrag", follow_up, SCHEMA_FOLLOW_UP, supports_response=SupportsResponse.OPTIONAL)
@@ -266,7 +271,10 @@ def async_setup_services_06(hass: HomeAssistant) -> None:
         rt.changed(meter_id=meter_id, flags=set())
         return {"rechnung_id": inv.invoice_id}
 
-    reg = hass.services.async_register
+    def reg(domain: str, name: str, func: Any, schema: Any, supports_response: SupportsResponse = SupportsResponse.NONE) -> None:
+        # Schreibende Aktionen nur für Administratoren; Automationen und Skripte laufen ohne Benutzer und sind nicht betroffen
+        async_register_admin_service(hass, domain, name, func, schema, supports_response)
+
     reg(DOMAIN, "set_preis", set_price, SCHEMA_PRICE, supports_response=SupportsResponse.OPTIONAL)
     reg(DOMAIN, "set_abschlag", set_advance, SCHEMA_ADVANCE, supports_response=SupportsResponse.OPTIONAL)
     reg(DOMAIN, "add_zahlung", add_payment, SCHEMA_PAYMENT, supports_response=SupportsResponse.OPTIONAL)

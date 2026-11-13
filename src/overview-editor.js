@@ -159,7 +159,89 @@
     };
   };
 
+  // Reiter "Integration": nur Zähler wählen und Darstellung (Abschnitt 7)
+  TC.integTab = (opts) => (root, api) => {
+    const single = !!(opts && opts.single);
+    const pick = (opts && opts.filter) || ((m) => m.rolle === 'main');
+    const t = TC.T;
+    const h = api.hass();
+    const cfg = api.config();
+    const el = (tag, style, text) => { const e = document.createElement(tag); if (style) e.style.cssText = style; if (text !== undefined) e.textContent = text; return e; };
+    root.appendChild(el('div', 'opacity:.75;margin:4px 0 10px', t('ei.text')));
+    const box = el('div');
+    root.appendChild(box);
+    if (!cfg.integration) {
+      box.appendChild(el('div', 'margin:6px 0 10px', t('ei.switch')));
+      const go = el('button', 'cursor:pointer;padding:8px 14px;border-radius:8px;border:none;background:var(--primary-color,#03a9f4);color:var(--text-primary-color,#fff);font:inherit', t('ei.switch_btn'));
+      go.type = 'button';
+      go.addEventListener('click', () => { api.emit(Object.assign({}, api.config(), { integration: true })); api.rerender(); });
+      box.appendChild(go);
+      return;
+    }
+    const draw = (meta) => {
+      box.innerHTML = '';
+      const hh = meta && meta.haushalte && meta.haushalte[0];
+      const mains = hh ? hh.zaehler.filter(pick) : [];
+      box.appendChild(el('div', 'font-weight:600;margin:8px 0 4px', t('ei.meters')));
+      if (!mains.length) box.appendChild(el('div', 'opacity:.7', t('ei.none')));
+      const chosen = Array.isArray(cfg.zaehler) && cfg.zaehler.length ? cfg.zaehler : single ? mains.slice(0, 1).map((m) => m.device_id) : mains.map((m) => m.device_id);
+      mains.forEach((m) => {
+        const l = el('label', 'display:flex;align-items:center;gap:8px;margin:6px 0');
+        const c = document.createElement('input'); c.type = single ? 'radio' : 'checkbox'; c.name = 'tcm'; c.checked = chosen.includes(m.device_id); c.dataset.meter = m.device_id;
+        c.addEventListener('change', () => {
+          const ids = [...box.querySelectorAll('input[data-meter]')].filter((x) => x.checked).map((x) => x.dataset.meter);
+          const next = Object.assign({}, api.config(), { integration: true });
+          if (ids.length && (single || ids.length < mains.length)) next.zaehler = ids; else delete next.zaehler;
+          api.emit(next);
+        });
+        l.appendChild(c); const ml = t('media.' + m.medium); l.appendChild(document.createTextNode(m.name === ml ? m.name : `${m.name} (${ml})`));
+        box.appendChild(l);
+      });
+      box.appendChild(el('div', 'font-weight:600;margin:12px 0 4px', t('ei.title')));
+      const ti = el('input', 'width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--divider-color,#555);background:var(--card-background-color,#111);color:var(--primary-text-color,#fff);font:inherit');
+      ti.value = cfg.title || ''; ti.placeholder = t('card.title');
+      ti.addEventListener('change', () => { const next = Object.assign({}, api.config(), { integration: true, title: ti.value }); if (!ti.value) delete next.title; api.emit(next); });
+      box.appendChild(ti);
+      box.appendChild(el('div', 'font-weight:600;margin:12px 0 4px', t('ei.theme')));
+      const sel = el('select', 'width:100%;padding:8px;border-radius:8px;border:1px solid var(--divider-color,#555);background:var(--card-background-color,#111);color:var(--primary-text-color,#fff);font:inherit');
+      TC.THEME_KEYS.forEach((k) => { const o = document.createElement('option'); o.value = k; o.textContent = t('th.' + k); sel.appendChild(o); });
+      sel.value = cfg.theme || 'dunkel';
+      sel.addEventListener('change', () => { const next = Object.assign({}, api.config(), { integration: true, theme: sel.value }); if (sel.value === 'dunkel') delete next.theme; api.emit(next); });
+      box.appendChild(sel);
+      // Farben je Medium der gewählten Zähler
+      const media = [...new Set(mains.map((m) => m.medium))];
+      if (media.length) {
+        box.appendChild(el('div', 'font-weight:600;margin:12px 0 4px', t('ei.colors')));
+        const row = el('div', 'display:flex;gap:14px;flex-wrap:wrap');
+        media.forEach((md) => {
+          const lab = el('label', 'display:flex;align-items:center;gap:6px');
+          const inp = document.createElement('input'); inp.type = 'color'; inp.dataset.color = md;
+          const cur = (cfg.colors || {})[md];
+          const rgb = (TC.MEDIA[md] || TC.MEDIA.strom).color.split(',').map((x) => Number(x).toString(16).padStart(2, '0')).join('');
+          inp.value = typeof cur === 'string' && /^#[0-9a-f]{6}$/i.test(cur) ? cur : '#' + rgb;
+          inp.addEventListener('change', () => {
+            const next = Object.assign({}, api.config(), { integration: true });
+            next.colors = Object.assign({}, next.colors || {}, { [md]: inp.value });
+            api.emit(next);
+          });
+          lab.appendChild(inp); lab.appendChild(document.createTextNode(t('media.' + md)));
+          row.appendChild(lab);
+        });
+        box.appendChild(row);
+      }
+      const sm = el('button', 'cursor:pointer;margin-top:14px;padding:8px 14px;border-radius:8px;border:1px solid var(--divider-color,#555);background:transparent;color:inherit;font:inherit', t('ei.sensor_mode'));
+      sm.type = 'button';
+      sm.addEventListener('click', () => { const next = Object.assign({}, api.config()); delete next.integration; delete next.zaehler; api.emit(next); api.setTab('form'); });
+      box.appendChild(sm);
+    };
+    if (h && typeof h.callWS === 'function') {
+      box.textContent = TC.T('in.loading');
+      h.callWS({ type: 'tarif_cockpit/zaehler' }).then(draw).catch(() => { box.innerHTML = TC.T('in.missing'); });
+    } else draw(null);
+  };
+
   TC.defineEditor('tarif-cockpit-card-editor', {
+    integTab: TC.integTab(),
     needsSetup: (c) => !Object.keys(TC.MEDIA).some((k) => c[k] && typeof c[k] === 'object' && Object.keys(c[k]).length),
     steps,
     form,

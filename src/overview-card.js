@@ -8,7 +8,11 @@
     static getConfigElement() { return document.createElement('tarif-cockpit-card-editor'); }
 
     // Vorschläge aus den vorhandenen Entitäten, keine fest eingebauten Namen (Regel 6)
-    static getStubConfig(hass) { return TC.overviewStub ? TC.overviewStub(hass) : {}; }
+    static getStubConfig(hass) {
+      // Mit eingerichteter Integration: Integrations-Modus (keine Entitätsnamen nötig)
+      if (TC.integ && TC.integ.available(hass)) return { integration: true };
+      return TC.overviewStub ? TC.overviewStub(hass) : {};
+    }
 
     getCardSize() { return 9; }
 
@@ -109,6 +113,10 @@
 
     _render() {
       if (!this._prepare()) return;
+      if (this._c.integration && TC.integ) {
+        this._put(TC.integ.render(this));
+        return;
+      }
       const { T: t, OK, BAD, DARK } = TC;
       const c = this._c;
       const cur = TC.cur();

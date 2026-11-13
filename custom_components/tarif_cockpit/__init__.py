@@ -32,6 +32,7 @@ from .engine.quality import Quality
 from .frontend import async_register_frontend
 from .runtime import TarifRuntime
 from .services import async_setup_services
+from .websocket import async_setup_websocket
 from .store import TarifStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,8 +44,9 @@ type TarifConfigEntry = ConfigEntry[TarifRuntime]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Services einmal je Home Assistant registrieren."""
+    """Services und WebSocket-Befehl einmal je Home Assistant registrieren."""
     async_setup_services(hass)
+    async_setup_websocket(hass)
     return True
 
 
@@ -186,7 +188,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: TarifConfigEntry) -> boo
 
 
 def _subentry_signature(entry: ConfigEntry) -> str:
-    return json.dumps(sorted((sid, dict(sub.data), sub.title) for sid, sub in entry.subentries.items()), sort_keys=True, default=str)
+    """Zähler (Subentries) und Haushalt: ändert sich etwas davon (z. B. Optionen), wird neu geladen."""
+    subs = sorted((sid, dict(sub.data), sub.title) for sid, sub in entry.subentries.items())
+    return json.dumps([subs, entry.data.get(CONF_HOUSEHOLD)], sort_keys=True, default=str)
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: TarifConfigEntry) -> None:
@@ -230,4 +234,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 hass.config_entries.async_update_subentry(entry, sub, data={**sub.data, CONF_METER: meter})
         hass.config_entries.async_update_entry(entry, minor_version=3)
         _LOGGER.info("Tarif-Cockpit: Eintrag auf Version 1.3 migriert")
+    if entry.version == 1 and entry.minor_version < 4:
+        # 1.3 → 1.4: Antworten des Fragen-Assistenten; bestehende Haushalte haben (noch) keine
+        household = dict(entry.data.get(CONF_HOUSEHOLD, {}))
+        household.setdefault("situation", {})
+        hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_HOUSEHOLD: household}, minor_version=4)
+        _LOGGER.info("Tarif-Cockpit: Eintrag auf Version 1.4 migriert")
     return True

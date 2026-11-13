@@ -7,7 +7,10 @@
   class TarifCockpitAnalyseCard extends TC.BaseCard {
     static getConfigElement() { return document.createElement('tarif-cockpit-analyse-card-editor'); }
 
-    static getStubConfig(hass) { return TC.analyseStub ? TC.analyseStub(hass) : {}; }
+    static getStubConfig(hass) {
+      if (TC.integ && TC.integ.available(hass)) return { integration: true };
+      return TC.analyseStub ? TC.analyseStub(hass) : {};
+    }
 
     getCardSize() { return 7; }
 
@@ -20,12 +23,24 @@
       this._afterHass();
     }
 
-    _afterHass() { if (this._c) TC.loadHistory(this, this._c); }
+    _afterHass() {
+      if (!this._c) return;
+      if (this._c.integration && TC.integ) {
+        const a = TC.integ.analyseConfig(this);
+        if (a) TC.loadHistory(this, a);
+        return;
+      }
+      TC.loadHistory(this, this._c);
+    }
 
     _render() {
       if (!this._prepare()) return;
       const t = TC.T;
       const c = this._c;
+      if (c.integration && TC.integ) {
+        this._put(TC.integ.renderAnalyse(this));
+        return;
+      }
       const sub = c.subtitle ? `<small>${esc(c.subtitle)}</small>` : '';
       const header = this._header(c.icon || 'mdi:chart-bell-curve-cumulative', c.title || t('an.title'), sub, '');
       const any = ['kennwert', 'consumption', 'temperature', 'degree_days'].some((k) => c[k]) || (Array.isArray(c.extras) && c.extras.length);

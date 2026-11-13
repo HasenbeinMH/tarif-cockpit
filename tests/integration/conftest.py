@@ -15,7 +15,7 @@ from custom_components.tarif_cockpit.const import (
 )
 
 TODAY = "2026-11-13 12:00:00+01:00"
-HOUSEHOLD = {"name": "Testhaus", "outdoor_temp_entity": None, "weather_entity": None, "heating_limit": 15.0, "indoor_ref": 20.0, "tolerance_pct": 5.0, "rooms": []}
+HOUSEHOLD = {"name": "Testhaus", "outdoor_temp_entity": None, "weather_entity": None, "heating_limit": 15.0, "indoor_ref": 20.0, "tolerance_pct": 5.0, "rooms": [], "situation": {}}
 
 
 @pytest.fixture(autouse=True)
@@ -48,7 +48,7 @@ def meter_subentry(
     )
 
 
-def make_entry(*subentries: ConfigSubentryData, store_created: bool = False, minor_version: int = 3, household: dict | None = None) -> MockConfigEntry:
+def make_entry(*subentries: ConfigSubentryData, store_created: bool = False, minor_version: int = 4, household: dict | None = None) -> MockConfigEntry:
     data: dict[str, Any] = {CONF_HOUSEHOLD: household or dict(HOUSEHOLD)}
     if store_created:
         data[CONF_STORE_CREATED] = True

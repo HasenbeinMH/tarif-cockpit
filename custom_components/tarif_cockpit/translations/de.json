@@ -3,20 +3,39 @@
     "step": {
       "user": {
         "title": "Haushalt anlegen",
-        "description": "Grunddaten für alle Zähler. Zähler mit Vertrag fügst du danach über „Zähler hinzufügen“ hinzu.",
+        "description": "Ein paar Fragen zu deinem Haushalt. Danach fragt die Einrichtung nur noch, was dazu passt.",
         "data": {
           "name": "Name",
+          "heating": "Womit heizt du?",
+          "hot_water": "Wie wird Warmwasser erzeugt?",
+          "extras": "Was hast du noch?",
+          "tenure": "Wohnst du als …",
+          "rhythm": "Wie oft zahlst du Abschläge?"
+        }
+      },
+      "klima": {
+        "title": "Heizung und Temperatur",
+        "description": "Für die Heizprognose: Tagesmittel der Außentemperatur und Gradtage.",
+        "data": {
           "outdoor_temp_entity": "Außentemperatur-Sensor",
           "weather_entity": "Wetter-Entität",
           "rooms": "Raumtemperaturen",
           "heating_limit": "Heizgrenze",
-          "indoor_ref": "Innentemperatur für Gradtage",
+          "indoor_ref": "Innentemperatur für Gradtage"
+        },
+        "data_description": {
+          "outdoor_temp_entity": "Für Gradtage und den gelernten Kennwert. Ohne Außentemperatur gibt es keine Heizprognose.",
+          "heating_limit": "Tage mit einem Tagesmittel darunter zählen als Heiztage (üblich 15 °C).",
+          "indoor_ref": "Üblich 20 °C (Gradtagzahl G20/15)."
+        }
+      },
+      "abschluss": {
+        "title": "Fast fertig",
+        "description": "Danach legst du beim Eintrag „Tarif-Cockpit“ über „Zähler hinzufügen“ deine Zähler an. Passend zu deinen Antworten: {zaehler}.",
+        "data": {
           "tolerance_pct": "Toleranz für „Passt“"
         },
         "data_description": {
-          "outdoor_temp_entity": "Für Gradtage und Tageswerte. Optional.",
-          "heating_limit": "Tage mit einem Tagesmittel darunter zählen als Heiztage (üblich 15 °C).",
-          "indoor_ref": "Üblich 20 °C (Gradtagzahl G20/15).",
           "tolerance_pct": "Abweichung, bis zu der das Urteil „Passt“ lautet."
         }
       }
@@ -34,7 +53,7 @@
       "step": {
         "user": {
           "title": "Zähler hinzufügen",
-          "description": "Was misst der Zähler?",
+          "description": "Was misst der Zähler? Passend zu deinem Haushalt fehlen noch: {fehlen}.",
           "data": {
             "medium": "Medium"
           }
@@ -62,7 +81,7 @@
         },
         "einheit": {
           "title": "Einheit",
-          "description": "Brennwert und Zustandszahl stehen auf der Gasrechnung. Sie sind optional.",
+          "description": "In welcher Einheit zählt der Zähler? Zählt ein Gaszähler in m³, braucht es den Brennwert von der Gasrechnung (Zustandszahl optional).",
           "data": {
             "unit": "Einheit des Zählers",
             "calorific": "Brennwert",
@@ -75,34 +94,29 @@
         },
         "preis": {
           "title": "Preise",
-          "description": "Preise zu Vertragsbeginn, wie im Vertrag (brutto oder netto, wie zuvor gewählt). Spätere Preisänderungen mit der Aktion „Preis ändern“.",
+          "description": "Preise zu Vertragsbeginn, wie im Vertrag (brutto oder netto, wie zuvor gewählt). Spätere Preisänderungen über „Neu konfigurieren“ am Zähler (oder die Aktion „Preis ändern“).",
           "data": {
+            "valid_from": "Gültig ab",
             "work_price": "Arbeitspreis",
             "base_price": "Grundpreis je Monat",
             "metering_price": "Messpreis je Monat",
+            "calorific": "Brennwert",
+            "z_factor": "Zustandszahl",
             "wastewater_price": "Abwasser je m³",
-            "fixed_yearly": "Feste Beträge je Jahr (z. B. Niederschlagswasser)"
+            "fixed_yearly": "Feste Beträge je Jahr (z. B. Niederschlagswasser)",
+            "demand_price": "Leistungspreis",
+            "demand_kw": "Anschlussleistung"
           }
         },
         "abschlag": {
           "title": "Abschläge",
-          "description": "Ohne Betrag gibt es keine Abschläge (z. B. bei Abrechnung über den Vermieter). Änderungen später mit der Aktion „Abschlag ändern“.",
+          "description": "Ohne Betrag gibt es keine Abschläge (z. B. bei Abrechnung über den Vermieter). Änderungen später über „Neu konfigurieren“ am Zähler, in der Karte oder mit der Aktion „Abschlag ändern“.",
           "data": {
+            "valid_from": "Gültig ab",
             "amount": "Abschlag",
             "pay_day": "Zahltag im Monat",
             "rhythm": "Rhythmus",
             "max_per_period": "Abschläge je Abrechnungsjahr (z. B. 11)"
-          }
-        },
-        "reconfigure": {
-          "title": "Zähler ändern",
-          "description": "Verträge, Preise und Abschläge änderst du mit den Aktionen des Tarif-Cockpits.",
-          "data": {
-            "name": "Name",
-            "history_entity": "Ersatzquelle für fehlende Historie",
-            "annual_consumption": "Jahresverbrauch laut letzter Rechnung",
-            "calorific": "Brennwert",
-            "z_factor": "Zustandszahl"
           }
         },
         "vertrag": {
@@ -121,11 +135,106 @@
         },
         "startstand": {
           "title": "Startstand",
-          "description": "Erste Abrechnungsperioden: {preview} (* = Rumpfjahr). Den Zählerstand zu Vertragsbeginn eintragen; bei einem Zähler mit Sensor ist er optional.",
+          "description": "Erste Abrechnungsperioden: {preview} (¹ = Rumpfjahr). Den Zählerstand zu Vertragsbeginn eintragen; bei einem Zähler mit Sensor ist er optional.",
           "data": {
             "value": "Zählerstand",
             "timestamp": "Zeitpunkt",
             "quality": "Qualität"
+          }
+        },
+        "stammdaten": {
+          "title": "Zähler ändern",
+          "description": "Verträge, Preise und Abschläge änderst du mit den Aktionen des Tarif-Cockpits.",
+          "data": {
+            "name": "Name",
+            "history_entity": "Ersatzquelle für fehlende Historie",
+            "annual_consumption": "Jahresverbrauch laut letzter Rechnung",
+            "calorific": "Brennwert",
+            "z_factor": "Zustandszahl"
+          }
+        },
+        "reconfigure": {
+          "title": "Zähler ändern",
+          "description": "Was möchtest du ändern?",
+          "menu_options": {
+            "stammdaten": "Name, Ersatzquelle, Brennwert",
+            "anbieterwechsel": "Anbieter wechseln",
+            "preis_aendern": "Preis ändern",
+            "abschlag_aendern": "Abschlag ändern"
+          }
+        },
+        "zusammenfassung": {
+          "title": "Zusammenfassung",
+          "description": "**Perioden:** {perioden} (¹ = Rumpfjahr)\n\n**Preise:** {preis}\n\n**Abschläge:** {abschlag}\n\n**Erste Prognose:** {prognose}\n\nMit „OK“ wird der Zähler angelegt."
+        },
+        "preis_aendern": {
+          "title": "Preis ändern",
+          "description": "Neuer Preis ab einem Datum; der bisherige endet am Vortag. Beendete Perioden bleiben unverändert. {error}",
+          "data": {
+            "valid_from": "Gültig ab",
+            "work_price": "Arbeitspreis",
+            "base_price": "Grundpreis je Monat",
+            "metering_price": "Messpreis je Monat",
+            "calorific": "Brennwert",
+            "z_factor": "Zustandszahl",
+            "wastewater_price": "Abwasser je m³",
+            "fixed_yearly": "Feste Beträge je Jahr (z. B. Niederschlagswasser)",
+            "demand_price": "Leistungspreis",
+            "demand_kw": "Anschlussleistung"
+          }
+        },
+        "abschlag_aendern": {
+          "title": "Abschlag ändern",
+          "description": "Neuer Abschlag ab einem Zahltag; frühere Termine bleiben unverändert. {error}",
+          "data": {
+            "valid_from": "Gültig ab",
+            "amount": "Abschlag",
+            "pay_day": "Zahltag im Monat",
+            "rhythm": "Rhythmus",
+            "max_per_period": "Abschläge je Abrechnungsjahr (z. B. 11)"
+          }
+        },
+        "anbieterwechsel": {
+          "title": "Anbieter wechseln",
+          "description": "Der bisherige Vertrag endet am Vortag des Wechsels (Schlussrechnung). Die Wechselablesung ist optional; liegt der Wechsel in der Zukunft, trägst du sie danach mit der Aktion „Ablesung hinzufügen“ nach. {error}",
+          "data": {
+            "switch_date": "Erster Liefertag beim neuen Anbieter",
+            "value": "Zählerstand zum Wechsel",
+            "quality": "Qualität"
+          }
+        },
+        "wechsel_vertrag": {
+          "title": "Neuer Vertrag",
+          "description": "Neuer Vertrag ab {datum}. Wann rechnet der neue Versorger ab? Stichtag als TT.MM (erster Tag der Periode).",
+          "data": {
+            "supplier": "Lieferant",
+            "tariff": "Tarif",
+            "start_date": "Vertragsbeginn",
+            "billing_rule": "Abrechnung",
+            "fixed_day": "Stichtag (TT.MM)",
+            "first_period_end": "Ende der ersten Periode",
+            "vat_mode": "Preise",
+            "vat_rate": "Mehrwertsteuer"
+          }
+        },
+        "wechsel_preis": {
+          "title": "Preise und Abschlag des neuen Vertrags",
+          "description": "Erste Perioden: {preview} (¹ = Rumpfjahr). {error}",
+          "data": {
+            "valid_from": "Gültig ab",
+            "work_price": "Arbeitspreis",
+            "base_price": "Grundpreis je Monat",
+            "metering_price": "Messpreis je Monat",
+            "calorific": "Brennwert",
+            "z_factor": "Zustandszahl",
+            "wastewater_price": "Abwasser je m³",
+            "fixed_yearly": "Feste Beträge je Jahr (z. B. Niederschlagswasser)",
+            "demand_price": "Leistungspreis",
+            "demand_kw": "Anschlussleistung",
+            "amount": "Abschlag",
+            "pay_day": "Zahltag im Monat",
+            "rhythm": "Rhythmus",
+            "max_per_period": "Abschläge je Abrechnungsjahr (z. B. 11)"
           }
         }
       },
@@ -135,10 +244,17 @@
         "required_for_manual": "Bei „von Hand“ wird das Ende der ersten Periode gebraucht.",
         "required_without_entity": "Ohne Zählerstand-Sensor wird ein Startstand gebraucht.",
         "no_main_meter": "Es gibt noch keinen Hauptzähler dieses Mediums.",
-        "required_for_m3": "Bei einem Gaszähler in m³ werden Brennwert und Zustandszahl gebraucht (stehen auf der Gasrechnung)."
+        "required_for_m3": "Bei einem Gaszähler in m³ werden Brennwert und Zustandszahl gebraucht (stehen auf der Gasrechnung).",
+        "billing_error": "Nicht möglich, siehe Hinweis oben.",
+        "switch_invalid": "Wechsel an diesem Datum nicht möglich, siehe Hinweis oben.",
+        "switch_reading_future": "Der Wechsel liegt in der Zukunft: den Zählerstand bitte erst nach dem Wechsel eintragen (Aktion „Ablesung hinzufügen“)."
       },
       "abort": {
-        "reconfigure_successful": "Der Zähler wurde geändert."
+        "reconfigure_successful": "Der Zähler wurde geändert.",
+        "price_saved": "Der Preis wurde gespeichert.",
+        "advance_saved": "Der Abschlag wurde gespeichert.",
+        "switch_saved": "Der Anbieterwechsel wurde gespeichert.",
+        "not_loaded": "Die Integration ist gerade nicht geladen. Bitte unter Einstellungen → Geräte & Dienste prüfen und neu laden."
       }
     }
   },
@@ -199,6 +315,38 @@
         "paid": "bezahlt",
         "planned": "geplant",
         "cancelled": "storniert"
+      }
+    },
+    "heating": {
+      "options": {
+        "gas": "Gas",
+        "fernwaerme": "Fernwärme",
+        "waermepumpe": "Wärmepumpe",
+        "strom": "Strom (Elektro, Split-Klima)",
+        "kaminofen": "Kaminofen",
+        "oel_pellets": "Öl oder Pellets (folgt nach 1.0)",
+        "keine": "Keine eigene Heizung"
+      }
+    },
+    "hot_water": {
+      "options": {
+        "heizung": "Über die Heizung",
+        "strom": "Durchlauferhitzer oder Boiler (Strom)",
+        "waermepumpe": "Wärmepumpe",
+        "solarthermie": "Solarthermie (unterstützend)"
+      }
+    },
+    "extras": {
+      "options": {
+        "pv": "PV-Anlage",
+        "speicher": "Batteriespeicher",
+        "wallbox": "Wallbox"
+      }
+    },
+    "tenure": {
+      "options": {
+        "eigentuemer": "Eigentümer",
+        "mieter": "Mieter"
       }
     }
   },
@@ -590,6 +738,32 @@
     },
     "reading_already_replaced": {
       "message": "Diese Ablesung ist schon ersetzt oder ungültig ({id}). Bitte die aktuell gültige Ablesung angeben."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Haushalt ändern",
+        "description": "Änderungen laden das Tarif-Cockpit neu. Zähler, Verträge und Daten bleiben erhalten.",
+        "data": {
+          "heating": "Womit heizt du?",
+          "hot_water": "Wie wird Warmwasser erzeugt?",
+          "extras": "Was hast du noch?",
+          "tenure": "Wohnst du als …",
+          "rhythm": "Wie oft zahlst du Abschläge?",
+          "outdoor_temp_entity": "Außentemperatur-Sensor",
+          "weather_entity": "Wetter-Entität",
+          "rooms": "Raumtemperaturen",
+          "heating_limit": "Heizgrenze",
+          "indoor_ref": "Innentemperatur für Gradtage",
+          "tolerance_pct": "Toleranz für „Passt“"
+        },
+        "data_description": {
+          "outdoor_temp_entity": "Für Gradtage und den gelernten Kennwert. Ohne Außentemperatur gibt es keine Heizprognose.",
+          "heating_limit": "Tage mit einem Tagesmittel darunter zählen als Heiztage (üblich 15 °C).",
+          "indoor_ref": "Üblich 20 °C (Gradtagzahl G20/15)."
+        }
+      }
     }
   }
 }

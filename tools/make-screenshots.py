@@ -42,6 +42,12 @@ JOBS = [
     ('editor.html', 'editor-5-fertig', 'scene=haus&cfg=leer&tab=wiz&step=7', 600, EDIT),
     ('editor.html', 'editor-alle-felder', 'scene=haus&tab=form', 600, EDIT),
     ('editor.html', 'editor-analyse', 'card=analyse&scene=haus&cfg=nichts', 600, EDIT),
+    # Integrations-Modus (0.7)
+    ('overview.html', 'integration-uebersicht', 'scene=integration', 1100, CARD),
+    ('overview.html', 'integration-lernt', 'scene=lernt', 1100, CARD),
+    ('overview.html', 'integration-hell', 'scene=integration&theme=hell', 1100, CARD),
+    ('analyse.html', 'integration-analyse', 'scene=integration', 1100, CARD),
+    ('editor.html', 'integration-editor', 'scene=integ_neu', 600, EDIT),
 ]
 
 

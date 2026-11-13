@@ -94,6 +94,7 @@
   };
 
   TC.defineEditor('tarif-cockpit-analyse-card-editor', {
+    integTab: TC.integTab({ single: true, filter: (m) => m.rolle === 'main' && ['gas', 'fernwaerme', 'waerme'].includes(m.medium) }),
     needsSetup: (c) => !(c.kennwert || c.consumption),
     steps,
     form,

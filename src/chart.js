@@ -113,11 +113,11 @@
     const c = TC.rgbOf(a.color, MEDIA.gas.color);
     const kw = TC.num(h, a.kennwert);
     const prev = TC.num(h, a.kennwert_previous);
-    let pill = '<span class="pill" style="--q:' + INFO + ';--qd:' + DARK[INFO] + '">' + esc(t('an.wait')) + '</span>';
+    let pill = '<span class="pill" style="--q:' + INFO + ';--qd:' + DARK[INFO] + '">' + esc(a.wait_text || t('an.wait')) + '</span>';
     let big = '', cmp = '';
     if (kw !== null) {
       pill = '';
-      big = `<div class="big" style="--q:${c};--qd:${c}"><span class="num">${nf(kw, 2)}</span><span class="unit">kWh/Kd</span><small>${esc(t('an.kw_last'))}</small></div>`;
+      big = `<div class="big" style="--q:${c};--qd:${c}"><span class="num">${nf(kw, 2)}</span><span class="unit">kWh/Kd</span><small>${esc(a.kw_caption || t('an.kw_last'))}</small></div>`;
       if (prev !== null && prev > 0) {
         const p = (kw / prev - 1) * 100;
         const txt = Math.abs(p) < 5 ? t('an.same') : p > 0 ? t('an.more') : t('an.less');

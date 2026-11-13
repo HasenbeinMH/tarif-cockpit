@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.7.0 – 2026-11-13
+
+Die Integration ist **bedienbar**: Einrichtung in einer frischen Home-Assistant-Instanz komplett in der Oberfläche, ohne YAML, von den Fragen zum Haushalt bis zur Karte im Dashboard. Schritt für Schritt mit Bildern: [docs/EINRICHTUNG.md](docs/EINRICHTUNG.md). Umstieg: [docs/MIGRATION.md](docs/MIGRATION.md).
+
+### Neu
+- **Fragen statt Felder** bei der Einrichtung des Haushalts: Womit heizt du? Wie wird Warmwasser erzeugt? PV, Speicher, Wallbox? Eigentümer oder Mieter? Wie oft zahlst du Abschläge? Die Antworten steuern die folgenden Schritte (Klima-Schritt nur, wenn geheizt wird; Wallbox als Unterzähler nur, wenn angegeben; Rhythmus der Abschläge vorbelegt) und sind für die Wärmeerzeuger in 0.8 gespeichert. Der Abschluss nennt die Zähler, die aus den Antworten folgen.
+- **Konfigurieren am Haushalt:** Situation, Außentemperatur, Wetter, Räume, Heizgrenze, Innenbezug und Toleranz ändern; die Integration lädt neu, Daten bleiben.
+- **Zähler-Dialog:** Medium vorbelegt mit dem ersten noch fehlenden Zähler, am Ende eine **Zusammenfassung** mit Perioden, Preisen, Abschlägen und einer **ersten Prognose mit Qualität**, vom Rechenkern ohne Speichern gerechnet (mit Sensor oder mit Jahresverbrauch laut Rechnung).
+- **„Neu konfigurieren“ am Zähler** als Menü: Stammdaten, **Anbieter wechseln** (Wechseldatum, Wechselablesung echt oder geschätzt, neuer Vertrag, Preise und Abschlag; Wechsel in eine beendete Periode wird abgelehnt), **Preis ändern**, **Abschlag ändern**. Dieselbe Logik wie die Aktionen.
+- **Karte im Integrations-Modus** (`integration: true`, optional `zaehler`): Urteil, Saldo und Prognose aus den Sensoren der Integration, Abschlagsstufen als Text („4 × 166 € + 8 × 180 €“), empfohlener Abschlag (vorläufig bei Qualität unter „gut“), Prognose-Qualität, Grund bei fehlender Prognose, Lieferant und Anbieterwechsel in der laufenden Periode, Gesamtsaldo.
+- **Abschlagsdialog in der Karte:** Tipp auf den Abschlag, Betrag (vorbelegt mit dem empfohlenen) und „Gültig ab“ (nächster Zahltag), Speichern über `tarif_cockpit.set_abschlag`; Fehler der Aktion stehen im Dialog.
+- **Auswertungskarte im Integrations-Modus:** gelernter Kennwert, Warmwasser-Grundlast, Qualität mit Anzahl Tage und R², Verlauf des Kennwerts.
+- **Karten-Editor mit Reiter „Integration“:** Zähler wählen (vorgeschlagen: alle Hauptzähler), Titel, Farbschema, Farben je Medium. Mit eingerichteter Integration ist das der Start beim Hinzufügen der Karte; eine bestehende Sensor-Karte wird erst nach Rückfrage umgestellt, „Sensor-Modus verwenden“ wechselt zurück zu „Alle Felder“.
+- **Formulare vorbelegt:** „Preis ändern“ mit den laufenden Preisen (Mess-, Abwasser-, Leistungspreis gehen nicht verloren), „Abschlag ändern“ mit Betrag, Zahltag, Rhythmus und Höchstzahl.
+- **Anbieterwechsel prüft das Datum sofort** (beendete Periode, kein laufender Vertrag); ein Zählerstand zu einem Wechsel in der Zukunft wird abgelehnt.
+- **WebSocket-Befehl `tarif_cockpit/zaehler`:** Zähler mit Gerät, Medium, Rolle, Verträgen und der Zuordnung Kennung → Sensor.
+- **Abnahme-Durchlauf** `tools/abnahme.py`: Playwright klickt die Einrichtung in einer frischen Docker-Testinstanz durch und erzeugt die Bilder der Anleitung.
+
+### Geändert
+- **Aktionen nur für Administratoren** (`async_register_admin_service`); Automationen und Skripte sind nicht betroffen. Den Abschlagsdialog in der Karte sehen nur Administratoren.
+- Der WebSocket-Befehl meldet deaktivierte Sensoren nicht; die Karte lädt die Zuordnung gedrosselt nach (höchstens alle 30 s, nach einem Fehler alle 60 s).
+- Kennwert und Warmwasser-Grundlast haben `state_class: measurement` (Langzeitstatistik für den Verlauf in der Auswertungskarte).
+- Periodenvorschau markiert das Rumpfjahr mit „¹“ statt „*“ (Home Assistant machte daraus Kursivschrift).
+- Zahlen in der Zusammenfassung in der Schreibweise der Systemsprache (0,3154 statt 0.3154).
+- Eintrag 1.4 mit Migration (Situation des Haushalts, anfangs leer).
+
 ## 0.6.0 – 2026-11-13
 
 Die Integration **rechnet selbst**: Kosten, Abschläge, Prognose, Saldo, Urteil und empfohlener Abschlag. Template-Sensoren, Helfer und die tägliche Automation werden für die Prognose nicht mehr gebraucht. Umstieg mit Parallelbetrieb: [docs/MIGRATION.md](docs/MIGRATION.md).

@@ -1,5 +1,34 @@
 # Migration
 
+## 0.6 → 0.7: Karte auf die Integration umstellen
+
+Update einspielen, Home Assistant neu starten, Browser-Cache leeren (Strg+F5). Der Eintrag wird automatisch auf 1.4 migriert; die Antworten zum Haushalt (Heizung, Warmwasser, PV/Speicher/Wallbox, Eigentümer/Mieter, Rhythmus) sind danach leer und lassen sich unter **Konfigurieren** am Eintrag nachtragen. Gespeicherte Zähler, Verträge, Ablesungen, Preise und Abschläge bleiben unverändert.
+
+Die Karte stellst du am einfachsten im Editor um: Karte bearbeiten → Reiter **Integration** → Zähler wählen → Speichern. In YAML wird aus der langen Sensorliste:
+
+```yaml
+# vorher (0.6, Sensor-Modus mit den Sensoren der Integration)
+type: custom:tarif-cockpit-card
+strom:
+  cost: sensor.strom_kosten_bisher
+  advance_paid: sensor.strom_abschlage_bisher
+  forecast_cost: sensor.strom_prognose_kosten
+  advance: sensor.strom_abschlag
+  months: 12
+```
+
+```yaml
+# nachher
+type: custom:tarif-cockpit-card
+integration: true
+```
+
+Darstellungsoptionen (`title`, `theme`, `colors`, `advance_color`) bleiben. Neu: Urteil, Saldo und Prognose kommen direkt aus der Integration (auch bei Abschlagsstufen richtig), der empfohlene Abschlag und die Prognose-Qualität stehen in der Karte, und ein Tipp auf den Abschlag ändert ihn. Die Auswertungskarte entsprechend: `type: custom:tarif-cockpit-analyse-card` mit `integration: true`.
+
+Ohne `integration: true` funktionieren beide Karten weiter im Sensor-Modus; dein bisheriges YAML bleibt gültig.
+
+**Rechte:** Die Aktionen (`add_ablesung`, `set_abschlag` …) dürfen ab 0.7 nur Administratoren aufrufen. Automationen und Skripte laufen ohne Benutzer und sind nicht betroffen; ein Dashboard-Knopf, der eine Aktion direkt aufruft, funktioniert nur noch für Administratoren.
+
 ## 0.3 → 0.4
 
 Für die Tarifübersicht ist nichts zu tun. Bestehendes YAML läuft unverändert, die Abschlagsbalken sind jetzt grün. Wer lieber eine graue Farbe möchte, setzt zum Beispiel `advance_color: '#8b97b3'`. Das ähnelt dem früheren Grau, das je nach Farbschema leicht durchscheinend war.

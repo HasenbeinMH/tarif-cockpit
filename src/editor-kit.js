@@ -23,7 +23,7 @@
         const s = JSON.stringify(c || {});
         if (this._last === s) return; // eigene Änderung: nicht neu aufbauen (Eingabefokus bleibt erhalten)
         this._c = JSON.parse(s);
-        if (!this._tab) this._tab = def.needsSetup(this._c) ? 'wiz' : 'form';
+        if (!this._tab) this._tab = def.integTab && this._c.integration ? 'integ' : def.needsSetup(this._c) ? 'wiz' : 'form';
         this._wiz = null;
         this._render();
       }
@@ -33,6 +33,8 @@
         TC.useHass(h);
         if (this._wiz) this._wiz.setHass(h);
         if (this._form) this._form.hass = h;
+        // Mit Integration und noch leerer Karte: gleich den Reiter "Integration" zeigen
+        if (first && this._c && def.integTab && TC.integ && TC.integ.available(h) && def.needsSetup(this._c) && !this._c.integration) this._tab = 'integ';
         // Sprache steht erst mit hass fest: Reiter einmal neu beschriften
         if (first && this._c) this._render();
       }
@@ -50,7 +52,9 @@
         root.innerHTML = '';
         const bar = document.createElement('div');
         bar.style.cssText = 'display:flex;gap:6px;margin-bottom:10px';
-        [['wiz', t('ed.tab_wiz')], ['form', t('ed.tab_form')]].forEach(([k, txt]) => {
+        const tabs = [['wiz', t('ed.tab_wiz')], ['form', t('ed.tab_form')]];
+        if (def.integTab && (this._c.integration || (TC.integ && TC.integ.available(this._hass)))) tabs.unshift(['integ', t('ed.tab_integ')]);
+        tabs.forEach(([k, txt]) => {
           const b = document.createElement('button');
           b.type = 'button';
           b.textContent = txt;
@@ -60,6 +64,13 @@
           bar.appendChild(b);
         });
         root.appendChild(bar);
+        if (this._tab === 'integ' && def.integTab) {
+          def.integTab(root, {
+            config: () => this._c, hass: () => this._hass, emit: (c) => this._emit(c), rerender: () => this._render(),
+            setTab: (k) => { this._tab = k; this._wiz = null; this._form = null; this._render(); },
+          });
+          return;
+        }
         if (this._tab === 'wiz') {
           this._wiz = TC.createWizard({
             steps: def.steps(), hass: this._hass, config: this._c,

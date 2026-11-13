@@ -3,20 +3,39 @@
     "step": {
       "user": {
         "title": "Set up household",
-        "description": "Basic data for all meters. Add meters with their contract afterwards via “Add meter”.",
+        "description": "A few questions about your household. Afterwards the setup only asks what fits.",
         "data": {
           "name": "Name",
+          "heating": "How do you heat?",
+          "hot_water": "How is hot water produced?",
+          "extras": "What else do you have?",
+          "tenure": "You live as …",
+          "rhythm": "How often do you pay advances?"
+        }
+      },
+      "klima": {
+        "title": "Heating and temperature",
+        "description": "For the heating forecast: daily mean outdoor temperature and degree days.",
+        "data": {
           "outdoor_temp_entity": "Outdoor temperature sensor",
           "weather_entity": "Weather entity",
           "rooms": "Room temperatures",
           "heating_limit": "Heating limit",
-          "indoor_ref": "Indoor reference for degree days",
+          "indoor_ref": "Indoor reference for degree days"
+        },
+        "data_description": {
+          "outdoor_temp_entity": "For degree days and the learned coefficient. Without an outdoor temperature there is no heating forecast.",
+          "heating_limit": "Days with a mean below this count as heating days (usually 15 °C).",
+          "indoor_ref": "Usually 20 °C (degree days G20/15)."
+        }
+      },
+      "abschluss": {
+        "title": "Almost done",
+        "description": "Afterwards add your meters via “Add meter” on the “Tarif-Cockpit” entry. Matching your answers: {zaehler}.",
+        "data": {
           "tolerance_pct": "Tolerance for “on track”"
         },
         "data_description": {
-          "outdoor_temp_entity": "For degree days and daily values. Optional.",
-          "heating_limit": "Days with a mean below this count as heating days (usually 15 °C).",
-          "indoor_ref": "Usually 20 °C (degree days G20/15).",
           "tolerance_pct": "Deviation up to which the verdict is “on track”."
         }
       }
@@ -34,7 +53,7 @@
       "step": {
         "user": {
           "title": "Add meter",
-          "description": "What does the meter measure?",
+          "description": "What does the meter measure? Still missing for your household: {fehlen}.",
           "data": {
             "medium": "Utility"
           }
@@ -62,7 +81,7 @@
         },
         "einheit": {
           "title": "Unit",
-          "description": "Calorific value and conversion factor are on your gas bill. They are optional.",
+          "description": "Which unit does the meter count in? A gas meter counting in m³ needs the calorific value from your gas bill (conversion factor optional).",
           "data": {
             "unit": "Meter unit",
             "calorific": "Calorific value",
@@ -75,34 +94,29 @@
         },
         "preis": {
           "title": "Prices",
-          "description": "Prices at the start of the contract, as in the contract (gross or net as chosen before). Later price changes with the action “Set price”.",
+          "description": "Prices at the start of the contract, as in the contract (gross or net as chosen before). Later price changes via “Reconfigure” on the meter (or the action “Set price”).",
           "data": {
+            "valid_from": "Valid from",
             "work_price": "Unit price",
             "base_price": "Standing charge per month",
             "metering_price": "Metering charge per month",
+            "calorific": "Calorific value",
+            "z_factor": "Conversion factor (Z)",
             "wastewater_price": "Wastewater per m³",
-            "fixed_yearly": "Fixed amounts per year (e.g. rainwater)"
+            "fixed_yearly": "Fixed amounts per year (e.g. rainwater)",
+            "demand_price": "Demand charge",
+            "demand_kw": "Connected load"
           }
         },
         "abschlag": {
           "title": "Advance payments",
-          "description": "Without an amount there are no advance payments. Later changes with the action “Set advance payment”.",
+          "description": "Without an amount there are no advance payments. Later changes via “Reconfigure” on the meter, in the card or with the action “Set advance payment”.",
           "data": {
+            "valid_from": "Valid from",
             "amount": "Advance payment",
             "pay_day": "Day of month",
             "rhythm": "Interval",
             "max_per_period": "Payments per billing year (e.g. 11)"
-          }
-        },
-        "reconfigure": {
-          "title": "Change meter",
-          "description": "Change contracts, prices and advance payments with the Tarif-Cockpit actions.",
-          "data": {
-            "name": "Name",
-            "history_entity": "Fallback source for missing history",
-            "annual_consumption": "Annual consumption according to the last bill",
-            "calorific": "Calorific value",
-            "z_factor": "Conversion factor (Z)"
           }
         },
         "vertrag": {
@@ -121,11 +135,106 @@
         },
         "startstand": {
           "title": "Initial reading",
-          "description": "First billing periods: {preview} (* = short year). Enter the meter reading at the start of the contract; optional for a meter with a sensor.",
+          "description": "First billing periods: {preview} (¹ = short year). Enter the meter reading at the start of the contract; optional for a meter with a sensor.",
           "data": {
             "value": "Meter reading",
             "timestamp": "Time",
             "quality": "Quality"
+          }
+        },
+        "stammdaten": {
+          "title": "Change meter",
+          "description": "Change contracts, prices and advance payments with the Tarif-Cockpit actions.",
+          "data": {
+            "name": "Name",
+            "history_entity": "Fallback source for missing history",
+            "annual_consumption": "Annual consumption according to the last bill",
+            "calorific": "Calorific value",
+            "z_factor": "Conversion factor (Z)"
+          }
+        },
+        "reconfigure": {
+          "title": "Change meter",
+          "description": "What do you want to change?",
+          "menu_options": {
+            "stammdaten": "Name, fallback source, calorific value",
+            "anbieterwechsel": "Change supplier",
+            "preis_aendern": "Change price",
+            "abschlag_aendern": "Change advance payment"
+          }
+        },
+        "zusammenfassung": {
+          "title": "Summary",
+          "description": "**Periods:** {perioden} (¹ = short year)\n\n**Prices:** {preis}\n\n**Advances:** {abschlag}\n\n**First forecast:** {prognose}\n\n“OK” creates the meter."
+        },
+        "preis_aendern": {
+          "title": "Change price",
+          "description": "New price from a date; the previous one ends the day before. Ended periods stay unchanged. {error}",
+          "data": {
+            "valid_from": "Valid from",
+            "work_price": "Unit price",
+            "base_price": "Standing charge per month",
+            "metering_price": "Metering charge per month",
+            "calorific": "Calorific value",
+            "z_factor": "Conversion factor (Z)",
+            "wastewater_price": "Wastewater per m³",
+            "fixed_yearly": "Fixed amounts per year (e.g. rainwater)",
+            "demand_price": "Demand charge",
+            "demand_kw": "Connected load"
+          }
+        },
+        "abschlag_aendern": {
+          "title": "Change advance payment",
+          "description": "New advance from a payment day; earlier dates stay unchanged. {error}",
+          "data": {
+            "valid_from": "Valid from",
+            "amount": "Advance payment",
+            "pay_day": "Day of month",
+            "rhythm": "Interval",
+            "max_per_period": "Payments per billing year (e.g. 11)"
+          }
+        },
+        "anbieterwechsel": {
+          "title": "Change supplier",
+          "description": "The current contract ends the day before the switch (final bill). The switch reading is optional; if the switch is in the future, add it afterwards with the action “Add reading”. {error}",
+          "data": {
+            "switch_date": "First day with the new supplier",
+            "value": "Meter reading at the switch",
+            "quality": "Quality"
+          }
+        },
+        "wechsel_vertrag": {
+          "title": "New contract",
+          "description": "New contract from {datum}. When does the new supplier bill? Fixed day as DD.MM (first day of the period).",
+          "data": {
+            "supplier": "Supplier",
+            "tariff": "Tariff",
+            "start_date": "Contract start",
+            "billing_rule": "Billing",
+            "fixed_day": "Fixed day (DD.MM)",
+            "first_period_end": "End of the first period",
+            "vat_mode": "Prices",
+            "vat_rate": "VAT"
+          }
+        },
+        "wechsel_preis": {
+          "title": "Prices and advance of the new contract",
+          "description": "First periods: {preview} (¹ = short year). {error}",
+          "data": {
+            "valid_from": "Valid from",
+            "work_price": "Unit price",
+            "base_price": "Standing charge per month",
+            "metering_price": "Metering charge per month",
+            "calorific": "Calorific value",
+            "z_factor": "Conversion factor (Z)",
+            "wastewater_price": "Wastewater per m³",
+            "fixed_yearly": "Fixed amounts per year (e.g. rainwater)",
+            "demand_price": "Demand charge",
+            "demand_kw": "Connected load",
+            "amount": "Advance payment",
+            "pay_day": "Day of month",
+            "rhythm": "Interval",
+            "max_per_period": "Payments per billing year (e.g. 11)"
           }
         }
       },
@@ -135,10 +244,17 @@
         "required_for_manual": "“Manual” needs the end of the first period.",
         "required_without_entity": "Without a meter sensor an initial reading is required.",
         "no_main_meter": "There is no main meter of this utility yet.",
-        "required_for_m3": "A gas meter in m³ needs the calorific value and conversion factor (on your gas bill)."
+        "required_for_m3": "A gas meter in m³ needs the calorific value and conversion factor (on your gas bill).",
+        "billing_error": "Not possible, see the note above.",
+        "switch_invalid": "A switch on this date is not possible, see the note above.",
+        "switch_reading_future": "The switch is in the future: please enter the meter reading after the switch (action “Add reading”)."
       },
       "abort": {
-        "reconfigure_successful": "The meter was changed."
+        "reconfigure_successful": "The meter was changed.",
+        "price_saved": "The price was saved.",
+        "advance_saved": "The advance payment was saved.",
+        "switch_saved": "The supplier change was saved.",
+        "not_loaded": "The integration is not loaded right now. Please check and reload it under Settings → Devices & services."
       }
     }
   },
@@ -199,6 +315,38 @@
         "paid": "paid",
         "planned": "planned",
         "cancelled": "cancelled"
+      }
+    },
+    "heating": {
+      "options": {
+        "gas": "Gas",
+        "fernwaerme": "District heating",
+        "waermepumpe": "Heat pump",
+        "strom": "Electricity (direct, split AC)",
+        "kaminofen": "Wood stove",
+        "oel_pellets": "Oil or pellets (after 1.0)",
+        "keine": "No own heating"
+      }
+    },
+    "hot_water": {
+      "options": {
+        "heizung": "Via the heating",
+        "strom": "Instantaneous or boiler (electric)",
+        "waermepumpe": "Heat pump",
+        "solarthermie": "Solar thermal (supporting)"
+      }
+    },
+    "extras": {
+      "options": {
+        "pv": "PV system",
+        "speicher": "Battery storage",
+        "wallbox": "Wallbox"
+      }
+    },
+    "tenure": {
+      "options": {
+        "eigentuemer": "Owner",
+        "mieter": "Tenant"
       }
     }
   },
@@ -590,6 +738,32 @@
     },
     "reading_already_replaced": {
       "message": "This reading is already replaced or invalid ({id}). Please refer to the currently valid reading."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Change household",
+        "description": "Changes reload Tarif-Cockpit. Meters, contracts and data are kept.",
+        "data": {
+          "heating": "How do you heat?",
+          "hot_water": "How is hot water produced?",
+          "extras": "What else do you have?",
+          "tenure": "You live as …",
+          "rhythm": "How often do you pay advances?",
+          "outdoor_temp_entity": "Outdoor temperature sensor",
+          "weather_entity": "Weather entity",
+          "rooms": "Room temperatures",
+          "heating_limit": "Heating limit",
+          "indoor_ref": "Indoor reference for degree days",
+          "tolerance_pct": "Tolerance for “on track”"
+        },
+        "data_description": {
+          "outdoor_temp_entity": "For degree days and the learned coefficient. Without an outdoor temperature there is no heating forecast.",
+          "heating_limit": "Days with a mean below this count as heating days (usually 15 °C).",
+          "indoor_ref": "Usually 20 °C (degree days G20/15)."
+        }
+      }
     }
   }
 }

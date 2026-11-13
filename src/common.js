@@ -23,6 +23,7 @@ window.TarifCockpit = window.TarifCockpit || {};
     strom: { icon: 'mdi:flash', color: '255,197,61' },
     gas: { icon: 'mdi:fire', color: '251,146,60' },
     wasser: { icon: 'mdi:water', color: '56,189,248' },
+    fernwaerme: { icon: 'mdi:heating-coil', color: '244,114,182' },
   };
   TC.OK = '52,211,153';
   TC.BAD = '255,92,122';

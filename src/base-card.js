@@ -17,10 +17,15 @@
     _afterHass() {}
 
     _build() {
-      this.shadowRoot.innerHTML = `<style>${TC.CSS}</style><ha-card><div class="wrap" id="w"></div></ha-card>`;
+      this.shadowRoot.innerHTML = `<style>${TC.CSS}${TC.integ ? TC.integ.CSS : ''}</style><ha-card><div class="wrap" id="w"></div></ha-card>`;
       this._w = this.shadowRoot.getElementById('w');
       // Tipp auf ein Element mit data-entity öffnet den Dialog der Entität (z. B. Datums-Helfer des Zeitraums)
       this._w.addEventListener('click', (e) => {
+        // Integrations-Modus: Abschlagsdialog
+        if (this._c && this._c.integration && TC.integ && (e.target.closest('[data-advance]') || e.target.closest('[data-dlg]'))) {
+          TC.integ.onClick(this, e);
+          return;
+        }
         const t = e.target.closest && e.target.closest('[data-entity]');
         if (t) this.dispatchEvent(new CustomEvent('hass-more-info', { detail: { entityId: t.getAttribute('data-entity') }, bubbles: true, composed: true }));
       });
