@@ -378,4 +378,5 @@ Noch offen:
 10. **Keine Aussagen ohne Datenbasis**: bei unzureichender Qualität Prognose „vorläufig“ kennzeichnen oder nicht anzeigen.
 11. **Grundsatzentscheidungen (Abschnitt 12) nicht ohne Rücksprache ändern**: Architektur, Datenmodell, Formeln, Migrationsstrategie.
 12. **Keine Phase beginnt mit offenen Fehlern der vorherigen.**
+14. **Lizenzen**: Übernommener oder abgeleiteter Fremdcode bekommt im Dateikopf Quelle, Copyright und Lizenz und wird in `THIRD_PARTY_NOTICES.md` eingetragen (mit vollem Lizenztext). Neue Abhängigkeiten und mitgelieferte Daten (z. B. Standardlastprofile) nur nach Prüfung der Lizenz; Ergebnis dort dokumentieren. Bei Wechsel einer Lizenz oder unklaren Bedingungen: nachfragen.
 13. **Erinnerung an Modell und Aufwand**: Zu Beginn jeder Phase (vor dem Planmodus), vor der Live-Migration und in der Abschlussmeldung jeder Phase (für die nächste) nennt Claude Code das empfohlene Modell und den Aufwand aus der Tabelle in Abschnitt 11, z. B. „Für P2 bitte `/model opus` und `/effort high` setzen, für die Planung `/effort xhigh`“. Stimmen Modell oder Aufwand der Sitzung nicht, wartet Claude Code auf Daniels Bestätigung, bevor es weitermacht.

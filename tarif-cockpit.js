@@ -1,5 +1,6 @@
 /* tarif-cockpit: Tarife, Kosten und Abschlagsprognose für Strom, Gas und Wasser auf einen Blick.
-   Optik angelehnt an energy-cockpit (gleiche Farbschemen). Eine Datei, kein Build nötig. */
+   Optik angelehnt an energy-cockpit (gleiche Farbschemen). Eine Datei, kein Build nötig.
+   Farbschemen aus energy-cockpit, Copyright (c) 2026 Musicmaker3112, MIT-Lizenz, siehe THIRD_PARTY_NOTICES.md. */
 (() => {
   const VERSION = '0.3.0';
 

@@ -87,4 +87,4 @@ Die Karte erwartet Sensoren für Kosten, gezahlte Abschläge und Hochrechnung. W
 Die Karte liefert eine Hochrechnung und ersetzt keine Abrechnung deines Versorgers.
 
 ## Lizenz
-MIT, siehe LICENSE.
+MIT, siehe [LICENSE](LICENSE). Teile der Optik (Farbschemen) stammen aus [energy-cockpit](https://github.com/msucimaker3112/energy-cockpit) (MIT); Details in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

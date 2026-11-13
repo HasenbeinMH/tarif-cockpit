@@ -16,4 +16,5 @@ Plan und Regeln stehen in [`docs/ARBEITSPAKET.md`](docs/ARBEITSPAKET.md). Vor je
 - Rechenkern `custom_components/tarif_cockpit/engine/` ohne Home-Assistant-Imports.
 - Keine festen Entitätsnamen; Daniels Setup nur als Beispiel in der Doku.
 - Installation wird über den Home-Assistant-Marketplace beschrieben (HACS nur als Hinweis für HA ≤ 2026.10); `hacs.json` bleibt.
+- Fremdcode nur mit Hinweis im Dateikopf und Eintrag in `THIRD_PARTY_NOTICES.md` (Regel 14).
 - Unklare fachliche Punkte nicht raten, sondern nachfragen.
