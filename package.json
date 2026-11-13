@@ -1,0 +1,13 @@
+{
+  "name": "tarif-cockpit",
+  "version": "0.4.0",
+  "description": "Tarife, Kosten und Abschlagsprognose für Strom, Gas und Wasser in Home Assistant",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "check": "node --check tarif-cockpit.js",
+    "shots": "python tools/make-screenshots.py"
+  }
+}

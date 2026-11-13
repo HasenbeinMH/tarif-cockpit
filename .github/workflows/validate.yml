@@ -1,0 +1,36 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build und Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build
+        run: node tools/build.mjs
+      - name: Eingecheckte tarif-cockpit.js passt zu src/
+        run: git diff --exit-code tarif-cockpit.js
+      - name: Syntax
+        run: node --check tarif-cockpit.js
+
+  marketplace:
+    name: Marketplace/HACS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validierung
+        uses: hacs/action@main
+        with:
+          category: plugin
+          ignore: brands

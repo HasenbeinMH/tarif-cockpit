@@ -1,33 +1,81 @@
-/* tarif-cockpit: Tarife, Kosten und Abschlagsprognose für Strom, Gas und Wasser auf einen Blick.
-   Optik angelehnt an energy-cockpit (gleiche Farbschemen). Eine Datei, kein Build nötig. */
+/*! tarif-cockpit v0.4.0 - MIT License - https://github.com/HasenbeinMH/tarif-cockpit
+    Editor-Baukasten und Assistent nach energy-cockpit, MIT License, Copyright (c) 2026 Musicmaker3112
+    Diese Datei wird gebaut: Quellen in src/, Aufruf node tools/build.mjs */
+/* ---- common.js ---- */
+/* tarif-cockpit: gemeinsame Teile (Farbschemen, Farben, Formatierung, Hilfen für Entitäten).
+   Alle Module hängen an einem globalen Objekt window.TarifCockpit (intern TC); der Build fügt sie in fester Reihenfolge zusammen. */
+window.TarifCockpit = window.TarifCockpit || {};
 (() => {
-  const VERSION = '0.3.0';
+  const TC = window.TarifCockpit;
+  TC.VERSION = '0.4.0';
 
-  const THEMES = {
+  // Farbschemen wie bei energy-cockpit
+  TC.THEMES = {
     dunkel: { ov: '255,255,255', bg0: '#070b14', bg1: '#121b30', panel: '#0c1322', txt: '#e8eefc', mut: '139,151,179', stroke: 'rgba(255,255,255,.08)' },
     graphit: { ov: '255,255,255', bg0: '#101011', bg1: '#242427', panel: '#1b1b1e', txt: '#ececee', mut: '152,152,162', stroke: 'rgba(255,255,255,.09)' },
     hell: { ov: '15,23,42', bg0: '#e6ecf5', bg1: '#ffffff', panel: '#ffffff', txt: '#0f172a', mut: '71,85,105', stroke: 'rgba(15,23,42,.12)' },
     warm: { ov: '60,40,20', bg0: '#ece2d2', bg1: '#fbf6ec', panel: '#fffaf0', txt: '#2b2118', mut: '115,98,82', stroke: 'rgba(60,40,20,.15)' },
     ha: { ov: '128,128,128', bg0: 'var(--card-background-color,#1c1c1c)', bg1: 'var(--card-background-color,#1c1c1c)', panel: 'var(--secondary-background-color,#222)', txt: 'var(--primary-text-color,#e1e1e1)', mut: '128,128,128', stroke: 'rgba(128,128,128,.28)' },
   };
+  TC.THEME_KEYS = ['dunkel', 'graphit', 'hell', 'warm', 'auto', 'ha'];
   const vars = (t) => `--ov:${t.ov};--bg0:${t.bg0};--bg1:${t.bg1};--panel:${t.panel};--txt:${t.txt};--mut:${t.mut};--stroke:${t.stroke}`;
-  const themeCss = ':host{' + vars(THEMES.dunkel) + '}\n'
-    + Object.keys(THEMES).filter((k) => k !== 'dunkel').map((k) => `:host([data-theme="${k}"]){${vars(THEMES[k])}}`).join('\n');
+  TC.themeCss = ':host{' + vars(TC.THEMES.dunkel) + '}\n'
+    + Object.keys(TC.THEMES).filter((k) => k !== 'dunkel').map((k) => `:host([data-theme="${k}"]){${vars(TC.THEMES[k])}}`).join('\n');
 
   // Standardfarben je Medium (r,g,b); in der Konfiguration mit color: '#hex' überschreibbar
-  const MEDIA = {
-    strom: { name: 'Strom', icon: 'mdi:flash', color: '255,197,61' },
-    gas: { name: 'Gas', icon: 'mdi:fire', color: '251,146,60' },
-    wasser: { name: 'Wasser', icon: 'mdi:water', color: '56,189,248' },
+  TC.MEDIA = {
+    strom: { icon: 'mdi:flash', color: '255,197,61' },
+    gas: { icon: 'mdi:fire', color: '251,146,60' },
+    wasser: { icon: 'mdi:water', color: '56,189,248' },
   };
-  const OK = '52,211,153', BAD = '255,92,122', INFO = '96,165,250';
+  TC.OK = '52,211,153';
+  TC.BAD = '255,92,122';
+  TC.INFO = '96,165,250';
   // dunklere Töne für die hellen Farbschemen (Lesbarkeit)
-  const DARK = { [OK]: '4,120,87', [BAD]: '190,18,60', [INFO]: '29,78,216' };
+  TC.DARK = { [TC.OK]: '4,120,87', [TC.BAD]: '190,18,60', [TC.INFO]: '29,78,216' };
 
-  const esc = (s) => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const nf = (v, d) => Number(v).toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
-  const eur = (v) => (v === null || !isFinite(v) ? '—' : nf(v, Math.abs(v) < 100 ? 2 : 0));
-  const rgbOf = (c, def) => {
+  TC.esc = (s) => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // Sprache, Zahlenformat und Währung aus Home Assistant (TC.useHass bei jedem Rendern)
+  TC.loc = 'de-DE';
+  // Bis hass da ist (z. B. in der Kartenauswahl): Sprache des Browsers
+  const nav = (typeof document !== 'undefined' && document.documentElement && document.documentElement.lang) || (typeof navigator !== 'undefined' && navigator.language) || 'de';
+  TC.lang = /^de/i.test(nav) ? 'de' : 'en';
+  TC.currency = 'EUR';
+  TC.useHass = (h) => {
+    if (!h) return;
+    const l = h.locale || {};
+    const lang = String(l.language || h.language || 'de');
+    TC.lang = /^de/i.test(lang) ? 'de' : 'en';
+    const nfm = l.number_format;
+    // "none": Punkt als Dezimalzeichen, keine Tausendertrennung
+    TC.group = nfm !== 'none';
+    if (nfm === 'comma_decimal' || nfm === 'none') TC.loc = 'en-US';
+    else if (nfm === 'decimal_comma') TC.loc = 'de-DE';
+    else if (nfm === 'space_comma') TC.loc = 'fr-FR';
+    else if (nfm === 'system') TC.loc = undefined;
+    else TC.loc = lang === 'de' ? 'de-DE' : lang;
+    TC.currency = (h.config && h.config.currency) || 'EUR';
+  };
+  const symCache = {};
+  TC.cur = () => {
+    const k = TC.currency + '|' + TC.loc;
+    if (!(k in symCache)) {
+      try {
+        const p = new Intl.NumberFormat(TC.loc, { style: 'currency', currency: TC.currency }).formatToParts(0).find((x) => x.type === 'currency');
+        symCache[k] = p ? p.value : TC.currency;
+      } catch (e) { symCache[k] = TC.currency; }
+    }
+    return symCache[k];
+  };
+  TC.nf = (v, d) => {
+    try { return Number(v).toLocaleString(TC.loc, { minimumFractionDigits: d, maximumFractionDigits: d, useGrouping: TC.group !== false }); } catch (e) { return Number(v).toFixed(d); }
+  };
+  TC.eur = (v) => (v === null || !isFinite(v) ? '—' : TC.nf(v, Math.abs(v) < 100 ? 2 : 0));
+  TC.fd = (d) => d.toLocaleDateString(TC.loc, { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  // Farbe aus '#hex', '#abc' oder 'r,g,b'; sonst def
+  TC.rgbOf = (c, def) => {
     if (typeof c !== 'string') return def;
     const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c.trim());
     if (m) {
@@ -38,7 +86,45 @@
     return /^\d{1,3},\d{1,3},\d{1,3}$/.test(c.replace(/\s+/g, '')) ? c.replace(/\s+/g, '') : def;
   };
 
-  const CSS = `${themeCss}
+  const NA = ['unavailable', 'unknown', ''];
+  // Zahlenwert einer Entität; null, wenn sie fehlt oder nicht verfügbar ist
+  TC.num = (h, id) => {
+    if (!id || !h || !h.states) return null;
+    const s = h.states[id];
+    if (!s || NA.includes(s.state)) return null;
+    const v = parseFloat(s.state);
+    return isNaN(v) ? null : v;
+  };
+  // Datum aus Entität (input_datetime, Sensor) oder als Text "JJJJ-MM-TT"; sonst null
+  TC.date = (h, v) => {
+    if (!v || typeof v !== 'string') return null;
+    const s = /^\d{4}-\d{2}-\d{2}/.test(v) ? v : h && h.states && h.states[v] && h.states[v].state;
+    const m = typeof s === 'string' && /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+  };
+
+  // Farbschema: auto folgt dem hellen/dunklen Design von Home Assistant
+  TC.resolveTheme = (cfg, h) => {
+    let t = (cfg && cfg.theme) || 'dunkel';
+    if (t === 'auto') {
+      let dark = true;
+      if (h && h.themes && typeof h.themes.darkMode === 'boolean') dark = h.themes.darkMode;
+      else if (window.matchMedia) dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      t = dark ? 'dunkel' : 'hell';
+    }
+    return TC.THEMES[t] ? t : 'dunkel';
+  };
+
+  // Einmalige Hinweise in der Browser-Konsole
+  const warned = {};
+  TC.warnOnce = (key, msg) => {
+    if (warned[key]) return;
+    warned[key] = true;
+    // eslint-disable-next-line no-console
+    console.warn('tarif-cockpit: ' + msg);
+  };
+
+  TC.CSS = `${TC.themeCss}
 :host{display:block}
 ha-card{background:radial-gradient(120% 80% at 50% 0%,var(--bg1) 0%,var(--bg0) 65%);border-radius:28px;overflow:hidden;border:1px solid rgba(var(--ov),.06);color:var(--txt);font-family:Inter,var(--ha-font-family-body,system-ui),sans-serif;-webkit-font-smoothing:antialiased}
 .wrap{padding:22px;position:relative;box-sizing:border-box}
@@ -65,7 +151,8 @@ header{display:flex;align-items:center;flex-wrap:wrap;margin-bottom:18px}
 .rh b{color:var(--txt);font-weight:650}
 .bar{position:relative;height:9px;border-radius:999px;background:rgba(var(--ov),.07);overflow:hidden;margin-top:5px}
 .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:inherit;background:rgb(var(--c))}
-.bar i.ref{background:rgba(var(--ov),.32)}
+.bar i.adv{background:rgb(var(--adv))}
+:host([data-theme="hell"]) .bar i.adv,:host([data-theme="warm"]) .bar i.adv{background:rgb(var(--advd))}
 .hint{margin-top:12px;font-size:.74rem;color:rgb(var(--mut));line-height:1.4}
 .hint b{color:var(--txt);font-weight:650}
 .warn{margin-top:10px;font-size:.72rem;color:#fbbf24}
@@ -91,187 +178,281 @@ svg.ch{display:block;width:100%;height:auto}
 .ch .ln{fill:none;stroke:rgb(var(--lc));stroke-width:2;stroke-linejoin:round}
 .ch .dot{fill:rgb(var(--lc))}
 .nodata{font-size:.74rem;color:rgb(var(--mut));padding:14px 0 4px}
+.setup{padding:18px 4px 6px;font-size:.85rem;color:rgb(var(--mut));line-height:1.5}
+.setup b{color:var(--txt)}
 .narrow .wrap{padding:16px}
 .narrow .big .num{font-size:2rem}
 `;
+})();
 
-  class TarifCockpitCard extends HTMLElement {
+
+/* ---- i18n.js ---- */
+/* Texte auf Deutsch und Englisch. TC.T(key, {name: wert}) setzt {name} ein; fehlt ein Text, gilt Deutsch, dann der Schlüssel. */
+(() => {
+  const TC = window.TarifCockpit;
+  TC.STR = {
+    de: {
+      'media.strom': 'Strom', 'media.gas': 'Gas', 'media.wasser': 'Wasser',
+      'card.title': 'Tarife und Abrechnung',
+      'verdict.ok': 'Passt', 'verdict.back': 'Rückzahlung', 'verdict.extra': 'Nachzahlung', 'verdict.none': 'Noch keine Prognose',
+      'cap.ok': 'Abschlag passt zum Verbrauch', 'cap.back': 'Guthaben erwartet', 'cap.extra': 'Nachzahlung erwartet',
+      'row.cost': 'Kosten bisher', 'row.paid': 'Abschläge bisher', 'row.fc': 'Hochrechnung Jahr', 'row.year': 'Abschläge Jahr ({n} ×)',
+      'hint.fitting': 'Passender Abschlag: <b>{fit}</b> statt {cur} im Monat.',
+      'lbl.advance': ' · Abschlag {v}', 'lbl.from': ' · ab {d}',
+      'total.back': 'Guthaben gesamt', 'total.extra': 'Nachzahlung gesamt',
+      'period': 'Abrechnungszeitraum {a} – {b}', 'period.tap': 'Antippen, um den Zeitraum zu ändern',
+      'note': 'Hochrechnung aus den Prognose-Sensoren, Differenz = Abschläge im Jahr minus Hochrechnung. Keine Abrechnung.',
+      'setup.overview': '<b>Noch nicht eingerichtet.</b> Im Karten-Editor führt dich der Assistent durch die Sensoren für Strom, Gas oder Wasser.',
+      'setup.analyse': '<b>Noch nicht eingerichtet.</b> Im Karten-Editor wählst du Kennwert, Verbrauch und Außentemperatur.',
+      'an.title': 'Auswertung', 'an.kennwert': 'Kennwert', 'an.wait': 'Wartet auf Ablesung', 'an.kw_last': 'Kennwert der letzten Periode',
+      'an.cmp': 'Gegenüber der Vorperiode ({p}): <b>{d} %</b> · {t}.',
+      'an.same': 'etwa gleich', 'an.more': 'mehr, als das Wetter erklärt', 'an.less': 'weniger, als das Wetter erklärt',
+      'an.pending': 'Noch keine Auswertung: Der erste Kennwert kommt mit der nächsten Gas-Ablesung.',
+      'an.t_cons': 'Verbrauch letzte Periode', 'an.t_temp': 'Ø Außentemperatur', 'an.t_dd': 'Gradtage',
+      'an.nodata': 'Noch keine Verlaufsdaten in der Langzeitstatistik.',
+      'an.ch_cons': 'Verbrauch und Außentemperatur je Monat', 'an.leg_cons': 'Verbrauch (kWh)', 'an.leg_temp': 'Ø Außentemperatur (°C)',
+      'an.ch_kw': 'Kennwert je Monat (kWh/Kd)',
+      'pick.overview.name': 'Tarif-Cockpit',
+      'pick.overview.desc': 'Kosten, Abschläge und Jahresprognose für Strom, Gas und Wasser: passt, Nachzahlung oder Rückzahlung auf einen Blick',
+      'pick.analyse.name': 'Tarif-Cockpit Auswertung',
+      'pick.analyse.desc': 'Gas witterungsbereinigt: Kennwert je Gradtag, Vergleich mit der Vorperiode und Verlauf',
+      'warn.analysis': 'Der Block "analysis" in tarif-cockpit-card ist veraltet. Bitte die Karte "custom:tarif-cockpit-analyse-card" verwenden (docs/MIGRATION.md).',
+      // Editor und Assistent
+      'ed.tab_wiz': 'Assistent', 'ed.tab_form': 'Alle Felder', 'ed.loading': 'Formular wird geladen …',
+      'ed.noform': 'Das Formular konnte nicht geladen werden. Bitte den Assistenten oder den YAML-Editor verwenden.',
+      'wz.optional': ' (optional)', 'wz.none': '— nicht verwenden —', 'wz.own': 'Eigene Auswahl', 'wz.notfound': '(nicht gefunden)',
+      'wz.sug': 'Vorschläge', 'wz.all': 'Alle passenden Entitäten', 'wz.live': 'Aktueller Wert: {v}  ·  {id}', 'wz.take': 'Vorschlag übernehmen: {n}',
+      'wz.back': '← Zurück', 'wz.next': 'Weiter →', 'wz.done': 'Fertig: alle Felder anzeigen',
+      'wz.name_ph': 'Anzeigename', 'wz.remove': 'Entfernen', 'wz.add': 'Kachel hinzufügen:', 'wz.pick': '— Entität wählen —',
+      'wz.unit_ph': 'Einheit (optional)', 'wz.text': 'Text: {v}',
+      'th.dunkel': 'Dunkel', 'th.graphit': 'Graphit', 'th.hell': 'Hell', 'th.warm': 'Warm', 'th.auto': 'Automatisch', 'th.ha': 'Home Assistant',
+    },
+    en: {
+      'media.strom': 'Electricity', 'media.gas': 'Gas', 'media.wasser': 'Water',
+      'card.title': 'Tariffs and billing',
+      'verdict.ok': 'On track', 'verdict.back': 'Refund', 'verdict.extra': 'Back payment', 'verdict.none': 'No forecast yet',
+      'cap.ok': 'Advance matches consumption', 'cap.back': 'Credit expected', 'cap.extra': 'Back payment expected',
+      'row.cost': 'Costs so far', 'row.paid': 'Advances paid so far', 'row.fc': 'Projection for the year', 'row.year': 'Advances for the year ({n} ×)',
+      'hint.fitting': 'Matching advance: <b>{fit}</b> instead of {cur} per month.',
+      'lbl.advance': ' · advance {v}', 'lbl.from': ' · from {d}',
+      'total.back': 'Total credit', 'total.extra': 'Total back payment',
+      'period': 'Billing period {a} – {b}', 'period.tap': 'Tap to change the period',
+      'note': 'Projection from the forecast sensors, difference = advances for the year minus projection. Not a bill.',
+      'setup.overview': '<b>Not set up yet.</b> In the card editor the wizard guides you through the sensors for electricity, gas or water.',
+      'setup.analyse': '<b>Not set up yet.</b> In the card editor choose the heat coefficient, consumption and outdoor temperature.',
+      'an.title': 'Analysis', 'an.kennwert': 'Heat coefficient', 'an.wait': 'Waiting for a meter reading', 'an.kw_last': 'Coefficient of the last period',
+      'an.cmp': 'Compared with the previous period ({p}): <b>{d} %</b> · {t}.',
+      'an.same': 'about the same', 'an.more': 'more than the weather explains', 'an.less': 'less than the weather explains',
+      'an.pending': 'No analysis yet: the first coefficient arrives with the next gas meter reading.',
+      'an.t_cons': 'Consumption last period', 'an.t_temp': 'Ø outdoor temperature', 'an.t_dd': 'Degree days',
+      'an.nodata': 'No history in the long-term statistics yet.',
+      'an.ch_cons': 'Consumption and outdoor temperature per month', 'an.leg_cons': 'Consumption (kWh)', 'an.leg_temp': 'Ø outdoor temperature (°C)',
+      'an.ch_kw': 'Coefficient per month (kWh/Kd)',
+      'pick.overview.name': 'Tarif-Cockpit',
+      'pick.overview.desc': 'Costs, advance payments and annual forecast for electricity, gas and water: on track, back payment or refund at a glance',
+      'pick.analyse.name': 'Tarif-Cockpit analysis',
+      'pick.analyse.desc': 'Weather-adjusted gas: coefficient per degree day, comparison with the previous period and history',
+      'warn.analysis': 'The "analysis" block in tarif-cockpit-card is deprecated. Please use the card "custom:tarif-cockpit-analyse-card" (docs/MIGRATION.md).',
+      'ed.tab_wiz': 'Wizard', 'ed.tab_form': 'All fields', 'ed.loading': 'Loading form …',
+      'ed.noform': 'The form could not be loaded. Please use the wizard or the YAML editor.',
+      'wz.optional': ' (optional)', 'wz.none': '— not used —', 'wz.own': 'Own choice', 'wz.notfound': '(not found)',
+      'wz.sug': 'Suggestions', 'wz.all': 'All matching entities', 'wz.live': 'Current value: {v}  ·  {id}', 'wz.take': 'Use suggestion: {n}',
+      'wz.back': '← Back', 'wz.next': 'Next →', 'wz.done': 'Done: show all fields',
+      'wz.name_ph': 'Display name', 'wz.remove': 'Remove', 'wz.add': 'Add tile:', 'wz.pick': '— choose entity —',
+      'wz.unit_ph': 'Unit (optional)', 'wz.text': 'Text: {v}',
+      'th.dunkel': 'Dark', 'th.graphit': 'Graphite', 'th.hell': 'Light', 'th.warm': 'Warm', 'th.auto': 'Automatic', 'th.ha': 'Home Assistant',
+    },
+  };
+  TC.addStrings = (lang, map) => { TC.STR[lang] = Object.assign(TC.STR[lang] || {}, map); };
+  TC.T = (key, v) => {
+    const s = (TC.STR[TC.lang] && TC.STR[TC.lang][key]) || TC.STR.de[key] || key;
+    return v ? s.replace(/\{(\w+)\}/g, (m, k) => (k in v ? v[k] : m)) : s;
+  };
+})();
+
+
+/* ---- chart.js ---- */
+/* Verlauf aus der Langzeitstatistik, SVG-Diagramme und der Auswertungsblock (Kennwert, Kacheln, Verlauf).
+   Der Auswertungsblock wird von tarif-cockpit-analyse-card und (veraltet) vom Block "analysis" in tarif-cockpit-card verwendet. */
+(() => {
+  const TC = window.TarifCockpit;
+  const { esc } = TC;
+
+  // Letzte n Monate (ältester zuerst) als Achse für die Verlaufsdiagramme
+  TC.months = (n) => {
+    const out = [];
+    const now = new Date();
+    for (let i = n - 1; i >= 0; i--) {
+      const x = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      out.push({ y: x.getFullYear(), m: x.getMonth(), key: x.getFullYear() + '-' + x.getMonth() });
+    }
+    return out;
+  };
+
+  // Monatsmittel aus der Langzeitstatistik; höchstens einmal pro Stunde je Karte.
+  // card: Element mit _h (hass), _histAt, _hist, _last, _render(); a: Auswertungs-Konfiguration
+  TC.loadHistory = async (card, a) => {
+    if (!a || a.history === false || !card._h || typeof card._h.callWS !== 'function') return;
+    const ids = [a.consumption, a.temperature, a.kennwert].filter(Boolean);
+    if (!ids.length) return;
+    const n = Number(a.months) > 0 ? Math.min(Number(a.months), 36) : 24;
+    // Neu laden nur bei anderen Entitäten/Monaten oder nach einer Stunde (der Editor ruft setConfig bei jedem Tastendruck)
+    const key = ids.join('|') + '|' + n;
+    const now = Date.now();
+    if (key === card._histKey && card._histAt && now - card._histAt < 3600e3) return;
+    if (key !== card._histKey) card._hist = null;
+    card._histKey = key;
+    card._histAt = now;
+    // Nur die Antwort der jüngsten Anfrage zählt
+    const seq = (card._histSeq || 0) + 1;
+    card._histSeq = seq;
+    const ax = TC.months(n);
+    try {
+      const r = await card._h.callWS({
+        type: 'recorder/statistics_during_period',
+        start_time: new Date(ax[0].y, ax[0].m, 1).toISOString(),
+        end_time: new Date().toISOString(),
+        statistic_ids: ids,
+        period: 'month',
+        types: ['mean'],
+      });
+      if (seq !== card._histSeq) return;
+      const pick = (id) => {
+        const map = {};
+        ((r && r[id]) || []).forEach((s) => {
+          const d = new Date(s.start);
+          if (typeof s.mean === 'number') map[d.getFullYear() + '-' + d.getMonth()] = s.mean;
+        });
+        return ax.map((x) => (x.key in map ? map[x.key] : null));
+      };
+      card._hist = { ax, cons: a.consumption ? pick(a.consumption) : [], temp: a.temperature ? pick(a.temperature) : [], kw: a.kennwert ? pick(a.kennwert) : [] };
+    } catch (e) {
+      if (seq !== card._histSeq) return;
+      card._hist = null;
+    }
+    card._last = null;
+    card._render();
+  };
+
+  // Diagramm: optional Balken (linke Achse) und Linie (rechte Achse, ohne Balken links)
+  TC.svgChart = (ax, bars, line) => {
+    const nf = TC.nf;
+    const W = 720, H = 170, L = 40, R = bars ? 40 : 10, T = 10, B = 24;
+    const n = ax.length, step = (W - L - R) / n, ih = H - T - B;
+    const bv = bars ? bars.filter((v) => v !== null) : [];
+    const lv = line ? line.filter((v) => v !== null) : [];
+    const bmax = bv.length ? Math.max(...bv) * 1.1 || 1 : 1;
+    const lmin = lv.length ? Math.floor(Math.min(...lv, 0)) : 0;
+    let lmax = lv.length ? Math.ceil(Math.max(...lv) * (bars ? 1 : 1.1) + (bars ? 1 : 0)) : 1;
+    if (lmax <= lmin) lmax = lmin + 1;
+    const yb = (v) => T + ih - (v / bmax) * ih;
+    const yl = (v) => T + ih - ((v - lmin) / (lmax - lmin)) * ih;
+    let s = `<svg class="ch" viewBox="0 0 ${W} ${H}" role="img">`;
+    for (let g = 0; g <= 4; g++) {
+      const y = T + (ih * g) / 4;
+      s += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/>`;
+      if (bars) {
+        s += `<text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${nf(bmax * (1 - g / 4), 0)}</text>`;
+        if (lv.length) s += `<text class="ax" x="${W - R + 5}" y="${y + 3}">${nf(lmax - ((lmax - lmin) * g) / 4, 0)}</text>`;
+      } else {
+        s += `<text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${nf(lmax - ((lmax - lmin) * g) / 4, 1)}</text>`;
+      }
+    }
+    if (bars) bars.forEach((v, i) => { if (v !== null) s += `<rect class="cb" x="${L + i * step + step * 0.2}" y="${yb(v)}" width="${step * 0.6}" height="${Math.max(1, T + ih - yb(v))}" rx="3"/>`; });
+    if (line) {
+      let d = '', pen = false;
+      line.forEach((v, i) => {
+        if (v === null) { pen = false; return; }
+        const x = L + i * step + step / 2;
+        d += (pen ? 'L' : 'M') + x.toFixed(1) + ' ' + yl(v).toFixed(1) + ' ';
+        pen = true;
+      });
+      if (d) s += `<path class="ln" d="${d}"/>`;
+      line.forEach((v, i) => { if (v !== null) s += `<circle class="dot" cx="${L + i * step + step / 2}" cy="${yl(v)}" r="3"/>`; });
+    }
+    ax.forEach((x, i) => {
+      const cx = L + i * step + step / 2;
+      const name = new Date(x.y, x.m, 1).toLocaleDateString(TC.loc, { month: 'narrow' });
+      s += `<text class="ax" x="${cx}" y="${H - 11}" text-anchor="middle">${name}</text>`;
+      if (x.m === 0 || i === 0) s += `<text class="ax" x="${cx}" y="${H - 1}" text-anchor="middle">${x.y}</text>`;
+    });
+    return s + '</svg>';
+  };
+
+  // Auswertung (z. B. Gas witterungsbereinigt): Kennwert, Kacheln, Verlauf.
+  // a: Konfiguration, h: hass, hist: geladener Verlauf, label: Überschrift im Panel, cls: zusätzliche Panel-Klasse
+  TC.analysisHtml = (a, h, hist, label, cls) => {
+    const { nf, T: t, INFO, DARK, MEDIA } = TC;
+    if (!a || typeof a !== 'object') return '';
+    const c = TC.rgbOf(a.color, MEDIA.gas.color);
+    const kw = TC.num(h, a.kennwert);
+    const prev = TC.num(h, a.kennwert_previous);
+    let pill = '<span class="pill" style="--q:' + INFO + ';--qd:' + DARK[INFO] + '">' + esc(t('an.wait')) + '</span>';
+    let big = '', cmp = '';
+    if (kw !== null) {
+      pill = '';
+      big = `<div class="big" style="--q:${c};--qd:${c}"><span class="num">${nf(kw, 2)}</span><span class="unit">kWh/Kd</span><small>${esc(t('an.kw_last'))}</small></div>`;
+      if (prev !== null && prev > 0) {
+        const p = (kw / prev - 1) * 100;
+        const txt = Math.abs(p) < 5 ? t('an.same') : p > 0 ? t('an.more') : t('an.less');
+        cmp = `<div class="hint">${t('an.cmp', { p: nf(prev, 2), d: (p >= 0 ? '+' : '') + nf(p, 1), t: esc(txt) })}</div>`;
+      }
+    }
+    const pending = kw === null ? `<div class="hint">${esc(a.pending_text || t('an.pending'))}</div>` : '';
+    const tile = (name, id, unit, dec) => {
+      if (!id) return '';
+      const v = TC.num(h, id);
+      return `<div class="stat"><span class="lbl">${esc(name)}</span><b>${v === null ? '—' : nf(v, dec)}<small>${esc(unit)}</small></b></div>`;
+    };
+    const extras = (Array.isArray(a.extras) ? a.extras : []).map((e) => (e && e.entity ? tile(e.name || e.entity, e.entity, e.unit || '', typeof e.decimals === 'number' ? e.decimals : 1) : '')).join('');
+    const tiles = tile(t('an.t_cons'), a.consumption, 'kWh', 0) + tile(t('an.t_temp'), a.temperature, '°C', 1) + tile(t('an.t_dd'), a.degree_days, 'Kd', 1) + extras;
+    let charts = '';
+    if (a.history !== false && (a.consumption || a.kennwert)) {
+      const has = hist && (hist.cons.some((v) => v !== null) || hist.kw.some((v) => v !== null));
+      if (!has) charts = `<div class="nodata">${esc(t('an.nodata'))}</div>`;
+      else {
+        if (a.consumption && hist.cons.some((v) => v !== null)) {
+          charts += `<div class="chead" style="--lc:${INFO}"><span class="lbl">${esc(t('an.ch_cons'))}</span><span class="leg" style="--lc:${c}"><i></i>${esc(t('an.leg_cons'))}</span>${a.temperature ? `<span class="leg"><i></i>${esc(t('an.leg_temp'))}</span>` : ''}</div><div style="--c:${c};--lc:${INFO}">${TC.svgChart(hist.ax, hist.cons, a.temperature ? hist.temp : null)}</div>`;
+        }
+        if (a.kennwert && hist.kw.some((v) => v !== null)) {
+          charts += `<div class="chead"><span class="lbl">${esc(t('an.ch_kw'))}</span></div><div style="--lc:${c}">${TC.svgChart(hist.ax, null, hist.kw)}</div>`;
+        }
+      }
+    }
+    const explain = a.explain ? `<div class="hint">${esc(a.explain)}</div>` : '';
+    const tilesHtml = tiles ? `<div class="tiles">${tiles}</div>` : '';
+    return `<div class="panel${cls ? ' ' + cls : ''}" style="--c:${c}">
+        <div class="ph"><span class="lbl"><i></i>${esc(label)}</span>${pill}</div>
+        ${big}${cmp}${pending}
+        ${tilesHtml}${charts}${explain}
+      </div>`;
+  };
+})();
+
+
+/* ---- base-card.js ---- */
+/* Gemeinsame Grundlage beider Karten: Shadow-DOM, Farbschema, schmale Darstellung, Tipp auf Entitäten öffnet den Dialog. */
+(() => {
+  const TC = window.TarifCockpit;
+
+  TC.BaseCard = class extends HTMLElement {
     constructor() {
       super();
       this.attachShadow({ mode: 'open' });
     }
 
-    static getStubConfig() {
-      return {
-        title: 'Tarife und Abrechnung',
-        strom: { cost: 'sensor.kosten_strom_abrechnungsjahr', advance_paid: 'sensor.abschlage_strom_abrechnungsjahr', forecast_cost: 'sensor.prognose_strom_kosten', forecast_kwh: 'sensor.prognose_strom_verbrauch', advance: 'input_number.abschlag_strom' },
-        gas: { cost: 'sensor.kosten_gas_abrechnungsjahr', advance_paid: 'sensor.abschlage_gas_abrechnungsjahr', forecast_cost: 'sensor.prognose_gas_kosten', forecast_kwh: 'sensor.prognose_gas_verbrauch', advance: 'input_number.abschlag_gas' },
-      };
-    }
-
-    getCardSize() { return 9; }
-
-    setConfig(c) {
-      if (!c || typeof c !== 'object' || !Object.keys(MEDIA).some((k) => c[k])) {
-        throw new Error('tarif-cockpit: mindestens strom, gas oder wasser mit Sensoren angeben');
-      }
-      this._c = c;
-      this._hist = null;
-      this._histAt = 0;
-      this._build();
-      this._render();
-      this._loadHistory();
-    }
-
     set hass(h) {
       this._h = h;
       this._render();
-      this._loadHistory();
+      this._afterHass();
     }
 
-    // Letzte n Monate (ältester zuerst) als Achse für die Verlaufsdiagramme
-    _months(n) {
-      const out = [];
-      const now = new Date();
-      for (let i = n - 1; i >= 0; i--) {
-        const x = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        out.push({ y: x.getFullYear(), m: x.getMonth(), key: x.getFullYear() + '-' + x.getMonth() });
-      }
-      return out;
-    }
-
-    // Monatsmittel aus der Langzeitstatistik; höchstens einmal pro Stunde
-    async _loadHistory() {
-      const a = this._c && this._c.analysis;
-      if (!a || a.history === false || !this._h || typeof this._h.callWS !== 'function') return;
-      const now = Date.now();
-      if (this._histAt && now - this._histAt < 3600e3) return;
-      this._histAt = now;
-      const ids = [a.consumption, a.temperature, a.kennwert].filter(Boolean);
-      if (!ids.length) return;
-      const ax = this._months(Number(a.months) > 0 ? Math.min(Number(a.months), 36) : 24);
-      try {
-        const r = await this._h.callWS({
-          type: 'recorder/statistics_during_period',
-          start_time: new Date(ax[0].y, ax[0].m, 1).toISOString(),
-          end_time: new Date().toISOString(),
-          statistic_ids: ids,
-          period: 'month',
-          types: ['mean'],
-        });
-        const pick = (id) => {
-          const map = {};
-          ((r && r[id]) || []).forEach((s) => {
-            const d = new Date(s.start);
-            if (typeof s.mean === 'number') map[d.getFullYear() + '-' + d.getMonth()] = s.mean;
-          });
-          return ax.map((x) => (x.key in map ? map[x.key] : null));
-        };
-        this._hist = { ax, cons: a.consumption ? pick(a.consumption) : [], temp: a.temperature ? pick(a.temperature) : [], kw: a.kennwert ? pick(a.kennwert) : [] };
-      } catch (e) {
-        this._hist = null;
-      }
-      this._last = null;
-      this._render();
-    }
-
-    // Diagramm: optional Balken (linke Achse) und Linie (rechte Achse, ohne Balken links)
-    _svgChart(ax, bars, line, uBar, uLine) {
-      const W = 720, H = 170, L = 40, R = bars ? 40 : 10, T = 10, B = 24;
-      const n = ax.length, step = (W - L - R) / n, ih = H - T - B;
-      const bv = bars ? bars.filter((v) => v !== null) : [];
-      const lv = line ? line.filter((v) => v !== null) : [];
-      const bmax = bv.length ? Math.max(...bv) * 1.1 || 1 : 1;
-      let lmin = lv.length ? Math.floor(Math.min(...lv, 0)) : 0;
-      let lmax = lv.length ? Math.ceil(Math.max(...lv) * (bars ? 1 : 1.1) + (bars ? 1 : 0)) : 1;
-      if (lmax <= lmin) lmax = lmin + 1;
-      const yb = (v) => T + ih - (v / bmax) * ih;
-      const yl = (v) => T + ih - ((v - lmin) / (lmax - lmin)) * ih;
-      let s = `<svg class="ch" viewBox="0 0 ${W} ${H}" role="img">`;
-      for (let g = 0; g <= 4; g++) {
-        const y = T + (ih * g) / 4;
-        s += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/>`;
-        if (bars) {
-          s += `<text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${nf(bmax * (1 - g / 4), 0)}</text>`;
-          if (lv.length) s += `<text class="ax" x="${W - R + 5}" y="${y + 3}">${nf(lmax - ((lmax - lmin) * g) / 4, 0)}</text>`;
-        } else {
-          s += `<text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${nf(lmax - ((lmax - lmin) * g) / 4, 1)}</text>`;
-        }
-      }
-      if (bars) bars.forEach((v, i) => { if (v !== null) s += `<rect class="cb" x="${L + i * step + step * 0.2}" y="${yb(v)}" width="${step * 0.6}" height="${Math.max(1, T + ih - yb(v))}" rx="3"/>`; });
-      if (line) {
-        let d = '', pen = false;
-        line.forEach((v, i) => {
-          if (v === null) { pen = false; return; }
-          const x = L + i * step + step / 2;
-          d += (pen ? 'L' : 'M') + x.toFixed(1) + ' ' + yl(v).toFixed(1) + ' ';
-          pen = true;
-        });
-        if (d) s += `<path class="ln" d="${d}"/>`;
-        line.forEach((v, i) => { if (v !== null) s += `<circle class="dot" cx="${L + i * step + step / 2}" cy="${yl(v)}" r="3"/>`; });
-      }
-      ax.forEach((x, i) => {
-        const cx = L + i * step + step / 2;
-        const name = new Date(x.y, x.m, 1).toLocaleDateString('de-DE', { month: 'narrow' });
-        s += `<text class="ax" x="${cx}" y="${H - 11}" text-anchor="middle">${name}</text>`;
-        if (x.m === 0 || i === 0) s += `<text class="ax" x="${cx}" y="${H - 1}" text-anchor="middle">${x.y}</text>`;
-      });
-      void uBar; void uLine;
-      return s + '</svg>';
-    }
-
-    // Auswertung (z. B. Gas witterungsbereinigt): Kennwert, Kacheln, Verlauf
-    _analysis() {
-      const a = this._c.analysis;
-      if (!a || typeof a !== 'object') return '';
-      const c = rgbOf(a.color, MEDIA.gas.color);
-      const kw = this._num(a.kennwert);
-      const prev = this._num(a.kennwert_previous);
-      let pill = '<span class="pill" style="--q:' + INFO + ';--qd:' + DARK[INFO] + '">Wartet auf Ablesung</span>';
-      let big = '', cmp = '';
-      if (kw !== null) {
-        pill = '';
-        big = `<div class="big" style="--q:${c};--qd:${c}"><span class="num">${nf(kw, 2)}</span><span class="unit">kWh/Kd</span><small>Kennwert der letzten Periode</small></div>`;
-        if (prev !== null && prev > 0) {
-          const p = (kw / prev - 1) * 100;
-          const t = Math.abs(p) < 5 ? 'etwa gleich' : p > 0 ? 'mehr, als das Wetter erklärt' : 'weniger, als das Wetter erklärt';
-          cmp = `<div class="hint">Gegenüber der Vorperiode (${nf(prev, 2)}): <b>${p >= 0 ? '+' : ''}${nf(p, 1)} %</b> · ${t}.</div>`;
-        }
-      }
-      const pending = kw === null ? `<div class="hint">${esc(a.pending_text || 'Noch keine Auswertung: Der erste Kennwert kommt mit der nächsten Gas-Ablesung.')}</div>` : '';
-      const tile = (name, id, unit, dec) => {
-        if (!id) return '';
-        const v = this._num(id);
-        return `<div class="stat"><span class="lbl">${esc(name)}</span><b>${v === null ? '—' : nf(v, dec)}<small>${esc(unit)}</small></b></div>`;
-      };
-      const extras = (Array.isArray(a.extras) ? a.extras : []).map((e) => (e && e.entity ? tile(e.name || e.entity, e.entity, e.unit || '', typeof e.decimals === 'number' ? e.decimals : 1) : '')).join('');
-      const tiles = tile('Verbrauch letzte Periode', a.consumption, 'kWh', 0) + tile('Ø Außentemperatur', a.temperature, '°C', 1) + tile('Gradtage', a.degree_days, 'Kd', 1) + extras;
-      let charts = '';
-      const h = this._hist;
-      if (a.history !== false && (a.consumption || a.kennwert)) {
-        const has = h && (h.cons.some((v) => v !== null) || h.kw.some((v) => v !== null));
-        if (!has) charts = '<div class="nodata">Noch keine Verlaufsdaten in der Langzeitstatistik.</div>';
-        else {
-          if (a.consumption && h.cons.some((v) => v !== null)) {
-            charts += `<div class="chead" style="--lc:${INFO}"><span class="lbl">Verbrauch und Außentemperatur je Monat</span><span class="leg" style="--lc:${c}"><i></i>Verbrauch (kWh)</span>${a.temperature ? '<span class="leg"><i></i>Ø Außentemperatur (°C)</span>' : ''}</div><div style="--c:${c};--lc:${INFO}">${this._svgChart(h.ax, h.cons, a.temperature ? h.temp : null)}</div>`;
-          }
-          if (a.kennwert && h.kw.some((v) => v !== null)) {
-            charts += `<div class="chead"><span class="lbl">Kennwert je Monat (kWh/Kd)</span></div><div style="--lc:${c}">${this._svgChart(h.ax, null, h.kw)}</div>`;
-          }
-        }
-      }
-      const explain = a.explain ? `<div class="hint">${esc(a.explain)}</div>` : '';
-      return `<div class="panel wide" style="--c:${c}">
-        <div class="ph"><span class="lbl"><i></i>${esc(a.title || 'Auswertung')}</span>${pill}</div>
-        ${big}${cmp}${pending}
-        <div class="tiles">${tiles}</div>${charts}${explain}
-      </div>`;
-    }
+    _afterHass() {}
 
     _build() {
-      this.shadowRoot.innerHTML = `<style>${CSS}</style><ha-card><div class="wrap" id="w"></div></ha-card>`;
+      this.shadowRoot.innerHTML = `<style>${TC.CSS}</style><ha-card><div class="wrap" id="w"></div></ha-card>`;
       this._w = this.shadowRoot.getElementById('w');
-      // Tipp auf den Zeitraum öffnet den Datums-Helfer, dort lässt er sich ändern
+      // Tipp auf ein Element mit data-entity öffnet den Dialog der Entität (z. B. Datums-Helfer des Zeitraums)
       this._w.addEventListener('click', (e) => {
         const t = e.target.closest && e.target.closest('[data-entity]');
         if (t) this.dispatchEvent(new CustomEvent('hass-more-info', { detail: { entityId: t.getAttribute('data-entity') }, bubbles: true, composed: true }));
@@ -286,45 +467,515 @@ svg.ch{display:block;width:100%;height:auto}
       }
     }
 
+    connectedCallback() { if (this._ro && this._w) this._ro.observe(this); }
+
     disconnectedCallback() { if (this._ro) this._ro.disconnect(); }
 
-    // Datum aus Entität (input_datetime, Sensor) oder als Text "JJJJ-MM-TT"; sonst null
-    _date(v) {
-      if (!v || typeof v !== 'string') return null;
-      const s = /^\d{4}-\d{2}-\d{2}/.test(v) ? v : this._h && this._h.states[v] && this._h.states[v].state;
-      const m = typeof s === 'string' && /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
-      return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+    // Vor jedem Rendern: Sprache/Format aus hass, Farbschema als Attribut
+    _prepare() {
+      if (!this._c || !this._w || !this._h) return false;
+      TC.useHass(this._h);
+      const t = TC.resolveTheme(this._c, this._h);
+      if (this.getAttribute('data-theme') !== t) this.setAttribute('data-theme', t);
+      return true;
     }
 
-    _fd(d) {
-      return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    _put(html) {
+      if (html !== this._last) { this._w.innerHTML = html; this._last = html; }
     }
 
-    _num(id) {
-      if (!id || !this._h) return null;
-      const s = this._h.states[id];
-      if (!s || ['unavailable', 'unknown', ''].includes(s.state)) return null;
-      const v = parseFloat(s.state);
-      return isNaN(v) ? null : v;
+    _header(icon, title, sub, right) {
+      const { esc, INFO } = TC;
+      return `<header><div class="title"><span class="ico" style="--c:${INFO}"><ha-icon icon="${esc(icon)}"></ha-icon></span><div>${esc(title)}${sub || ''}</div></div>${right || ''}</header>`;
     }
+  };
+})();
 
-    _theme() {
-      let t = this._c.theme || 'dunkel';
-      if (t === 'auto') {
-        let dark = true;
-        const h = this._h;
-        if (h && h.themes && typeof h.themes.darkMode === 'boolean') dark = h.themes.darkMode;
-        else if (window.matchMedia) dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        t = dark ? 'dunkel' : 'hell';
+
+/* ---- wizard.js ---- */
+/* Einrichtungsassistent: Schritt für Schritt Entitäten auswählen, mit Vorschlägen aus den vorhandenen Entitäten.
+   Nur Standard-HTML (select, input), damit er auch ohne die Formular-Bausteine von Home Assistant funktioniert.
+   Nach energy-cockpit/src/wizard.js, MIT License, Copyright (c) 2026 Musicmaker3112. Angepasst: Arten für Tarife,
+   Schritte mit Bedingung (when), Auswahl der Medien, Texte über TC.T (Deutsch/Englisch). */
+(() => {
+  const TC = window.TarifCockpit;
+  const ENERGY_UNITS = ['Wh', 'kWh', 'MWh'];
+  const QTY_UNITS = ENERGY_UNITS.concat(['m³', 'm3', 'L', 'l']);
+  const NUMERIC = ['sensor', 'input_number', 'number'];
+
+  // Liste aller passenden Entitäten je Art
+  const list = (hass, kind) => {
+    const out = [];
+    if (!hass || !hass.states) return out;
+    Object.keys(hass.states).forEach((id) => {
+      const s = hass.states[id], a = s.attributes || {}, u = a.unit_of_measurement || '', dc = a.device_class || '';
+      const dom = id.split('.')[0];
+      const txt = id + ' ' + (a.friendly_name || '');
+      let ok = false;
+      if (kind === 'money') ok = NUMERIC.includes(dom) && (/€|eur|chf|\$|£|usd|gbp/i.test(u) || dc === 'monetary' || /kosten|cost|abschl|advance|betrag|amount/i.test(txt));
+      else if (kind === 'quantity') ok = dom === 'sensor' && (QTY_UNITS.includes(u) || dc === 'energy' || dc === 'gas' || dc === 'water' || dc === 'volume');
+      else if (kind === 'energy') ok = dom === 'sensor' && (ENERGY_UNITS.includes(u) || dc === 'energy');
+      else if (kind === 'temp') ok = dom === 'sensor' && (u === '°C' || u === '°F' || dc === 'temperature');
+      else if (kind === 'date') ok = dom === 'input_datetime' || (dom === 'sensor' && (dc === 'date' || dc === 'timestamp'));
+      else if (kind === 'value') ok = NUMERIC.includes(dom) && s.state !== '' && !isNaN(parseFloat(s.state));
+      else if (kind === 'any') ok = ['sensor', 'input_number', 'number', 'input_datetime', 'input_text', 'counter'].includes(dom);
+      if (ok) out.push({ id, name: a.friendly_name || id, state: s.state, unit: u });
+    });
+    return out.sort((x, y) => x.name.localeCompare(y.name, TC.lang));
+  };
+
+  // Treffer nach Stichwörtern sortieren: Vorschläge zuerst. hints: Liste von RegExp, frühere zählen mehr.
+  // need: RegExp, die zusätzlich passen muss (z. B. das Medium), sonst kein Vorschlag
+  const score = (e, hints, need) => {
+    const t = (e.id + ' ' + e.name).toLowerCase();
+    if (need && !need.test(t)) return 0;
+    let s = 0;
+    (hints || []).forEach((re, i) => { if (re.test(t)) s += 10 - i; });
+    return s;
+  };
+  const suggest = (hass, kind, hints, need, exclude) => list(hass, kind)
+    .filter((e) => !(exclude || []).includes(e.id) && score(e, hints, need) > 0)
+    .sort((a, b) => score(b, hints, need) - score(a, hints, need));
+
+  const getPath = (o, p) => p.split('.').reduce((a, k) => (a === undefined || a === null ? undefined : a[k]), o);
+  // keep: auch false speichern (z. B. history: false)
+  const setPath = (o, p, v, keep) => {
+    const ks = p.split('.');
+    let c = o;
+    ks.slice(0, -1).forEach((k) => { if (typeof c[k] !== 'object' || c[k] === null) c[k] = {}; c = c[k]; });
+    const last = ks[ks.length - 1];
+    if (v === '' || v === undefined || v === null || (v === false && !keep)) delete c[last]; else c[last] = v;
+  };
+  const prune = (o) => {
+    Object.keys(o).forEach((k) => {
+      if (o[k] && typeof o[k] === 'object' && !Array.isArray(o[k])) { prune(o[k]); if (!Object.keys(o[k]).length) delete o[k]; }
+    });
+    return o;
+  };
+
+  // Entität, die nicht zum Filter passt (z. B. im YAML eingetragen), mit Name und Wert
+  const own = (hass, id) => {
+    const s = hass && id && hass.states && hass.states[id];
+    return s ? { id, name: (s.attributes && s.attributes.friendly_name) || id, state: s.state, unit: (s.attributes && s.attributes.unit_of_measurement) || '' } : null;
+  };
+  const fmtState = (e) => (e ? `${e.state}${e.unit ? ' ' + e.unit : ''}` : '');
+  // Listen können als Array oder als Objekt {0:…, 1:…} vorliegen (so speichert sie das Formular von Home Assistant)
+  const arr = (v) => (Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.keys(v).sort((a, b) => a - b).map((k) => v[k]) : []));
+
+  // Baut den Assistenten. opts: { steps, hass, config, onChange(config), done }
+  // Schritt: { short, title, text, fields, summary(cfg, hass), when(cfg, ui) }
+  // Feld: { path, label, kind, hints, need, optional, auto, help, options, step, invert, itemKey, listKind, max }
+  TC.createWizard = (opts) => {
+    const t = TC.T;
+    const root = document.createElement('div');
+    root.style.cssText = 'font:inherit;color:var(--primary-text-color,inherit)';
+    let cfg = JSON.parse(JSON.stringify(opts.config || {}));
+    let hass = opts.hass;
+    let step = 0;
+    // Zwischenspeicher für abgewählte Medien: erneutes Anhaken stellt die Felder wieder her
+    const stash = {};
+    const ui = {};
+
+    const emit = () => { prune(cfg); opts.onChange(JSON.parse(JSON.stringify(cfg))); };
+    const css = {
+      box: 'padding:10px 12px;margin:8px 0;border:1px solid var(--divider-color,#444);border-radius:10px',
+      btn: 'cursor:pointer;margin:4px 6px 4px 0;padding:8px 14px;border-radius:8px;border:1px solid var(--divider-color,#555);background:var(--secondary-background-color,#222);color:var(--primary-text-color,#fff);font:inherit',
+      primary: 'cursor:pointer;margin:4px 6px 4px 0;padding:8px 14px;border-radius:8px;border:0;background:var(--primary-color,#03a9f4);color:var(--text-primary-color,#fff);font:inherit;font-weight:600',
+      input: 'width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--divider-color,#555);background:var(--card-background-color,#111);color:var(--primary-text-color,#fff);font:inherit',
+      label: 'display:block;font-weight:600;margin:12px 0 4px',
+      help: 'font-size:.85em;opacity:.7;margin:2px 0 4px',
+    };
+    const el = (tag, style, text) => { const e = document.createElement(tag); if (style) e.style.cssText = style; if (text !== undefined) e.textContent = text; return e; };
+    const opt = (v, txt) => { const o = document.createElement('option'); o.value = v; o.textContent = txt; return o; };
+    const head = (wrap, f) => {
+      wrap.appendChild(el('label', css.label, f.label + (f.optional ? t('wz.optional') : '')));
+      if (f.help) wrap.appendChild(el('div', css.help, f.help));
+    };
+
+    const fieldSelect = (f) => {
+      const wrap = el('div');
+      head(wrap, f);
+      const sel = el('select', css.input);
+      const all = list(hass, f.kind || 'value');
+      const cur = getPath(cfg, f.path) || '';
+      const sug = all.filter((e) => score(e, f.hints, f.need) > 0).sort((a, b) => score(b, f.hints, f.need) - score(a, f.hints, f.need));
+      // Nur die ersten 12 Vorschläge stehen oben, alle übrigen Treffer bleiben unten wählbar
+      const top = sug.slice(0, 12);
+      const rest = all.filter((e) => top.indexOf(e) < 0);
+      sel.appendChild(opt('', t('wz.none')));
+      const inList = cur && all.find((e) => e.id === cur);
+      const mine = cur && !inList ? own(hass, cur) : null;
+      if (mine) {
+        const g0 = document.createElement('optgroup'); g0.label = t('wz.own');
+        g0.appendChild(opt(cur, `${mine.name} (${fmtState(mine)})`));
+        sel.appendChild(g0);
+      } else if (cur && !inList) {
+        // z. B. ein Datum als Text (period_start: 2026-07-30)
+        sel.appendChild(opt(cur, /^\d{4}-\d{2}-\d{2}/.test(cur) ? t('wz.text', { v: cur }) : cur + ' ' + t('wz.notfound')));
       }
-      return THEMES[t] ? t : 'dunkel';
+      const pool = mine ? all.concat([mine]) : all;
+      if (top.length) {
+        const g = document.createElement('optgroup'); g.label = t('wz.sug');
+        top.forEach((e) => g.appendChild(opt(e.id, `${e.name} (${fmtState(e)})`)));
+        sel.appendChild(g);
+      }
+      const g2 = document.createElement('optgroup'); g2.label = t('wz.all');
+      rest.forEach((e) => g2.appendChild(opt(e.id, `${e.name} (${fmtState(e)})`)));
+      sel.appendChild(g2);
+      sel.value = cur;
+      const live = el('div', css.help, '');
+      const upd = () => { const e = pool.find((x) => x.id === sel.value); live.textContent = e ? t('wz.live', { v: fmtState(e), id: e.id }) : ''; };
+      sel.addEventListener('change', () => { setPath(cfg, f.path, sel.value); upd(); emit(); });
+      upd();
+      wrap.appendChild(sel);
+      wrap.appendChild(live);
+      if (!cur && sug.length && f.auto !== false && !f.optional) {
+        const b = el('button', css.btn, t('wz.take', { n: sug[0].name }));
+        b.type = 'button';
+        b.addEventListener('click', () => { setPath(cfg, f.path, sug[0].id); emit(); render(); });
+        wrap.appendChild(b);
+      }
+      return wrap;
+    };
+
+    // invert: angehakt bedeutet "false speichern" (z. B. "Verlauf ausblenden" → history: false)
+    const fieldBool = (f) => {
+      const wrap = el('div');
+      const l = el('label', css.label + ';display:flex;align-items:center;gap:8px;font-weight:500');
+      const c = document.createElement('input'); c.type = 'checkbox';
+      const v = getPath(cfg, f.path);
+      c.checked = f.invert ? v === false : !!v;
+      c.addEventListener('change', () => {
+        if (f.invert) setPath(cfg, f.path, c.checked ? false : '', true); else setPath(cfg, f.path, c.checked ? true : '');
+        emit();
+      });
+      l.appendChild(c); l.appendChild(document.createTextNode(f.label));
+      wrap.appendChild(l);
+      if (f.help) wrap.appendChild(el('div', css.help, f.help));
+      return wrap;
+    };
+
+    // Auswahl der Medien: Anhaken legt den Abschnitt an, Abwählen entfernt ihn (bleibt im Zwischenspeicher)
+    const fieldMedia = (f) => {
+      const wrap = el('div');
+      head(wrap, f);
+      f.options.forEach((o) => {
+        const l = el('label', 'display:flex;align-items:center;gap:8px;margin:8px 0;font-weight:500');
+        const c = document.createElement('input'); c.type = 'checkbox';
+        c.checked = !!ui[o.value];
+        c.addEventListener('change', () => {
+          ui[o.value] = c.checked;
+          if (c.checked) cfg[o.value] = Object.assign({}, stash[o.value] || {}, cfg[o.value] || {});
+          else { if (cfg[o.value]) stash[o.value] = cfg[o.value]; delete cfg[o.value]; }
+          emit(); render();
+        });
+        l.appendChild(c); l.appendChild(document.createTextNode(o.label));
+        wrap.appendChild(l);
+      });
+      return wrap;
+    };
+
+    // Farbschema: Kacheln mit Vorschau
+    const fieldTheme = (f) => {
+      const wrap = el('div');
+      head(wrap, f);
+      const grid = el('div', 'display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px');
+      const cur = getPath(cfg, f.path) || 'dunkel';
+      const T = TC.THEMES;
+      TC.THEME_KEYS.forEach((k) => {
+        const bg = k === 'auto' ? `linear-gradient(110deg,${T.dunkel.bg1} 0 50%,${T.hell.bg1} 50% 100%)` : k === 'ha' ? 'var(--card-background-color,#222)' : T[k].bg1;
+        const fg = k === 'auto' ? '#8b97b3' : T[k].txt;
+        const tile = el('button', `cursor:pointer;text-align:left;padding:10px;border-radius:10px;font:inherit;border:2px solid ${cur === k ? 'var(--primary-color,#03a9f4)' : 'var(--divider-color,#555)'};background:${bg};color:${fg}`);
+        tile.type = 'button';
+        tile.appendChild(el('div', k === 'auto' ? 'font-weight:700;display:inline-block;padding:1px 7px;border-radius:6px;background:rgba(15,23,42,.8);color:#fff' : 'font-weight:700', t('th.' + k)));
+        const dots = el('div', 'display:flex;gap:4px;margin-top:6px');
+        [TC.MEDIA.strom.color, TC.OK, TC.BAD].forEach((c) => dots.appendChild(el('span', `width:14px;height:14px;border-radius:50%;background:rgb(${c})`)));
+        tile.appendChild(dots);
+        tile.addEventListener('click', () => { setPath(cfg, f.path, k === 'dunkel' ? '' : k); emit(); render(); });
+        grid.appendChild(tile);
+      });
+      wrap.appendChild(grid);
+      return wrap;
+    };
+
+    const fieldChoice = (f) => {
+      const wrap = el('div');
+      head(wrap, f);
+      const sel = el('select', css.input);
+      f.options.forEach((o) => sel.appendChild(opt(o.value, o.label)));
+      sel.value = getPath(cfg, f.path) || f.options[0].value;
+      sel.addEventListener('change', () => { setPath(cfg, f.path, sel.value); emit(); });
+      wrap.appendChild(sel);
+      return wrap;
+    };
+
+    const fieldInput = (f, type) => {
+      const wrap = el('div');
+      head(wrap, f);
+      const i = el('input', css.input);
+      i.type = type;
+      if (type === 'number') { i.step = f.step || '0.1'; i.min = f.min !== undefined ? f.min : '0'; }
+      if (f.placeholder) i.placeholder = f.placeholder;
+      const cur = getPath(cfg, f.path);
+      i.value = cur === undefined ? '' : cur;
+      i.addEventListener('change', () => { const v = type === 'number' ? (i.value === '' ? '' : parseFloat(i.value)) : i.value; setPath(cfg, f.path, v); emit(); });
+      wrap.appendChild(i);
+      return wrap;
+    };
+
+    // Dynamische Liste (Fußzeilen-Kacheln, Zusatzkacheln): Entität + Name (+ Einheit) je Zeile
+    const fieldList = (f) => {
+      const wrap = el('div');
+      head(wrap, f);
+      const KEY = f.itemKey || 'entity';
+      const all = list(hass, f.listKind || 'any');
+      const items = arr(getPath(cfg, f.path)).filter((x) => x && typeof x === 'object');
+      const used = items.map((x) => x[KEY]);
+      const write = (a) => { const v = a.filter((x) => x[KEY]); setPath(cfg, f.path, v.length ? v : ''); emit(); };
+      items.forEach((it, i) => {
+        const row = el('div', css.box);
+        const sel = el('select', css.input);
+        sel.appendChild(opt(it[KEY] || '', (all.find((e) => e.id === it[KEY]) || own(hass, it[KEY]) || { name: it[KEY] || '—' }).name));
+        all.forEach((e) => { if (e.id !== it[KEY]) sel.appendChild(opt(e.id, `${e.name} (${fmtState(e)})`)); });
+        sel.value = it[KEY] || '';
+        sel.addEventListener('change', () => { it[KEY] = sel.value; write(items); render(); });
+        const nm = el('input', css.input + ';margin-top:6px');
+        nm.placeholder = t('wz.name_ph');
+        nm.value = it.name || '';
+        nm.addEventListener('change', () => { if (nm.value) it.name = nm.value; else delete it.name; write(items); });
+        row.appendChild(sel); row.appendChild(nm);
+        if (f.unitKey) {
+          const un = el('input', css.input + ';margin-top:6px');
+          un.placeholder = t('wz.unit_ph');
+          un.value = it[f.unitKey] || '';
+          un.addEventListener('change', () => { if (un.value) it[f.unitKey] = un.value; else delete it[f.unitKey]; write(items); });
+          row.appendChild(un);
+        }
+        const rm = el('button', css.btn, t('wz.remove')); rm.type = 'button';
+        rm.addEventListener('click', () => { items.splice(i, 1); write(items); render(); });
+        row.appendChild(rm);
+        wrap.appendChild(row);
+      });
+      if (items.length < (f.max || 12)) {
+        const add = el('div', css.box);
+        add.appendChild(el('div', css.help, t('wz.add')));
+        const sel = el('select', css.input);
+        sel.appendChild(opt('', t('wz.pick')));
+        all.filter((e) => used.indexOf(e.id) < 0).forEach((e) => sel.appendChild(opt(e.id, `${e.name} (${fmtState(e)})`)));
+        sel.addEventListener('change', () => {
+          if (!sel.value) return;
+          items.push({ [KEY]: sel.value });
+          write(items); render();
+        });
+        add.appendChild(sel);
+        wrap.appendChild(add);
+      }
+      return wrap;
+    };
+
+    const visible = () => opts.steps.filter((s) => !s.when || s.when(cfg, ui));
+
+    function render() {
+      root.innerHTML = '';
+      const steps = visible();
+      if (step >= steps.length) step = steps.length - 1;
+      const st = steps[step];
+      // Fortschritt
+      const prog = el('div', 'display:flex;gap:6px;margin:4px 0 10px;flex-wrap:wrap');
+      steps.forEach((s, i) => {
+        const b = el('button', 'cursor:pointer;padding:4px 10px;border-radius:999px;border:1px solid var(--divider-color,#555);background:' + (i === step ? 'var(--primary-color,#03a9f4)' : 'transparent') + ';color:' + (i === step ? 'var(--text-primary-color,#fff)' : 'inherit') + ';font:inherit;font-size:.85em', `${i + 1}. ${s.short || s.title}`);
+        b.type = 'button';
+        b.addEventListener('click', () => { step = i; render(); });
+        prog.appendChild(b);
+      });
+      root.appendChild(prog);
+      root.appendChild(el('div', 'font-size:1.15em;font-weight:700;margin:6px 0', st.title));
+      if (st.text) root.appendChild(el('div', css.help + ';font-size:.95em', st.text));
+      (st.fields || []).forEach((f) => {
+        if (f.kind === 'bool') root.appendChild(fieldBool(f));
+        else if (f.kind === 'number') root.appendChild(fieldInput(f, 'number'));
+        else if (f.kind === 'text') root.appendChild(fieldInput(f, 'text'));
+        else if (f.kind === 'list') root.appendChild(fieldList(f));
+        else if (f.kind === 'choice') root.appendChild(fieldChoice(f));
+        else if (f.kind === 'theme') root.appendChild(fieldTheme(f));
+        else if (f.kind === 'media') root.appendChild(fieldMedia(f));
+        else root.appendChild(fieldSelect(f));
+      });
+      if (st.summary) {
+        const rows = st.summary(cfg, hass);
+        const b = el('div', css.box);
+        rows.forEach((r) => b.appendChild(el('div', 'margin:2px 0', r)));
+        root.appendChild(b);
+      }
+      const nav = el('div', 'margin-top:14px');
+      if (step > 0) { const b = el('button', css.btn, t('wz.back')); b.type = 'button'; b.addEventListener('click', () => { step--; render(); }); nav.appendChild(b); }
+      if (step < steps.length - 1) { const b = el('button', css.primary, t('wz.next')); b.type = 'button'; b.addEventListener('click', () => { step++; render(); }); nav.appendChild(b); }
+      else if (opts.done) { const b = el('button', css.primary, t('wz.done')); b.type = 'button'; b.addEventListener('click', () => opts.done()); nav.appendChild(b); }
+      root.appendChild(nav);
+    }
+    const initUi = () => { Object.keys(TC.MEDIA).forEach((k) => { ui[k] = !!(cfg[k] && typeof cfg[k] === 'object'); }); };
+    initUi();
+    if (opts.step) step = opts.step;
+    render();
+    return {
+      el: root,
+      // Kommen die Entitäten erst nach dem Aufbau (Home Assistant setzt oft zuerst die Konfiguration), einmal neu zeichnen
+      setHass(h) { const first = !hass || !hass.states; hass = h; if (first && h && h.states) render(); },
+      setConfig(c) { cfg = JSON.parse(JSON.stringify(c || {})); initUi(); render(); },
+      goto(i) { step = i; render(); },
+    };
+  };
+
+  TC.wizardList = list;
+  TC.wizardScore = score;
+  TC.suggest = suggest;
+  TC.toList = arr;
+  TC.prune = prune;
+})();
+
+
+/* ---- editor-kit.js ---- */
+/* Editor-Baukasten: Reiter "Assistent" (Schritt für Schritt) und "Alle Felder" (Formular von Home Assistant).
+   Nach energy-cockpit/src/editor-kit.js, MIT License, Copyright (c) 2026 Musicmaker3112. Angepasst: Texte über TC.T,
+   leere Abschnitte werden vor dem Speichern entfernt. */
+(() => {
+  const TC = window.TarifCockpit;
+
+  // ha-form ist in Home Assistant nicht immer geladen: über die Karten-Helfer nachladen
+  TC.ensureForm = async () => {
+    if (customElements.get('ha-form')) return true;
+    try {
+      const h = await window.loadCardHelpers();
+      const c = await h.createCardElement({ type: 'entities', entities: [] });
+      if (c && c.constructor && c.constructor.getConfigElement) await c.constructor.getConfigElement();
+    } catch (e) { /* weiter mit Wartezeit */ }
+    await Promise.race([customElements.whenDefined('ha-form'), new Promise((r) => setTimeout(r, 4000))]);
+    return !!customElements.get('ha-form');
+  };
+
+  // def: { needsSetup(config), steps(), form(), extra?(root, api) }
+  TC.defineEditor = (tag, def) => {
+    class Editor extends HTMLElement {
+      setConfig(c) {
+        const s = JSON.stringify(c || {});
+        if (this._last === s) return; // eigene Änderung: nicht neu aufbauen (Eingabefokus bleibt erhalten)
+        this._c = JSON.parse(s);
+        if (!this._tab) this._tab = def.needsSetup(this._c) ? 'wiz' : 'form';
+        this._wiz = null;
+        this._render();
+      }
+      set hass(h) {
+        const first = !this._hass;
+        this._hass = h;
+        TC.useHass(h);
+        if (this._wiz) this._wiz.setHass(h);
+        if (this._form) this._form.hass = h;
+        // Sprache steht erst mit hass fest: Reiter einmal neu beschriften
+        if (first && this._c) this._render();
+      }
+      _emit(cfg) {
+        const out = TC.prune(JSON.parse(JSON.stringify(cfg)));
+        if (this._c && this._c.type) out.type = this._c.type;
+        this._c = out;
+        this._last = JSON.stringify(out);
+        this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: JSON.parse(this._last) }, bubbles: true, composed: true }));
+      }
+      _render() {
+        if (!this._root) { this._root = document.createElement('div'); this.appendChild(this._root); }
+        const root = this._root;
+        const t = TC.T;
+        root.innerHTML = '';
+        const bar = document.createElement('div');
+        bar.style.cssText = 'display:flex;gap:6px;margin-bottom:10px';
+        [['wiz', t('ed.tab_wiz')], ['form', t('ed.tab_form')]].forEach(([k, txt]) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = txt;
+          b.dataset.tab = k;
+          b.style.cssText = 'cursor:pointer;padding:8px 14px;border-radius:8px;font:inherit;border:1px solid var(--divider-color,#555);background:' + (this._tab === k ? 'var(--primary-color,#03a9f4)' : 'var(--secondary-background-color,#222)') + ';color:' + (this._tab === k ? 'var(--text-primary-color,#fff)' : 'var(--primary-text-color,#fff)');
+          b.addEventListener('click', () => { this._tab = k; this._wiz = null; this._form = null; this._render(); });
+          bar.appendChild(b);
+        });
+        root.appendChild(bar);
+        if (this._tab === 'wiz') {
+          this._wiz = TC.createWizard({
+            steps: def.steps(), hass: this._hass, config: this._c,
+            onChange: (cfg) => this._emit(cfg),
+            done: () => { this._tab = 'form'; this._wiz = null; this._render(); },
+          });
+          root.appendChild(this._wiz.el);
+          return;
+        }
+        if (def.extra) def.extra(root, { config: () => this._c, hass: () => this._hass, emit: (c) => { this._emit(c); this._render(); } });
+        const holder = document.createElement('div');
+        root.appendChild(holder);
+        holder.textContent = t('ed.loading');
+        TC.ensureForm().then((ok) => {
+          holder.textContent = '';
+          if (!ok) { holder.textContent = t('ed.noform'); return; }
+          const f = def.form();
+          const form = document.createElement('ha-form');
+          form.schema = f.schema;
+          form.computeLabel = f.computeLabel;
+          if (f.computeHelper) form.computeHelper = f.computeHelper;
+          form.data = this._c;
+          if (this._hass) form.hass = this._hass;
+          form.addEventListener('value-changed', (ev) => { ev.stopPropagation(); this._emit(ev.detail.value); });
+          this._form = form;
+          holder.appendChild(form);
+        });
+      }
+    }
+    if (!customElements.get(tag)) customElements.define(tag, Editor);
+  };
+
+  // Hilfen für ha-form-Schemata
+  TC.sf = {
+    txt: (name) => ({ name, selector: { text: {} } }),
+    icon: (name) => ({ name, selector: { icon: {} } }),
+    ent: (name, domains) => ({ name, selector: { entity: domains ? { domain: domains } : {} } }),
+    numb: (name, min, max, step) => ({ name, selector: { number: { min, max, step: step || 1, mode: 'box' } } }),
+    bool: (name) => ({ name, selector: { boolean: {} } }),
+    sec: (name, title, schema) => ({ type: 'expandable', name, title, schema }),
+    theme: (name) => ({ name, selector: { select: { mode: 'dropdown', options: TC.THEME_KEYS.map((k) => ({ value: k, label: TC.T('th.' + k) })) } } }),
+  };
+})();
+
+
+/* ---- overview-card.js ---- */
+/* Karte 1: tarif-cockpit-card. Kacheln je Medium (Strom/Gas/Wasser) mit Urteil, Betrag, vier Balken und passendem Abschlag.
+   Sensor-Modus: Die Karte rechnet keine Prognose, sie bildet nur das Urteil aus Abschlag, Hochrechnung und Toleranz (Regel 2). */
+(() => {
+  const TC = window.TarifCockpit;
+  const { esc } = TC;
+
+  class TarifCockpitCard extends TC.BaseCard {
+    static getConfigElement() { return document.createElement('tarif-cockpit-card-editor'); }
+
+    // Vorschläge aus den vorhandenen Entitäten, keine fest eingebauten Namen (Regel 6)
+    static getStubConfig(hass) { return TC.overviewStub ? TC.overviewStub(hass) : {}; }
+
+    getCardSize() { return 9; }
+
+    setConfig(c) {
+      if (!c || typeof c !== 'object') throw new Error('tarif-cockpit: Konfiguration fehlt');
+      this._c = c;
+      this._last = null;
+      this._build();
+      this._render();
+      this._afterHass();
     }
 
-    // Rechnet ein Medium: Differenz = Abschläge im Jahr minus Hochrechnung (positiv = Guthaben)
+    _afterHass() {
+      if (this._c && this._c.analysis) TC.loadHistory(this, this._c.analysis);
+    }
+
+    // Rechnet ein Medium: Differenz = Abschläge im Jahr minus Hochrechnung (positiv = Guthaben). Unverändert seit v0.3.
     _calc(key, m) {
+      const h = this._h;
       const months = Number(m.months) > 0 ? Number(m.months) : 12;
-      const cost = this._num(m.cost), paid = this._num(m.advance_paid), fc = this._num(m.forecast_cost);
-      const monthly = this._num(m.advance), kwh = this._num(m.forecast_kwh);
+      const cost = TC.num(h, m.cost), paid = TC.num(h, m.advance_paid), fc = TC.num(h, m.forecast_cost);
+      const monthly = TC.num(h, m.advance), kwh = TC.num(h, m.forecast_kwh);
       const yearAdv = monthly === null ? null : monthly * months;
       const ok = fc !== null && yearAdv !== null;
       const diff = ok ? yearAdv - fc : null;
@@ -335,35 +986,42 @@ svg.ch{display:block;width:100%;height:auto}
     }
 
     _panel(calc, m) {
-      const def = MEDIA[calc.key];
-      const c = rgbOf(m.color, def.color);
+      const { nf, eur, T: t, OK, BAD, INFO, DARK } = TC;
+      const cur = TC.cur();
+      const def = TC.MEDIA[calc.key];
+      const c = TC.rgbOf(m.color, def.color);
       const q = calc.verdict === 'back' ? OK : calc.verdict === 'extra' ? BAD : INFO;
-      const label = { ok: 'Passt', back: 'Rückzahlung', extra: 'Nachzahlung' }[calc.verdict] || 'Noch keine Prognose';
-      const cap = { ok: 'Abschlag passt zum Verbrauch', back: 'Guthaben erwartet', extra: 'Nachzahlung erwartet' }[calc.verdict] || '';
+      // Farbe der Abschlagsbalken: Standard grün, mit advance_color je Medium oder für die ganze Karte überschreibbar
+      const advOwn = TC.rgbOf(m.advance_color, null) || TC.rgbOf(this._c.advance_color, null);
+      const adv = advOwn || OK, advd = advOwn || DARK[OK];
+      const label = calc.verdict ? t('verdict.' + calc.verdict) : t('verdict.none');
+      const cap = calc.verdict ? t('cap.' + calc.verdict) : '';
       const max = Math.max(calc.cost || 0, calc.paid || 0, calc.fc || 0, calc.yearAdv || 0, 1);
-      const row = (name, v, ref, extra) => {
+      const row = (name, v, isAdv, extra) => {
         if (v === null) return '';
-        return `<div class="row"><div class="rh"><span>${name}</span><b>${eur(v)} €${extra ? ' · ' + extra : ''}</b></div><div class="bar"><i class="${ref ? 'ref' : ''}" style="width:${Math.max(1, Math.min(100, (v / max) * 100))}%"></i></div></div>`;
+        return `<div class="row"><div class="rh"><span>${esc(name)}</span><b>${eur(v)} ${esc(cur)}${extra ? ' · ' + extra : ''}</b></div><div class="bar"><i class="${isAdv ? 'adv' : ''}" style="width:${Math.max(1, Math.min(100, (v / max) * 100))}%"></i></div></div>`;
       };
       // Hat das Medium einen eigenen Beginn, der vom Gesamtzeitraum abweicht, steht er in der Kachel
-      const own = this._date(m.start), all = this._date(this._c.period_start);
-      const startTxt = own && (!all || own.getTime() !== all.getTime()) ? ' · ab ' + this._fd(own) : '';
+      const own = TC.date(this._h, m.start), all = TC.date(this._h, this._c.period_start);
+      const startTxt = own && (!all || own.getTime() !== all.getTime()) ? t('lbl.from', { d: TC.fd(own) }) : '';
       const kwhTxt = calc.kwh === null ? '' : nf(calc.kwh, 0) + ' kWh';
       const sign = calc.diff === null ? '' : calc.verdict === 'ok' ? (calc.diff >= 0 ? '+' : '−') : '';
       const big = calc.diff === null
         ? `<span class="num">—</span>`
-        : `<span class="num">${sign}${eur(Math.abs(calc.diff))}</span><span class="unit">€</span><small>${cap}</small>`;
+        : `<span class="num">${sign}${eur(Math.abs(calc.diff))}</span><span class="unit">${esc(cur)}</span><small>${esc(cap)}</small>`;
       const hint = calc.fitting === null || calc.monthly === null ? ''
-        : `<div class="hint">Passender Abschlag: <b>${nf(calc.fitting, 0)} €</b> statt ${nf(calc.monthly, 0)} € im Monat.</div>`;
+        : `<div class="hint">${t('hint.fitting', { fit: nf(calc.fitting, 0) + ' ' + esc(cur), cur: nf(calc.monthly, 0) + ' ' + esc(cur) })}</div>`;
       const old = m.stale_hint ? `<div class="warn">${esc(m.stale_hint)}</div>` : '';
-      return `<div class="panel" style="--c:${c};--q:${q};--qd:${DARK[q]}">
-        <div class="ph"><span class="lbl"><i></i>${esc(m.name || def.name)}${m.advance && calc.monthly !== null ? ' · Abschlag ' + nf(calc.monthly, 0) + ' €' : ''}${startTxt}</span><span class="pill">${label}</span></div>
+      const advTxt = m.advance && calc.monthly !== null ? t('lbl.advance', { v: nf(calc.monthly, 0) + ' ' + cur }) : '';
+      // Nicht konfigurierte Zeilen entfallen; konfigurierte, aber nicht verfügbare Sensoren zeigen weiter "—" im Urteil
+      return `<div class="panel" style="--c:${c};--q:${q};--qd:${DARK[q]};--adv:${adv};--advd:${advd}">
+        <div class="ph"><span class="lbl"><i></i>${esc((m.name || t('media.' + calc.key)) + advTxt + startTxt)}</span><span class="pill">${esc(label)}</span></div>
         <div class="big">${big}</div>
         <div class="rows">
-          ${row('Kosten bisher', calc.cost, false, '')}
-          ${row('Abschläge bisher', calc.paid, true, '')}
-          ${row('Hochrechnung Jahr', calc.fc, false, kwhTxt)}
-          ${row('Abschläge Jahr (' + calc.months + ' ×)', calc.yearAdv, true, '')}
+          ${row(t('row.cost'), calc.cost, false, '')}
+          ${row(t('row.paid'), calc.paid, true, '')}
+          ${row(t('row.fc'), calc.fc, false, kwhTxt)}
+          ${row(t('row.year', { n: calc.months }), calc.yearAdv, true, '')}
         </div>${hint}${old}
       </div>`;
     }
@@ -381,11 +1039,11 @@ svg.ch{display:block;width:100%;height:auto}
           const v = parseFloat(s.state);
           if (f.format === 'date') {
             const d = new Date(s.state.replace(' ', 'T'));
-            val = isNaN(d) ? esc(s.state) : d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            val = isNaN(d) ? esc(s.state) : TC.fd(d);
           } else if (isNaN(v)) val = esc(s.state);
           else {
             const dec = typeof f.decimals === 'number' ? f.decimals : Math.abs(v) >= 100 ? 0 : Math.abs(v) >= 10 ? 1 : 2;
-            val = nf(f.scale ? v * f.scale : v, dec);
+            val = TC.nf(f.scale ? v * f.scale : v, dec);
           }
         }
         const showUnit = f.format === 'date' ? '' : unit;
@@ -395,42 +1053,380 @@ svg.ch{display:block;width:100%;height:auto}
     }
 
     _render() {
-      if (!this._c || !this._w || !this._h) return;
+      if (!this._prepare()) return;
+      const { T: t, OK, BAD, DARK } = TC;
       const c = this._c;
-      const card = this.shadowRoot.querySelector('ha-card');
-      const t = this._theme();
-      if (this.getAttribute('data-theme') !== t) this.setAttribute('data-theme', t);
-
-      const calcs = Object.keys(MEDIA).filter((k) => c[k]).map((k) => this._calc(k, c[k]));
+      const cur = TC.cur();
+      const keys = Object.keys(TC.MEDIA).filter((k) => c[k] && typeof c[k] === 'object');
+      const calcs = keys.map((k) => this._calc(k, c[k]));
       const sums = calcs.filter((x) => x.diff !== null);
       const total = sums.reduce((a, x) => a + x.diff, 0);
       const totalQ = total >= 0 ? OK : BAD;
       const head = sums.length > 1
-        ? `<span class="total" style="--q:${totalQ};--qd:${DARK[totalQ]}">${total >= 0 ? 'Guthaben' : 'Nachzahlung'} gesamt<b>${eur(Math.abs(total))} €</b></span>` : '';
-      const ps = this._date(c.period_start);
+        ? `<span class="total" style="--q:${totalQ};--qd:${DARK[totalQ]}">${esc(t(total >= 0 ? 'total.back' : 'total.extra'))}<b>${TC.eur(Math.abs(total))} ${esc(cur)}</b></span>` : '';
+      const ps = TC.date(this._h, c.period_start);
       let sub = c.subtitle ? `<small>${esc(c.subtitle)}</small>` : '';
       if (ps) {
-        const end = this._date(c.period_end) || new Date(ps.getFullYear() + 1, ps.getMonth(), ps.getDate() - 1);
+        const end = TC.date(this._h, c.period_end) || new Date(ps.getFullYear() + 1, ps.getMonth(), ps.getDate() - 1);
         const id = typeof c.period_start === 'string' && c.period_start.includes('.') && this._h.states[c.period_start] ? c.period_start : '';
-        sub = `<small${id ? ` class="tap" data-entity="${esc(id)}" title="Antippen, um den Zeitraum zu ändern"` : ''}>Abrechnungszeitraum ${this._fd(ps)} – ${this._fd(end)}</small>`;
+        sub = `<small${id ? ` class="tap" data-entity="${esc(id)}" title="${esc(t('period.tap'))}"` : ''}>${esc(t('period', { a: TC.fd(ps), b: TC.fd(end) }))}</small>`;
+      }
+      const header = this._header(c.icon || 'mdi:receipt-text-outline', c.title || t('card.title'), sub, head);
+      if (!keys.length && !c.analysis) {
+        this._put(`${header}<div class="setup">${t('setup.overview')}</div>`);
+        return;
+      }
+      // Veraltet: Auswertungsblock in Karte 1, wird weiter angezeigt (Abwärtskompatibilität)
+      let analysis = '';
+      if (c.analysis && typeof c.analysis === 'object') {
+        TC.warnOnce('analysis', t('warn.analysis'));
+        analysis = TC.analysisHtml(c.analysis, this._h, this._hist, c.analysis.title || t('an.title'), 'wide');
       }
       const panels = calcs.map((x) => this._panel(x, c[x.key])).join('');
-      const html = `<header><div class="title"><span class="ico" style="--c:${INFO}"><ha-icon icon="${esc(c.icon || 'mdi:receipt-text-outline')}"></ha-icon></span><div>${esc(c.title || 'Tarife und Abrechnung')}${sub}</div></div>${head}</header>
-        <div class="grid">${panels}</div>${this._analysis()}${this._footer()}
-        <div class="note">Hochrechnung aus den Prognose-Sensoren, Differenz = Abschläge im Jahr minus Hochrechnung. Keine Abrechnung.</div>`;
-      if (html !== this._last) { this._w.innerHTML = html; this._last = html; }
-      void card;
+      this._put(`${header}
+        ${panels ? `<div class="grid">${panels}</div>` : ''}${analysis}${this._footer()}
+        ${keys.length ? `<div class="note">${esc(t('note'))}</div>` : ''}`);
     }
   }
 
   if (!customElements.get('tarif-cockpit-card')) customElements.define('tarif-cockpit-card', TarifCockpitCard);
   window.customCards = window.customCards || [];
-  window.customCards.push({
-    type: 'tarif-cockpit-card',
-    name: 'Tarif-Cockpit',
-    description: 'Kosten, Abschläge und Jahresprognose für Strom, Gas und Wasser: passt, Nachzahlung oder Rückzahlung auf einen Blick',
-    preview: false,
-  });
+  if (!window.customCards.some((x) => x.type === 'tarif-cockpit-card')) {
+    window.customCards.push({
+      type: 'tarif-cockpit-card',
+      name: TC.T('pick.overview.name'),
+      description: TC.T('pick.overview.desc'),
+      preview: false,
+    });
+  }
   // eslint-disable-next-line no-console
-  console.info(`%c TARIF-COCKPIT %c ${VERSION} `, 'background:#60a5fa;color:#0b1220;font-weight:700', 'background:#121b30;color:#e8eefc');
+  console.info(`%c TARIF-COCKPIT %c ${TC.VERSION} `, 'background:#60a5fa;color:#0b1220;font-weight:700', 'background:#121b30;color:#e8eefc');
 })();
+
+
+/* ---- overview-editor.js ---- */
+/* Editor der Karte 1 (tarif-cockpit-card): Assistent, Formular und Vorschläge für getStubConfig. Sensor-Modus. */
+(() => {
+  const TC = window.TarifCockpit;
+  const { txt, icon, ent, numb, sec, theme } = TC.sf;
+
+  TC.addStrings('de', {
+    'ov.s_media': 'Medien', 'ov.t_media': 'Was soll die Karte zeigen?',
+    'ov.x_media': 'Wähle die Medien, für die du Abschläge zahlst. Für jedes Medium folgt ein Schritt mit seinen Sensoren.',
+    'ov.f_media': 'Medien',
+    'ov.x_medium': 'Die Karte rechnet nicht selbst. Sie zeigt, was diese Sensoren liefern, und bildet daraus das Urteil: Abschlag × Monate − Hochrechnung. Wie man die Sensoren baut, steht in docs/SENSOR-MODUS.md.',
+    'ov.cost': 'Kosten bisher (seit Beginn des Abrechnungszeitraums)', 'ov.advance_paid': 'Bisher gezahlte Abschläge',
+    'ov.forecast_cost': 'Hochrechnung der Kosten bis zum Ende des Zeitraums', 'ov.forecast_kwh': 'Hochrechnung des Verbrauchs (kWh)',
+    'ov.advance': 'Monatlicher Abschlag', 'ov.months': 'Abschläge pro Jahr', 'ov.months_h': 'Standard 12. Bei 11 Abschlägen hier 11 eintragen.',
+    'ov.name': 'Anzeigename', 'ov.color': 'Farbe (z. B. #fb923c)', 'ov.start': 'Eigener Beginn (Datum oder Datums-Helfer)',
+    'ov.stale_hint': 'Hinweistext (z. B. "Ablesung überfällig")', 'ov.advance_color_m': 'Farbe der Abschlagsbalken (nur dieses Medium)',
+    'ov.s_period': 'Zeitraum', 'ov.t_period': 'Abrechnungszeitraum und Kopfzeile',
+    'ov.x_period': 'Mit einem Datums-Helfer (input_datetime) lässt sich der Beginn später per Tipp auf der Karte ändern.',
+    'ov.period_start': 'Beginn des Abrechnungszeitraums', 'ov.period_end': 'Ende (sonst ein Jahr nach dem Beginn)',
+    'ov.title': 'Titel', 'ov.subtitle': 'Untertitel (wird durch den Zeitraum ersetzt)', 'ov.icon': 'Symbol',
+    'ov.tolerance_pct': 'Toleranz für "Passt" in %', 'ov.tolerance_h': 'Standard 5. Liegt die Differenz darunter, steht dort "Passt".',
+    'ov.s_look': 'Aussehen', 'ov.t_look': 'Farbschema',
+    'ov.x_look': 'Dunkel ist die Voreinstellung. "Automatisch" folgt dem hellen oder dunklen Design von Home Assistant, "Home Assistant" übernimmt dessen Farben.',
+    'ov.theme': 'Farbschema', 'ov.advance_color': 'Farbe der Abschlagsbalken (Standard grün, z. B. #34d399)',
+    'ov.s_footer': 'Fußzeile', 'ov.t_footer': 'Kacheln unten',
+    'ov.x_footer': 'Beliebige Werte unter den Medien, zum Beispiel Zählerstände, Tarife oder die letzte Ablesung. Weitere Optionen (decimals, scale, format: date) im YAML.',
+    'ov.footer': 'Kacheln',
+    'ov.s_done': 'Fertig', 'ov.t_done': 'Zusammenfassung', 'ov.x_done': 'Alles ist gespeichert.',
+    'ov.sum_media': 'Medien: {v}', 'ov.sum_none': 'keine', 'ov.sum_period': 'Zeitraum: {v}', 'ov.sum_period_none': 'nicht gesetzt',
+    'ov.sum_missing': '{m}: es fehlt {f}', 'ov.sum_ok': '{m}: vollständig',
+    'ov.sec': 'Sensoren {m}', 'ov.footer_form': 'Die Fußzeilen-Kacheln werden im Assistenten oder im YAML bearbeitet.',
+  });
+  TC.addStrings('en', {
+    'ov.s_media': 'Utilities', 'ov.t_media': 'What should the card show?',
+    'ov.x_media': 'Choose the utilities you pay advances for. Each one gets a step with its sensors.',
+    'ov.f_media': 'Utilities',
+    'ov.x_medium': 'The card does not calculate anything itself. It shows what these sensors provide and forms the verdict: advance × months − projection. How to build the sensors is described in docs/SENSOR-MODUS.md.',
+    'ov.cost': 'Costs so far (since the start of the billing period)', 'ov.advance_paid': 'Advances paid so far',
+    'ov.forecast_cost': 'Projected costs up to the end of the period', 'ov.forecast_kwh': 'Projected consumption (kWh)',
+    'ov.advance': 'Monthly advance', 'ov.months': 'Advances per year', 'ov.months_h': 'Default 12. Enter 11 if you pay 11 advances.',
+    'ov.name': 'Display name', 'ov.color': 'Colour (e.g. #fb923c)', 'ov.start': 'Own start (date or date helper)',
+    'ov.stale_hint': 'Hint text (e.g. "meter reading overdue")', 'ov.advance_color_m': 'Colour of the advance bars (this utility only)',
+    'ov.s_period': 'Period', 'ov.t_period': 'Billing period and header',
+    'ov.x_period': 'With a date helper (input_datetime) the start can later be changed by tapping it on the card.',
+    'ov.period_start': 'Start of the billing period', 'ov.period_end': 'End (otherwise one year after the start)',
+    'ov.title': 'Title', 'ov.subtitle': 'Subtitle (replaced by the period)', 'ov.icon': 'Icon',
+    'ov.tolerance_pct': 'Tolerance for "on track" in %', 'ov.tolerance_h': 'Default 5. Below this difference the card shows "on track".',
+    'ov.s_look': 'Look', 'ov.t_look': 'Colour scheme',
+    'ov.x_look': 'Dark is the default. "Automatic" follows the light or dark theme of Home Assistant, "Home Assistant" uses its colours.',
+    'ov.theme': 'Colour scheme', 'ov.advance_color': 'Colour of the advance bars (default green, e.g. #34d399)',
+    'ov.s_footer': 'Footer', 'ov.t_footer': 'Tiles at the bottom',
+    'ov.x_footer': 'Any values below the utilities, for example meter readings, prices or the last reading. More options (decimals, scale, format: date) in YAML.',
+    'ov.footer': 'Tiles',
+    'ov.s_done': 'Done', 'ov.t_done': 'Summary', 'ov.x_done': 'Everything is saved.',
+    'ov.sum_media': 'Utilities: {v}', 'ov.sum_none': 'none', 'ov.sum_period': 'Period: {v}', 'ov.sum_period_none': 'not set',
+    'ov.sum_missing': '{m}: missing {f}', 'ov.sum_ok': '{m}: complete',
+    'ov.sec': 'Sensors {m}', 'ov.footer_form': 'Footer tiles are edited in the wizard or in YAML.',
+  });
+
+  // Stichwörter je Medium und Feld (deutsch und englisch). Vorschläge verlangen immer das Medium (need).
+  const MW = { strom: /strom|electric|elec/i, gas: /(^|[^a-z])gas/i, wasser: /wasser|water/i };
+  const H = {
+    cost: [/kosten|cost/i, /bisher|so_far|period|abrechnung|billing|jahr|year/i],
+    advance_paid: [/abschl[aä]g\w*_?(bisher|gezahlt|abrechnung|jahr)|advances?_?paid|paid/i, /abschl|advance/i],
+    forecast_cost: [/prognose|forecast|hochrechn|projection/i, /kosten|cost/i],
+    forecast_kwh: [/prognose|forecast|hochrechn|projection/i, /verbrauch|consumption|kwh/i],
+    advance: [/abschlag|advance|installment|vorauszahl/i],
+  };
+  const KIND = { cost: 'money', advance_paid: 'money', forecast_cost: 'money', forecast_kwh: 'quantity', advance: 'money' };
+  // Felder, die für das Urteil gebraucht werden
+  const NEED = ['forecast_cost', 'advance'];
+  const FIELDS = ['cost', 'advance_paid', 'forecast_cost', 'forecast_kwh', 'advance'];
+  // Ausschluss: "Prognose-Kosten" ist kein "Kosten bisher", der Abschlag selbst ist kein "Abschläge bisher"
+  const NOT = { cost: /prognose|forecast|hochrechn|abschl|advance/i, advance_paid: /prognose|forecast/i, advance: /bisher|paid|gezahlt|jahr|year|prognose|forecast/i };
+
+  const pick = (hass, k, f, used) => {
+    const s = TC.suggest(hass, KIND[f], H[f], MW[k], used).filter((e) => !(NOT[f] && NOT[f].test(e.id + ' ' + e.name)));
+    return s.length ? s[0].id : null;
+  };
+
+  // getStubConfig: nur übernehmen, was eindeutig zu einem Medium passt; ohne Treffer {} (Karte zeigt "Im Editor einrichten")
+  TC.overviewStub = (hass) => {
+    const out = {};
+    if (!hass || !hass.states) return out;
+    const used = [];
+    Object.keys(TC.MEDIA).forEach((k) => {
+      const m = {};
+      FIELDS.forEach((f) => { const id = pick(hass, k, f, used); if (id) { m[f] = id; used.push(id); } });
+      if (NEED.every((f) => m[f])) out[k] = m;
+    });
+    return out;
+  };
+
+  const mediumStep = (k) => ({
+    short: TC.T('media.' + k), title: TC.T('media.' + k), text: TC.T('ov.x_medium'),
+    when: (cfg, ui) => !!ui[k],
+    fields: [
+      { path: k + '.cost', label: TC.T('ov.cost'), kind: 'money', hints: H.cost, need: MW[k] },
+      { path: k + '.advance_paid', label: TC.T('ov.advance_paid'), kind: 'money', hints: H.advance_paid, need: MW[k] },
+      { path: k + '.forecast_cost', label: TC.T('ov.forecast_cost'), kind: 'money', hints: H.forecast_cost, need: MW[k] },
+      { path: k + '.forecast_kwh', label: TC.T('ov.forecast_kwh'), kind: 'quantity', hints: H.forecast_kwh, need: MW[k], optional: true },
+      { path: k + '.advance', label: TC.T('ov.advance'), kind: 'money', hints: H.advance, need: MW[k] },
+      { path: k + '.months', label: TC.T('ov.months'), kind: 'number', step: '1', min: 1, optional: true, help: TC.T('ov.months_h') },
+      { path: k + '.name', label: TC.T('ov.name'), kind: 'text', optional: true, placeholder: TC.T('media.' + k) },
+    ],
+  });
+
+  const steps = () => {
+    const t = TC.T;
+    return [
+      { short: t('ov.s_media'), title: t('ov.t_media'), text: t('ov.x_media'), fields: [
+        { path: '_media', label: t('ov.f_media'), kind: 'media', options: Object.keys(TC.MEDIA).map((k) => ({ value: k, label: t('media.' + k) })) },
+      ] },
+      mediumStep('strom'), mediumStep('gas'), mediumStep('wasser'),
+      { short: t('ov.s_period'), title: t('ov.t_period'), text: t('ov.x_period'), fields: [
+        { path: 'period_start', label: t('ov.period_start'), kind: 'date', optional: true, hints: [/abrechnung|billing|beginn|start/i] },
+        { path: 'period_end', label: t('ov.period_end'), kind: 'date', optional: true, hints: [/abrechnung|billing/i, /ende|end/i] },
+        { path: 'title', label: t('ov.title'), kind: 'text', optional: true, placeholder: t('card.title') },
+        { path: 'tolerance_pct', label: t('ov.tolerance_pct'), kind: 'number', step: '1', optional: true, help: t('ov.tolerance_h') },
+      ] },
+      { short: t('ov.s_look'), title: t('ov.t_look'), text: t('ov.x_look'), fields: [
+        { path: 'theme', label: t('ov.theme'), kind: 'theme' },
+        { path: 'advance_color', label: t('ov.advance_color'), kind: 'text', optional: true },
+      ] },
+      { short: t('ov.s_footer'), title: t('ov.t_footer'), text: t('ov.x_footer'), fields: [
+        { path: 'footer', label: t('ov.footer'), kind: 'list', listKind: 'any', itemKey: 'entity', unitKey: 'unit', max: 12 },
+      ] },
+      { short: t('ov.s_done'), title: t('ov.t_done'), text: t('ov.x_done'), summary: (c) => {
+        const ks = Object.keys(TC.MEDIA).filter((k) => c[k]);
+        const rows = [t('ov.sum_media', { v: ks.length ? ks.map((k) => t('media.' + k)).join(', ') : t('ov.sum_none') })];
+        ks.forEach((k) => {
+          const miss = NEED.concat(['cost', 'advance_paid']).filter((f) => !c[k][f]);
+          rows.push(miss.length ? t('ov.sum_missing', { m: t('media.' + k), f: miss.map((f) => t('ov.' + f)).join(', ') }) : t('ov.sum_ok', { m: t('media.' + k) }));
+        });
+        rows.push(t('ov.sum_period', { v: c.period_start || t('ov.sum_period_none') }));
+        return rows;
+      } },
+    ];
+  };
+
+  const LABEL_KEYS = ['title', 'subtitle', 'icon', 'period_start', 'period_end', 'theme', 'tolerance_pct', 'advance_color',
+    'cost', 'advance_paid', 'forecast_cost', 'forecast_kwh', 'advance', 'months', 'name', 'color', 'start', 'stale_hint'];
+  const form = () => {
+    const t = TC.T;
+    const medium = (k) => sec(k, t('ov.sec', { m: t('media.' + k) }), [
+      ent('cost', ['sensor', 'input_number', 'number']), ent('advance_paid', ['sensor', 'input_number', 'number']),
+      ent('forecast_cost', ['sensor', 'input_number', 'number']), ent('forecast_kwh', ['sensor', 'input_number', 'number']),
+      ent('advance', ['input_number', 'sensor', 'number']), numb('months', 1, 12, 1),
+      txt('name'), txt('color'), txt('start'), txt('stale_hint'), Object.assign(txt('advance_color'), { _m: true }),
+    ]);
+    return {
+      schema: [
+        txt('title'), txt('subtitle'), icon('icon'),
+        txt('period_start'), txt('period_end'), numb('tolerance_pct', 0, 50, 1),
+        theme('theme'), txt('advance_color'),
+        medium('strom'), medium('gas'), medium('wasser'),
+      ],
+      computeLabel: (s) => (s.name === 'advance_color' && s._m ? t('ov.advance_color_m') : LABEL_KEYS.includes(s.name) ? t('ov.' + s.name) : s.title || s.name),
+      computeHelper: (s) => (s.name === 'months' ? t('ov.months_h') : s.name === 'tolerance_pct' ? t('ov.tolerance_h') : s.name === 'period_start' ? t('ov.x_period') : s.name === 'title' ? t('ov.footer_form') : undefined),
+    };
+  };
+
+  TC.defineEditor('tarif-cockpit-card-editor', {
+    needsSetup: (c) => !Object.keys(TC.MEDIA).some((k) => c[k] && typeof c[k] === 'object' && Object.keys(c[k]).length),
+    steps,
+    form,
+  });
+})();
+
+
+/* ---- analyse-card.js ---- */
+/* Karte 2: tarif-cockpit-analyse-card. Auswertung (z. B. Gas witterungsbereinigt): Kennwert, Vergleich, Kacheln, Verlauf.
+   Die Felder entsprechen dem früheren Block "analysis" der Karte 1, hier auf oberster Ebene. Die Karte rechnet nichts (Regel 2). */
+(() => {
+  const TC = window.TarifCockpit;
+  const { esc } = TC;
+
+  class TarifCockpitAnalyseCard extends TC.BaseCard {
+    static getConfigElement() { return document.createElement('tarif-cockpit-analyse-card-editor'); }
+
+    static getStubConfig(hass) { return TC.analyseStub ? TC.analyseStub(hass) : {}; }
+
+    getCardSize() { return 7; }
+
+    setConfig(c) {
+      if (!c || typeof c !== 'object') throw new Error('tarif-cockpit-analyse-card: Konfiguration fehlt');
+      this._c = c;
+      this._last = null;
+      this._build();
+      this._render();
+      this._afterHass();
+    }
+
+    _afterHass() { if (this._c) TC.loadHistory(this, this._c); }
+
+    _render() {
+      if (!this._prepare()) return;
+      const t = TC.T;
+      const c = this._c;
+      const sub = c.subtitle ? `<small>${esc(c.subtitle)}</small>` : '';
+      const header = this._header(c.icon || 'mdi:chart-bell-curve-cumulative', c.title || t('an.title'), sub, '');
+      const any = ['kennwert', 'consumption', 'temperature', 'degree_days'].some((k) => c[k]) || (Array.isArray(c.extras) && c.extras.length);
+      if (!any) {
+        this._put(`${header}<div class="setup">${t('setup.analyse')}</div>`);
+        return;
+      }
+      this._put(header + TC.analysisHtml(c, this._h, this._hist, c.label || t('an.kennwert'), ''));
+    }
+  }
+
+  if (!customElements.get('tarif-cockpit-analyse-card')) customElements.define('tarif-cockpit-analyse-card', TarifCockpitAnalyseCard);
+  window.customCards = window.customCards || [];
+  if (!window.customCards.some((x) => x.type === 'tarif-cockpit-analyse-card')) {
+    window.customCards.push({
+      type: 'tarif-cockpit-analyse-card',
+      name: TC.T('pick.analyse.name'),
+      description: TC.T('pick.analyse.desc'),
+      preview: false,
+    });
+  }
+})();
+
+
+/* ---- analyse-editor.js ---- */
+/* Editor der Karte 2 (tarif-cockpit-analyse-card): Assistent, Formular und Vorschläge für getStubConfig. */
+(() => {
+  const TC = window.TarifCockpit;
+  const { txt, icon, ent, numb, theme } = TC.sf;
+
+  TC.addStrings('de', {
+    'ae.s_kw': 'Kennwert', 'ae.t_kw': 'Kennwert je Gradtag',
+    'ae.x_kw': 'Der Kennwert sagt, wie viel kWh Gas je Gradtag gebraucht werden. Er kommt aus deinen Sensoren (siehe docs/SENSOR-MODUS.md), die Karte rechnet ihn nicht.',
+    'ae.kennwert': 'Kennwert (kWh/Kd)', 'ae.kennwert_previous': 'Kennwert der Vorperiode (für den Vergleich)',
+    'ae.s_period': 'Periode', 'ae.t_period': 'Werte der letzten Ableseperiode',
+    'ae.x_period': 'Diese Werte erscheinen als Kacheln. Verbrauch und Außentemperatur liefern auch den Verlauf aus der Langzeitstatistik.',
+    'ae.consumption': 'Verbrauch letzte Periode (kWh)', 'ae.temperature': 'Ø Außentemperatur letzte Periode (°C)', 'ae.degree_days': 'Gradtage letzte Periode',
+    'ae.s_extras': 'Zusatz', 'ae.t_extras': 'Weitere Kacheln', 'ae.x_extras': 'Zum Beispiel Ofentage oder Ofenstunden seit der letzten Ablesung.', 'ae.extras': 'Kacheln',
+    'ae.s_look': 'Darstellung', 'ae.t_look': 'Verlauf und Aussehen', 'ae.x_look': 'Der Verlauf zeigt Monatsmittel der Langzeitstatistik.',
+    'ae.months': 'Monate im Verlauf (höchstens 36)', 'ae.history': 'Verlauf ausblenden', 'ae.title': 'Titel', 'ae.subtitle': 'Untertitel', 'ae.icon': 'Symbol',
+    'ae.explain': 'Erklärtext unter der Auswertung', 'ae.pending_text': 'Text, solange kein Kennwert vorliegt', 'ae.color': 'Farbe (z. B. #fb923c)', 'ae.theme': 'Farbschema', 'ae.label': 'Überschrift im Panel',
+    'ae.s_done': 'Fertig', 'ae.t_done': 'Zusammenfassung', 'ae.x_done': 'Alles ist gespeichert.',
+    'ae.sum_kw': 'Kennwert: {v}', 'ae.sum_tiles': 'Kacheln: {v}', 'ae.sum_hist': 'Verlauf: {v}', 'ae.on': 'an', 'ae.off': 'aus', 'ae.none': 'nicht gesetzt',
+  });
+  TC.addStrings('en', {
+    'ae.s_kw': 'Coefficient', 'ae.t_kw': 'Coefficient per degree day',
+    'ae.x_kw': 'The coefficient tells how many kWh of gas are needed per degree day. It comes from your sensors (see docs/SENSOR-MODUS.md); the card does not calculate it.',
+    'ae.kennwert': 'Coefficient (kWh/Kd)', 'ae.kennwert_previous': 'Coefficient of the previous period (for comparison)',
+    'ae.s_period': 'Period', 'ae.t_period': 'Values of the last reading period',
+    'ae.x_period': 'These values appear as tiles. Consumption and outdoor temperature also provide the history from the long-term statistics.',
+    'ae.consumption': 'Consumption last period (kWh)', 'ae.temperature': 'Ø outdoor temperature last period (°C)', 'ae.degree_days': 'Degree days last period',
+    'ae.s_extras': 'Extras', 'ae.t_extras': 'More tiles', 'ae.x_extras': 'For example stove days or stove hours since the last reading.', 'ae.extras': 'Tiles',
+    'ae.s_look': 'Display', 'ae.t_look': 'History and look', 'ae.x_look': 'The history shows monthly means from the long-term statistics.',
+    'ae.months': 'Months in the history (at most 36)', 'ae.history': 'Hide history', 'ae.title': 'Title', 'ae.subtitle': 'Subtitle', 'ae.icon': 'Icon',
+    'ae.explain': 'Explanation below the analysis', 'ae.pending_text': 'Text while no coefficient is available', 'ae.color': 'Colour (e.g. #fb923c)', 'ae.theme': 'Colour scheme', 'ae.label': 'Heading in the panel',
+    'ae.s_done': 'Done', 'ae.t_done': 'Summary', 'ae.x_done': 'Everything is saved.',
+    'ae.sum_kw': 'Coefficient: {v}', 'ae.sum_tiles': 'Tiles: {v}', 'ae.sum_hist': 'History: {v}', 'ae.on': 'on', 'ae.off': 'off', 'ae.none': 'not set',
+  });
+
+  const H = {
+    kennwert: [/kennwert|coefficient|heat_?index/i, /gradtag|degree/i],
+    kennwert_previous: [/vorperiode|previous|vorjahr|last/i, /kennwert|coefficient/i],
+    consumption: [/verbrauch|consumption/i, /periode|period/i, /gas/i],
+    temperature: [/au(ss|ß)en|outdoor|outside/i, /periode|period|mittel|mean/i],
+    degree_days: [/gradtag|degree_?day|heating_?degree/i],
+  };
+
+  // getStubConfig: nur einen eindeutig passenden Kennwert vorschlagen, sonst {}
+  TC.analyseStub = (hass) => {
+    if (!hass || !hass.states) return {};
+    const kw = TC.suggest(hass, 'value', H.kennwert, /kennwert|coefficient/i).filter((e) => !/vorperiode|previous/i.test(e.id));
+    return kw.length ? { kennwert: kw[0].id } : {};
+  };
+
+  const steps = () => {
+    const t = TC.T;
+    return [
+      { short: t('ae.s_kw'), title: t('ae.t_kw'), text: t('ae.x_kw'), fields: [
+        { path: 'kennwert', label: t('ae.kennwert'), kind: 'value', hints: H.kennwert },
+        { path: 'kennwert_previous', label: t('ae.kennwert_previous'), kind: 'value', hints: H.kennwert_previous, optional: true },
+      ] },
+      { short: t('ae.s_period'), title: t('ae.t_period'), text: t('ae.x_period'), fields: [
+        { path: 'consumption', label: t('ae.consumption'), kind: 'quantity', hints: H.consumption, optional: true },
+        { path: 'temperature', label: t('ae.temperature'), kind: 'temp', hints: H.temperature, optional: true },
+        { path: 'degree_days', label: t('ae.degree_days'), kind: 'value', hints: H.degree_days, optional: true },
+      ] },
+      { short: t('ae.s_extras'), title: t('ae.t_extras'), text: t('ae.x_extras'), fields: [
+        { path: 'extras', label: t('ae.extras'), kind: 'list', listKind: 'value', itemKey: 'entity', unitKey: 'unit', max: 8 },
+      ] },
+      { short: t('ae.s_look'), title: t('ae.t_look'), text: t('ae.x_look'), fields: [
+        { path: 'title', label: t('ae.title'), kind: 'text', optional: true, placeholder: t('an.title') },
+        { path: 'months', label: t('ae.months'), kind: 'number', step: '1', min: 1, optional: true, placeholder: '24' },
+        { path: 'history', label: t('ae.history'), kind: 'bool', invert: true },
+        { path: 'explain', label: t('ae.explain'), kind: 'text', optional: true },
+        { path: 'theme', label: t('ae.theme'), kind: 'theme' },
+      ] },
+      { short: t('ae.s_done'), title: t('ae.t_done'), text: t('ae.x_done'), summary: (c) => [
+        t('ae.sum_kw', { v: c.kennwert || t('ae.none') }),
+        t('ae.sum_tiles', { v: [c.consumption, c.temperature, c.degree_days].filter(Boolean).length + (Array.isArray(c.extras) ? c.extras.length : 0) }),
+        t('ae.sum_hist', { v: c.history === false ? t('ae.off') : t('ae.on') }),
+      ] },
+    ];
+  };
+
+  const LABEL_KEYS = ['kennwert', 'kennwert_previous', 'consumption', 'temperature', 'degree_days', 'months', 'title', 'subtitle', 'icon', 'explain', 'pending_text', 'color', 'theme', 'label'];
+  const form = () => {
+    const t = TC.T;
+    return {
+      schema: [
+        txt('title'), txt('subtitle'), icon('icon'),
+        ent('kennwert', ['sensor', 'input_number']), ent('kennwert_previous', ['sensor', 'input_number']),
+        ent('consumption', ['sensor', 'input_number']), ent('temperature', ['sensor', 'input_number']), ent('degree_days', ['sensor', 'input_number']),
+        // "Verlauf ausblenden" (history: false) und Zusatzkacheln stehen im Assistenten bzw. im YAML
+        numb('months', 1, 36, 1),
+        txt('explain'), txt('pending_text'), txt('label'), txt('color'), theme('theme'),
+      ],
+      computeLabel: (s) => (LABEL_KEYS.includes(s.name) ? t('ae.' + s.name) : s.name),
+    };
+  };
+
+  TC.defineEditor('tarif-cockpit-analyse-card-editor', {
+    needsSetup: (c) => !(c.kennwert || c.consumption),
+    steps,
+    form,
+  });
+})();
+

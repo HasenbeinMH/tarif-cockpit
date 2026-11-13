@@ -1,0 +1,94 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tarif-cockpit Editor Test</title>
+<link rel="stylesheet" href="_test.css">
+<style>
+:root{--primary-color:#03a9f4;--text-primary-color:#fff;--primary-text-color:#e1e1e1;--secondary-background-color:#2b2b2b;--card-background-color:#1c1c1c;--divider-color:#4a4a4a}
+body{font-family:Roboto,system-ui,sans-serif;font-size:14px;background:#111}
+.wrap2{display:flex;gap:16px;align-items:flex-start;padding:12px;flex-wrap:wrap}
+.dlg{width:560px;background:#1c1c1c;border-radius:14px;overflow:hidden;color:#e1e1e1}
+.hd{padding:14px 18px;font-size:18px;border-bottom:1px solid #333;display:flex;justify-content:space-between}
+.hd small{opacity:.6;font-size:13px;align-self:center}
+.bd{padding:14px 18px 18px}
+#prev{flex:1;min-width:380px;max-width:760px}
+pre{white-space:pre-wrap;font-size:11px;opacity:.75;background:#0b0f19;padding:10px;border-radius:8px;max-height:300px;overflow:auto}
+body.shot .wrap2{padding:0}body.shot #prev{display:none}body.shot .dlg{border-radius:0}
+</style></head>
+<body>
+<div id="bar"></div>
+<div class="wrap2"><div class="dlg" id="dlg"><div class="hd"><span>Karte konfigurieren</span><small id="kind">Tarif-Cockpit</small></div><div class="bd" id="ed"></div></div>
+<div id="prev"><div id="host"></div><pre id="out"></pre></div></div>
+<script src="_mock.js"></script>
+<script>
+// Nachbau von ha-form (nur für Tests und Screenshots): zeigt Felder, Werte und klappbare Bereiche; Texteingaben sind änderbar
+customElements.define('ha-form', class extends HTMLElement {
+  set schema(v) { this._s = v; this._r(); } set data(v) { this._d = JSON.parse(JSON.stringify(v || {})); this._r(); }
+  set computeLabel(f) { this._l = f; this._r(); } set computeHelper(f) { this._h = f; this._r(); } set hass(h) { this._hs = h; }
+  _r() {
+    if (!this._s) return;
+    this.innerHTML = '';
+    const lab = (it) => (this._l ? this._l(it) : '') || it.title || it.name;
+    const draw = (schema, data, path, into) => schema.forEach((it) => {
+      if (it.type === 'expandable') {
+        const d = document.createElement('details');
+        d.style.cssText = 'border:1px solid #4a4a4a;border-radius:10px;margin:8px 0;padding:8px 12px';
+        d.innerHTML = '<summary style="font-weight:600;cursor:pointer">' + (it.title || it.name) + '</summary>';
+        draw(it.schema, (data || {})[it.name] || {}, path.concat(it.name), d);
+        into.appendChild(d);
+        return;
+      }
+      const v = data ? data[it.name] : undefined;
+      const row = document.createElement('div');
+      row.style.cssText = 'margin:10px 0';
+      const help = this._h ? this._h(it) : '';
+      row.innerHTML = '<div style="font-size:12px;opacity:.65;margin-bottom:3px">' + lab(it) + '</div>';
+      const inp = document.createElement('input');
+      inp.style.cssText = 'width:100%;box-sizing:border-box;background:transparent;border:0;border-bottom:1px solid #777;color:inherit;padding:6px 2px;font:inherit';
+      inp.value = v === undefined ? '' : (typeof v === 'object' ? JSON.stringify(v) : v);
+      inp.addEventListener('change', () => {
+        const val = JSON.parse(JSON.stringify(this._d));
+        let o = val; path.forEach((p) => { o[p] = o[p] || {}; o = o[p]; });
+        const isNum = it.selector && it.selector.number;
+        if (inp.value === '') delete o[it.name]; else o[it.name] = isNum ? parseFloat(inp.value) : inp.value;
+        this._d = val;
+        this.dispatchEvent(new CustomEvent('value-changed', { detail: { value: val } }));
+      });
+      row.appendChild(inp);
+      if (help) row.insertAdjacentHTML('beforeend', '<div style="font-size:11px;opacity:.55;margin-top:3px">' + help + '</div>');
+      into.appendChild(row);
+    });
+    draw(this._s, this._d, [], this);
+  }
+});
+</script>
+<script src="../tarif-cockpit.js"></script>
+<script>
+const T = window.TCTEST, q = T.q;
+const card = q.get('card') === 'analyse' ? 'analyse' : 'overview';
+const tag = card === 'analyse' ? 'tarif-cockpit-analyse-card' : 'tarif-cockpit-card';
+if (q.has('shot')) document.body.classList.add('shot');
+document.getElementById('kind').textContent = card === 'analyse' ? 'Tarif-Cockpit Auswertung' : 'Tarif-Cockpit';
+// cfg=leer: frische Karte (getStubConfig), cfg=nichts: ganz leer, sonst Konfiguration des Szenarios
+const start = q.get('cfg') === 'leer' ? customElements.get(tag).getStubConfig(T.hass(T.scene)) : q.get('cfg') === 'nichts' ? {} : T.config(T.scene, card, tag);
+let cfg = Object.assign({ type: 'custom:' + tag }, start);
+let ed;
+const preview = () => {
+  const host = document.getElementById('host'); host.innerHTML = '';
+  const el = document.createElement(tag); el.setConfig(cfg); host.appendChild(el); el.hass = T.hass(T.scene);
+  document.getElementById('out').textContent = JSON.stringify(cfg, null, 2);
+};
+const build = () => {
+  const box = document.getElementById('ed'); box.innerHTML = '';
+  ed = document.createElement(tag + '-editor');
+  ed.addEventListener('config-changed', (e) => { cfg = e.detail.config; ed.setConfig(cfg); preview(); });
+  ed.setConfig(cfg); ed.hass = T.hass(T.scene); box.appendChild(ed);
+  // Reiter und Schritt per URL (für Screenshots)
+  if (q.get('tab')) ed.querySelector(`button[data-tab="${q.get('tab')}"]`).click();
+  // check=Strom: Kästchen mit dieser Beschriftung anhaken (z. B. Medien im ersten Schritt)
+  (q.getAll('check')).forEach((name) => { const l = [...ed.querySelectorAll('label')].find((x) => x.textContent.trim() === name); if (l) l.querySelector('input').click(); });
+  const step = parseInt(q.get('step') || '0', 10);
+  if (step) { const prog = [...ed.querySelectorAll('button')].filter((x) => /^\d+\. /.test(x.textContent)); if (prog[step]) prog[step].click(); }
+  preview();
+};
+T.bar(() => { cfg = Object.assign({ type: 'custom:' + tag }, T.config(T.scene, card, tag)); build(); T.mark(); });
+T.mark(); build();
+</script></body></html>

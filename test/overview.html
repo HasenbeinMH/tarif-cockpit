@@ -1,0 +1,14 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tarif-cockpit-card Test</title>
+<link rel="stylesheet" href="_test.css"></head>
+<body>
+<div id="bar"></div><div id="info"></div>
+<div id="host"></div>
+<script src="_mock.js"></script>
+<script src="../tarif-cockpit.js"></script>
+<script>
+const T = window.TCTEST;
+const go = () => T.mount('tarif-cockpit-card', 'overview');
+T.bar(go); T.mark(); go();
+if (T.q.has('narrow')) document.getElementById('host').classList.add('narrow');
+</script></body></html>
