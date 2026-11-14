@@ -204,6 +204,22 @@
       },
       series: { zaehler_id: 'm3', streuung: scatterData(1.8, 2.5, false, false), kosten: costData('2026-01-01', '2026-12-31', '2026-11-13', 70, 95) },
     },
+    impulse: {
+      meta: () => {
+        const m = strip(META);
+        Object.assign(m.haushalte[0].zaehler[1].sensoren, { abgleich: sid('gas', 'abgleich'), gasleistung: sid('gas', 'gasleistung'),
+          brennerlaufzeit: sid('gas', 'brennerlaufzeit'), brennerstarts: sid('gas', 'brennerstarts') });
+        m.haushalte[0].waermeerzeuger = [];
+        return m;
+      },
+      states: {
+        [sid('gas', 'abgleich')]: S(-4.8, '%', 'Abgleich', { angeglichen: true, hinweis: true, faktor: 1.05, fehlende_menge: 14.2 }),
+        [sid('gas', 'gasleistung')]: S(7.4, 'kW', 'Gasleistung'),
+        [sid('gas', 'brennerlaufzeit')]: S(412, 'h', 'Brennerlaufzeit', { taktet_gestern: true, taktet_tage: ['2026-11-12'] }),
+        [sid('gas', 'brennerstarts')]: S(388, '', 'Brennerstarts', { taktet_gestern: true }),
+      },
+      series: { zaehler_id: 'm2', streuung: scatterData(6.4, 9, false, false), kosten: costData('2026-08-15', '2027-08-14', '2026-11-13', 95, 175) },
+    },
     fernwaerme: {
       meta: () => ({ haushalte: [{ entry_id: 'e1', name: 'Wohnung', saldo_gesamt: null, warmwasser: 'heizung', zaehler: [
         { zaehler_id: 'f1', device_id: 'dev_fw', name: 'Fernwärme', medium: 'fernwaerme', unit: 'MWh', rolle: 'main', hauptzaehler: null,
@@ -245,6 +261,7 @@
     integ_neu: { name: 'Integration vorhanden, Karte frisch hinzugefügt (getStubConfig)', states: {}, hook: integHass(false), overview: 'stub', analyse: 'stub' },
     heizung: { name: 'Gas mit Kaminofen und Split-Klima (Wärmeerzeuger, Diagramme)', states: {}, hook: heatHass('heizung'), overview: { integration: true }, analyse: { integration: true } },
     waermepumpe: { name: 'Wärmepumpe am eigenen Zähler', states: {}, hook: heatHass('waermepumpe'), overview: { integration: true }, analyse: { integration: true } },
+    impulse: { name: 'Gas mit Impulszähler: Abgleich, Gasleistung, Brenner', states: {}, hook: heatHass('impulse'), overview: { integration: true }, analyse: { integration: true } },
     fernwaerme: { name: 'Fernwärme in MWh', states: {}, hook: heatHass('fernwaerme'), overview: { integration: true }, analyse: { integration: true } },
     en: { name: 'Englische Oberfläche', states: {}, lang: 'en', overview: Object.assign({}, legacy, { analysis: undefined, title: 'Tariffs and billing' }), analyse: Object.assign({}, analysis, { title: 'Gas, weather-adjusted', explain: undefined }) },
   };

@@ -56,8 +56,8 @@ S = {
                              "data": {"parent": T("Hauptzähler", "Main meter")}},
             "einheit": {
                 "title": T("Einheit", "Unit"),
-                "description": T("In welcher Einheit zählt der Zähler? Zählt ein Gaszähler in m³, braucht es den Brennwert von der Gasrechnung (Zustandszahl optional).",
-                                 "Which unit does the meter count in? A gas meter counting in m³ needs the calorific value from your gas bill (conversion factor optional)."),
+                "description": T("In welcher Einheit zählt der Zähler? Zählt ein Gaszähler in m³, braucht es Brennwert und Zustandszahl von der Gasrechnung.",
+                                 "Which unit does the meter count in? A gas meter counting in m³ needs the calorific value and conversion factor from your gas bill."),
                 "data": {"unit": T("Einheit des Zählers", "Meter unit"), "calorific": T("Brennwert", "Calorific value"),
                          "z_factor": T("Zustandszahl", "Conversion factor (Z)"),
                          "annual_consumption": T("Jahresverbrauch laut letzter Rechnung", "Annual consumption according to the last bill")},
@@ -526,6 +526,41 @@ S["entity"]["sensor"].update({
     "betriebstage": {"name": T("Betriebstage", "Operating days")},
     "holz_geschaetzt": {"name": T("Holz (geschätzt)", "Wood (estimated)")},
     "holzkosten_geschaetzt": {"name": T("Holzkosten (geschätzt)", "Wood costs (estimated)")},
+})
+
+
+# ---------------------------------------------------------------- 0.9: Impulszähler, Abgleich, Brenner
+
+ZS = S["config_subentries"]["zaehler"]
+ZS["step"]["quelle"]["data"]["pulse_entity"] = T("Impulszähler (statt Zählerstand-Sensor)", "Pulse counter (instead of a meter sensor)")
+ZS["step"]["quelle"].setdefault("data_description", {})["pulse_entity"] = T(
+    "Z. B. ESPHome-Impulszähler oder Zähler-Helfer, der die Impulse des Zählers zählt. Die Impulskonstante folgt im nächsten Schritt.",
+    "E.g. an ESPHome pulse counter or counter helper counting the meter's pulses. The pulse constant follows in the next step.")
+PULSE = {"pulse_constant": T("Impulskonstante", "Pulse constant"), "pulse_mode": T("Angabe als", "Given as")}
+PULSE_DESC = {"pulse_constant": T("Steht auf dem Zähler, z. B. „1 Imp = 0,01 m³“ (dann 0,01 und „Einheit je Impuls“) oder „100 Imp/m³“.",
+                                  "On the meter, e.g. “1 imp = 0.01 m³” (then 0.01 and “unit per pulse”) or “100 imp/m³”.")}
+for step in ("einheit", "stammdaten"):
+    ZS["step"][step]["data"].update(PULSE)
+    ZS["step"][step].setdefault("data_description", {}).update(PULSE_DESC)
+ZS["error"]["entity_or_pulses"] = T("Bitte entweder einen Zählerstand-Sensor oder einen Impulszähler wählen, nicht beides.",
+                                    "Please choose either a meter sensor or a pulse counter, not both.")
+S["selector"]["pulse_mode"] = {"options": {"per_unit": T("Impulse je Einheit (z. B. 100 Imp/m³)", "Pulses per unit (e.g. 100 imp/m³)"),
+                                           "per_pulse": T("Einheit je Impuls (z. B. 0,01 m³/Imp)", "Unit per pulse (e.g. 0.01 m³/imp)")}}
+S["issues"]["abgleich_abweichung"] = {
+    "title": T("{meter}: Sensor weicht von der Ablesung ab", "{meter}: sensor differs from the reading"),
+    "description": T("Zwischen den Ablesungen vom {von} bis {bis} hat der Sensor {pct} % gegenüber der abgelesenen Menge gezählt "
+                     "(fehlend: {fehlt} {unit}). Angeglichen: {angeglichen}. Ursachen: verlorene Impulse, falsche Impulskonstante, "
+                     "Zählertausch oder eine falsch eingetragene Ablesung. Der Hinweis verschwindet, wenn die nächste Ablesung wieder "
+                     "unter 2 % liegt.",
+                     "Between the readings from {von} to {bis} the sensor counted {pct} % relative to the read quantity "
+                     "(missing: {fehlt} {unit}). Adjusted: {angeglichen}. Causes: lost pulses, wrong pulse constant, meter replacement or "
+                     "a wrongly entered reading. The notice disappears once the next reading is below 2 % again."),
+}
+S["entity"]["sensor"].update({
+    "abgleich": {"name": T("Abgleich mit Ablesung", "Reconciliation with reading")},
+    "gasleistung": {"name": T("Gasleistung", "Gas power")},
+    "brennerlaufzeit": {"name": T("Brennerlaufzeit", "Burner run time")},
+    "brennerstarts": {"name": T("Brennerstarts", "Burner starts")},
 })
 
 

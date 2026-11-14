@@ -65,11 +65,13 @@
             "name": "Name",
             "entity": "Meter reading sensor (empty = readings only)",
             "history_entity": "Fallback source for missing history",
-            "role": "Kind of meter"
+            "role": "Kind of meter",
+            "pulse_entity": "Pulse counter (instead of a meter sensor)"
           },
           "data_description": {
             "history_entity": "Optional. Fills days the meter sensor has no statistics for yet, e.g. with the inverter's grid import meter. Such days count as estimated.",
-            "role": "A wallbox or garden meter is a sub-meter of a main meter without its own contract."
+            "role": "A wallbox or garden meter is a sub-meter of a main meter without its own contract.",
+            "pulse_entity": "E.g. an ESPHome pulse counter or counter helper counting the meter's pulses. The pulse constant follows in the next step."
           }
         },
         "unterzaehler": {
@@ -81,15 +83,18 @@
         },
         "einheit": {
           "title": "Unit",
-          "description": "Which unit does the meter count in? A gas meter counting in m³ needs the calorific value from your gas bill (conversion factor optional).",
+          "description": "Which unit does the meter count in? A gas meter counting in m³ needs the calorific value and conversion factor from your gas bill.",
           "data": {
             "unit": "Meter unit",
             "calorific": "Calorific value",
             "z_factor": "Conversion factor (Z)",
-            "annual_consumption": "Annual consumption according to the last bill"
+            "annual_consumption": "Annual consumption according to the last bill",
+            "pulse_constant": "Pulse constant",
+            "pulse_mode": "Given as"
           },
           "data_description": {
-            "annual_consumption": "Optional. Fallback for the forecast as long as there is no previous year and no 30 days of own data."
+            "annual_consumption": "Optional. Fallback for the forecast as long as there is no previous year and no 30 days of own data.",
+            "pulse_constant": "On the meter, e.g. “1 imp = 0.01 m³” (then 0.01 and “unit per pulse”) or “100 imp/m³”."
           }
         },
         "preis": {
@@ -154,7 +159,12 @@
             "history_entity": "Fallback source for missing history",
             "annual_consumption": "Annual consumption according to the last bill",
             "calorific": "Calorific value",
-            "z_factor": "Conversion factor (Z)"
+            "z_factor": "Conversion factor (Z)",
+            "pulse_constant": "Pulse constant",
+            "pulse_mode": "Given as"
+          },
+          "data_description": {
+            "pulse_constant": "On the meter, e.g. “1 imp = 0.01 m³” (then 0.01 and “unit per pulse”) or “100 imp/m³”."
           }
         },
         "reconfigure": {
@@ -253,7 +263,8 @@
         "required_for_m3": "A gas meter in m³ needs the calorific value and conversion factor (on your gas bill).",
         "billing_error": "Not possible, see the note above.",
         "switch_invalid": "A switch on this date is not possible, see the note above.",
-        "switch_reading_future": "The switch is in the future: please enter the meter reading after the switch (action “Add reading”)."
+        "switch_reading_future": "The switch is in the future: please enter the meter reading after the switch (action “Add reading”).",
+        "entity_or_pulses": "Please choose either a meter sensor or a pulse counter, not both."
       },
       "abort": {
         "reconfigure_successful": "The meter was changed.",
@@ -519,6 +530,12 @@
         "kwh": "kWh",
         "mwh": "MWh"
       }
+    },
+    "pulse_mode": {
+      "options": {
+        "per_unit": "Pulses per unit (e.g. 100 imp/m³)",
+        "per_pulse": "Unit per pulse (e.g. 0.01 m³/imp)"
+      }
     }
   },
   "entity": {
@@ -609,6 +626,18 @@
       },
       "holzkosten_geschaetzt": {
         "name": "Wood costs (estimated)"
+      },
+      "abgleich": {
+        "name": "Reconciliation with reading"
+      },
+      "gasleistung": {
+        "name": "Gas power"
+      },
+      "brennerlaufzeit": {
+        "name": "Burner run time"
+      },
+      "brennerstarts": {
+        "name": "Burner starts"
       }
     }
   },
@@ -910,6 +939,10 @@
     "zaehler_ohne_statistik": {
       "title": "Tarif-Cockpit: no statistics for {meter}",
       "description": "There are no long-term statistics with a running sum for `{entity}`. The sensor needs `state_class: total_increasing` (or `total`). Until then the daily values of this meter are missing; they are not counted as 0."
+    },
+    "abgleich_abweichung": {
+      "title": "{meter}: sensor differs from the reading",
+      "description": "Between the readings from {von} to {bis} the sensor counted {pct} % relative to the read quantity (missing: {fehlt} {unit}). Adjusted: {angeglichen}. Causes: lost pulses, wrong pulse constant, meter replacement or a wrongly entered reading. The notice disappears once the next reading is below 2 % again."
     }
   },
   "exceptions": {

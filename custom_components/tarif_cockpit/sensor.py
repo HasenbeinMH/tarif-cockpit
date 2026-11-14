@@ -34,6 +34,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: TarifConfigEntry, async_
     async_add_entities([TotalSaldoSensor(rt)])
     for meter in rt.meters.values():
         classes: list[type[TarifSensor]] = [PeriodEndSensor, LastReadingSensor, MeterValueSensor, DailyQualitySensor]
+        if meter.entity:
+            classes.append(ReconcileSensor)
+        if meter.entity and meter.pulse_constant and meter.medium == Medium.GAS:
+            classes += [GasPowerSensor, BurnerHoursSensor, BurnerStartsSensor]
         if meter.role == "main" or rt.contracts(meter.meter_id):
             classes += [CostSoFarSensor, AdvancesPaidSensor, CurrentAdvanceSensor, AdvancesPeriodSensor, ForecastConsumptionSensor, ForecastCostSensor,
                         SaldoSensor, VerdictSensor, RecommendedAdvanceSensor, ForecastQualitySensor]
@@ -600,3 +604,92 @@ def _heats_with_power(rt: TarifRuntime, meter: Meter) -> bool:
     # Haushaltsstrom: nur der Strom-Hauptzähler, den der Coordinator dafür nimmt
     main = rt.coordinator.main_power_id() if rt.coordinator is not None else None
     return meter.meter_id == main and any(g.on_household_power for g in gens)
+
+
+
+# ---------------------------------------------------------------- Abgleich und Impulse (0.9)
+
+
+class ReconcileSensor(TarifSensor):
+    """Abgleich des Zähler-Sensors mit den Ablesungen: Abweichung des letzten Intervalls in % (negativ: Sensor zählt zu
+    wenig, z. B. verlorene Impulse). Attribute: Faktor, Offset, fehlende Menge, Intervalle."""
+
+    key = "abgleich"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_suggested_display_precision = 1
+
+    def _update(self) -> None:
+        coord = self.rt.coordinator
+        rec = coord.reconciliations.get(self.meter.meter_id) if coord is not None else None
+        last = rec.last if rec is not None else None
+        self._attr_native_value = last.deviation_pct if last is not None else None
+        if rec is None:
+            self._attr_extra_state_attributes = {}
+            return
+        tz = self.rt.tz
+        self._attr_extra_state_attributes = {
+            "faktor": None if last is None or last.factor is None else round(last.factor, 4),
+            "fehlende_menge": None if last is None else last.missing,
+            "angeglichen": bool(last and last.applied),
+            "hinweis": rec.notice,
+            "offset": rec.offset,
+            "faktor_median": rec.factor_median,
+            "letzte_ablesung": rec.last_reading.timestamp.isoformat() if rec.last_reading else None,
+            "intervalle": [
+                {"von": i.start.astimezone(tz).date().isoformat(), "bis": i.end.astimezone(tz).date().isoformat(), "abgelesen": i.read,
+                 "gemessen": i.measured, "abweichung": i.deviation_pct, "angeglichen": i.applied, "hinweise": i.flags}
+                for i in rec.intervals[-5:]
+            ],
+        }
+
+
+class GasPowerSensor(TarifSensor):
+    """Momentanleistung aus den Impulsen (m³/h × Brennwert × Zustandszahl); 0, wenn einige Minuten kein Impuls kam."""
+
+    key = "gasleistung"
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "kW"
+    _attr_suggested_display_precision = 1
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        from homeassistant.helpers.event import async_track_time_interval  # noqa: PLC0415
+
+        self.async_on_remove(async_track_time_interval(self.hass, self._refresh, timedelta(minutes=1)))
+
+    def _update(self) -> None:
+        coord = self.rt.coordinator
+        self._attr_native_value = coord.gas_power(self.meter.meter_id) if coord is not None else None
+
+
+class _BurnerSensor(TarifSensor):
+    """Summe der laufenden Periode aus den Tageswerten (nur Tage mit Impuls-Verlauf)."""
+
+    attr = "heating_hours"
+
+    def _update(self) -> None:
+        spec = self.rt.current_period(self.meter.meter_id)
+        daily = self.rt.daily(self.meter.meter_id)
+        today = self.rt.today()
+        first = spec.start_date if spec else today.replace(day=1)
+        vals = [(d, v) for d, v in daily.items() if first <= d < today and getattr(v, self.attr) is not None]
+        self._attr_native_value = round(sum(getattr(v, self.attr) for _, v in vals), 1) if vals else None
+        cycling = sorted(d.isoformat() for d, v in daily.items() if v.cycling and d >= today - timedelta(days=30))
+        last = daily.get(today - timedelta(days=1))
+        self._attr_extra_state_attributes = {
+            "tage_mit_daten": len(vals), "gestern": getattr(last, self.attr) if last else None,
+            "taktet_tage": cycling, "taktet_gestern": bool(last and last.cycling),
+        }
+
+
+class BurnerHoursSensor(_BurnerSensor):
+    key = "brennerlaufzeit"
+    attr = "heating_hours"
+    _attr_native_unit_of_measurement = "h"
+
+
+class BurnerStartsSensor(_BurnerSensor):
+    key = "brennerstarts"
+    attr = "burner_starts"

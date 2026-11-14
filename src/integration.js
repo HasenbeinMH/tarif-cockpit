@@ -25,6 +25,9 @@
     'dlg.invalid': 'Bitte einen Betrag (0 oder mehr) und ein Datum eingeben.',
     'in.no_heat': '<b>Kein Wärmezähler.</b> Die Auswertung braucht einen Gas- oder Fernwärmezähler in der Integration.',
     'in.learning': 'Wird gelernt', 'in.kw_learned': 'gelernt aus den Tageswerten',
+    'in.reconcile': 'Sensor weicht {p} von der Ablesung ab{a}.', 'in.reconciled': ', angeglichen',
+    'in.burner_h': 'Brennerlaufzeit', 'in.burner_n': 'Brennerstarts', 'in.gas_kw': 'Gasleistung',
+    'in.cycling': 'Der Brenner hat gestern getaktet: Die Heizlast lag unter der kleinsten Modulationsstufe.',
     'in.kw_indoor': 'Kennwert temperaturbereinigt', 'in.pct_k': '{p} % je Kelvin Raumtemperatur',
     'in.split': 'Gegenüber dem Vorjahr {g}: davon {r} durch die Raumtemperatur ({k}), {v} Mehr-/Minderverbrauch.',
     'ch.scatter': 'Verbrauch je Tag über Gradtage', 'ch.x_dd': 'Gradtage je Tag (Kd)', 'ch.days': 'Tage', 'ch.periods': 'Ableseperioden (Mittel je Tag)',
@@ -55,6 +58,9 @@
     'dlg.invalid': 'Please enter an amount (0 or more) and a date.',
     'in.no_heat': '<b>No heat meter.</b> The analysis needs a gas or district heating meter in the integration.',
     'in.learning': 'Being learned', 'in.kw_learned': 'learned from daily values',
+    'in.reconcile': 'Sensor differs {p} from the reading{a}.', 'in.reconciled': ', adjusted',
+    'in.burner_h': 'Burner run time', 'in.burner_n': 'Burner starts', 'in.gas_kw': 'Gas power',
+    'in.cycling': 'The burner cycled yesterday: the heat load was below the lowest modulation level.',
     'in.kw_indoor': 'Heat coefficient (indoor-adjusted)', 'in.pct_k': '{p} % per kelvin room temperature',
     'in.split': 'Compared with last year {g}: of which {r} due to room temperature ({k}), {v} more/less consumption.',
     'ch.scatter': 'Consumption per day over degree days', 'ch.x_dd': 'Degree days per day (Kd)', 'ch.days': 'Days', 'ch.periods': 'Reading periods (mean per day)',
@@ -156,6 +162,10 @@
       const prelim = attr(h, s.abschlag_empfohlen, 'vorlaeufig');
       hints.push(t('in.recommended', { d: esc(dd(ab)), v: money(rec) }) + (prelim ? esc(t('in.prelim')) : ''));
     }
+    const rc = val(h, s.abgleich);
+    if (rc !== null && attr(h, s.abgleich, 'hinweis')) { // Schwelle entscheidet die Integration (Regel 2)
+      hints.push(esc(t('in.reconcile', { p: (rc >= 0 ? '+' : '−') + TC.nf(Math.abs(rc), 1) + ' %', a: attr(h, s.abgleich, 'angeglichen') ? t('in.reconciled') : '' })));
+    }
     if (saldo === null && fcCost === null) {
       hints.push(esc(m.medium === 'gas' || m.medium === 'fernwaerme' ? t('in.why_heat') : t('in.why')));
     }
@@ -243,6 +253,9 @@
     const wwOn = m.ww_heizung !== false; // entscheidet die Integration (Regel 2)
     const extras = [];
     if (s.ww_grundlast && wwOn) extras.push({ name: TC.T('in.ww'), entity: s.ww_grundlast, unit: 'kWh/d', decimals: 1 });
+    if (s.gasleistung) extras.push({ name: TC.T('in.gas_kw'), entity: s.gasleistung, unit: 'kW', decimals: 1 });
+    if (s.brennerlaufzeit) extras.push({ name: TC.T('in.burner_h'), entity: s.brennerlaufzeit, unit: 'h', decimals: 0 });
+    if (s.brennerstarts) extras.push({ name: TC.T('in.burner_n'), entity: s.brennerstarts, unit: '', decimals: 0 });
     if (s.kennwert_temperaturbereinigt && TC.num(card._h, s.kennwert_temperaturbereinigt) !== null) {
       extras.push({ name: TC.T('in.kw_indoor'), entity: s.kennwert_temperaturbereinigt, unit: 'kWh/Kd', decimals: 2 });
     }
@@ -287,6 +300,7 @@
     const pct = attr(h, s.kennwert_temperaturbereinigt, 'prozent_je_kelvin');
     const pctQ = attr(h, s.kennwert_temperaturbereinigt, 'prozent_je_kelvin_qualitaet');
     if (typeof pct === 'number' && pctQ && pctQ !== 'annahme') hints.push(esc(t('in.pct_k', { p: TC.nf(pct, 1) })));
+    if (attr(h, s.brennerstarts, 'taktet_gestern')) hints.push(esc(t('in.cycling')));
     const split = attr(h, s.kennwert_temperaturbereinigt, 'vorjahr');
     if (split && typeof split.gesamt_pct === 'number') {
       const sg = (v) => (v >= 0 ? '+' : '−') + TC.nf(Math.abs(v), 1) + ' %';

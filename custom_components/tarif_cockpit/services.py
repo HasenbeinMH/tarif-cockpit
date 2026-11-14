@@ -89,10 +89,14 @@ def async_setup_services(hass: HomeAssistant) -> None:
             ts = ts.replace(tzinfo=rt.tz)
         if ts > dt_util.now() + timedelta(minutes=5):
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key="reading_in_future")
+        # Abgleich (0.9): bei einer Ablesung "jetzt" den Stand des Zähler-Sensors mit merken
+        sensor_value = None
+        if rt.meters[meter_id].entity and rt.coordinator is not None and abs((ts - dt_util.now()).total_seconds()) <= 600:
+            sensor_value = rt.coordinator.sensor_raw(meter_id)
         try:
             reading = rt.add_reading(
                 meter_id, ts, call.data["stand"], Quality(call.data["qualitaet"]), ReadingSource.MANUAL,
-                call.data.get("notiz"), call.data.get("ersetzt"),
+                call.data.get("notiz"), call.data.get("ersetzt"), sensor_value=sensor_value,
             )
         except KeyError as err:
             raise _unknown_reading(err) from err

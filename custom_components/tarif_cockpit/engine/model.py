@@ -146,7 +146,8 @@ class Meter:
     name: str | None = None
     conversion: Conversion = field(default_factory=Conversion)
     data_level: int = 1  # 1 = Ablesungen, 2 = Zählerstand-Sensor/Impulse
-    pulse_constant: float | None = None
+    pulse_constant: float | None = None  # Impulszähler: Impulse je Einheit bzw. Einheit je Impuls
+    pulse_mode: str = "per_unit"  # per_unit | per_pulse
     replacements: list[Replacement] = field(default_factory=list)
     interval: IntervalSource | None = None
     # Ersatzquelle für fehlende Historie (z. B. Bezugszähler des Wechselrichters, solange der Zähler-Sensor neu ist)
@@ -200,6 +201,7 @@ class Reading:
     source: ReadingSource = ReadingSource.MANUAL
     note: str | None = None
     superseded_by: str | None = None  # gesetzt, wenn eine Korrektur diese Ablesung ersetzt
+    sensor_value: float | None = None  # Stand des Zähler-Sensors zum Ablesezeitpunkt (für den Abgleich, ab 0.9)
 
 
 @dataclass(slots=True)
@@ -211,11 +213,15 @@ class DailyConsumption:
     degree_days: float | None = None
     outdoor_temperature: float | None = None
     indoor_temperature: float | None = None
-    heating_hours: float | None = None
+    heating_hours: float | None = None  # Brennerlaufzeit (Gas mit Impulsen, ab 0.9)
     fireplace_hours: float | None = None
     quality: Quality = Quality.MISSING
     quality_flags: list[str] = field(default_factory=list)
     source: str = "statistics"  # statistics | readings
+    raw_consumption: float | None = None  # gemessener Wert vor dem Abgleich mit den Ablesungen (ab 0.9)
+    raw_quality: Quality | None = None  # Qualität vor dem Abgleich (zum Zurücksetzen)
+    burner_starts: int | None = None  # Brennerstarts (Gas mit Impulsen)
+    cycling: bool | None = None  # Brenner taktet (Heizlast unter der kleinsten Modulationsstufe)
 
 
 @dataclass(slots=True)
@@ -337,6 +343,15 @@ class IntervalConsumption:
 
 
 @dataclass(slots=True)
+class SensorReset:
+    """Neustart eines Impulszählers (Stand fiel auf 0): ab ``at`` zählt der Sensor ab ``prev_raw`` weiter (Einheit)."""
+
+    meter_id: str
+    at: datetime
+    prev_raw: float
+
+
+@dataclass(slots=True)
 class GeneratorDaily:
     """Tageswerte je Wärmeerzeuger (Abschnitt 2.4, Entscheidung I): Eingang, Wärme und Entlastung getrennt.
     Befüllt ab 0.8."""
@@ -366,6 +381,8 @@ class Dataset:
     snapshots: list[ForecastSnapshot] = field(default_factory=list)
     intervals: list[IntervalConsumption] = field(default_factory=list)
     generator_daily: list[GeneratorDaily] = field(default_factory=list)
+    sensor_resets: list[SensorReset] = field(default_factory=list)  # Neustarts von Impulszählern (0.9)
+    sensor_last_raw: dict[str, float] = field(default_factory=dict)  # letzter Rohstand je Impulszähler (Einheit)
     # Zähler, deren Startdaten aus der Einrichtung schon übernommen wurden
     imported_meters: list[str] = field(default_factory=list)
     # Zähler, deren Tageswerte nach dem Update auf 0.6 einmal neu aus der Statistik geholt wurden (Zählerstand am Tagesende)

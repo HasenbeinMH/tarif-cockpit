@@ -185,3 +185,58 @@ async def test_stove_hours_from_state_history(hass: HomeAssistant, recorder_mock
     g = entry.runtime_data.generator_daily("o1")[date(2026, 11, 12)]
     assert g.hours == 3.5
     assert g.energy_input == 28.0 and g.measurement_quality == Quality.ASSUMPTION  # 3,5 h × 6 kW ÷ 0,75
+
+
+def _pulse_meter(entity: str, constant=100.0, mode="per_unit"):
+    sub = meter_subentry("g1", "Gas", "gas", "kWh", entity=entity,
+                         contract={"supplier": "SW", "start_date": "2026-11-01", "billing_rule": "calendar_year"})
+    sub["data"]["meter"].update(pulse_constant=constant, pulse_mode=mode)
+    return sub
+
+
+async def test_pulse_counter_statistics_with_constant(hass: HomeAssistant, recorder_mock) -> None:
+    """Impulszähler mit Langzeitstatistik in Impulsen: 100 Imp je Einheit → 24 Einheiten je Tag."""
+    start = datetime(2026, 11, 9, 23, tzinfo=TZ)
+    end = datetime(2026, 11, 12, 23, tzinfo=TZ)
+    sums = [{"start": t, "sum": float(i) * 100, "state": float(i) * 100} for i, t in enumerate(_hours(start, end))]
+    async_import_statistics(hass, {
+        "has_mean": False, "has_sum": True, "mean_type": StatisticMeanType.NONE, "name": "Gas Impulse", "source": "recorder",
+        "statistic_id": "sensor.gas_impulse", "unit_class": None, "unit_of_measurement": None,
+    }, sums)
+    await async_wait_recording_done(hass)
+    entry = make_entry(_pulse_meter("sensor.gas_impulse"))
+    assert await setup(hass, entry)
+    await entry.runtime_data.aggregator.async_run(overwrite=True)
+    d = entry.runtime_data.daily("g1")[date(2026, 11, 11)]
+    assert d.consumption == 24.0 and d.quality == Quality.REAL
+
+
+async def test_pulse_counter_helper_history_and_burner(hass: HomeAssistant, recorder_mock, freezer) -> None:
+    """Zähler-Helfer ohne Statistik: Tageswerte aus dem Verlauf; Gas mit Impulsen liefert Brennerlaufzeit und Starts."""
+    day = datetime(2026, 11, 12, 0, tzinfo=TZ)
+    freezer.move_to(day - timedelta(minutes=5))
+    hass.states.async_set("counter.gas", "0")
+    await hass.async_block_till_done()
+    n = 0
+    for run in (6, 18):  # zwei Läufe à 1 h mit 1 Impuls je 36 s (100 Imp/Einheit → 1 Einheit/h)
+        for i in range(101):
+            freezer.move_to(day + timedelta(hours=run, seconds=36 * i))
+            n += 1
+            hass.states.async_set("counter.gas", str(n))
+            await hass.async_block_till_done()
+    await async_wait_recording_done(hass)
+    freezer.move_to(TODAY)
+    entry = make_entry(_pulse_meter("counter.gas"))
+    assert await setup(hass, entry)
+    await entry.runtime_data.aggregator.async_run(overwrite=True)
+    d = entry.runtime_data.daily("g1")[date(2026, 11, 12)]
+    assert abs(d.consumption - 2.02) < 0.02
+    assert d.burner_starts == 2 and abs(d.heating_hours - 2.0) < 0.05
+
+
+async def test_counter_helper_raises_no_statistics_issue(hass: HomeAssistant, recorder_mock) -> None:
+    hass.states.async_set("counter.gas", "0")
+    entry = make_entry(_pulse_meter("counter.gas"))
+    assert await setup(hass, entry)
+    await entry.runtime_data.aggregator.async_run(overwrite=True)
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"{ISSUE_NO_STATISTICS}_g1") is None

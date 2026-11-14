@@ -120,6 +120,22 @@ Dashboard → Karte hinzufügen → „Tarif-Cockpit Auswertung“. Der Editor �
 
 Die Karte zeigt den gelernten Kennwert, die Warmwasser-Grundlast (nur wenn Warmwasser über die Heizung läuft), den temperaturbereinigten Kennwert, ein **Streudiagramm** Verbrauch über Gradtage mit Regressionsgerade und Qualität, den **Kostenverlauf** der Periode (Ist, Prognose, Abschlags-Treppe) und je Wärmeerzeuger Eingang, Wärme und Entlastung. Mit Daten sieht das so aus: [Beispiele](BEISPIELE.md#heizung-gas-mit-kaminofen-und-split-klima-08).
 
+## 7. Impulszähler und Abgleich (ab 0.9)
+
+Zählt ein Sensor die Impulse des Zählers (z. B. ESPHome-Impulszähler am Gaszähler oder ein Zähler-Helfer), wählst du ihn im Schritt „Name und Sensor“ als **Impulszähler** statt als Zählerstand-Sensor. Im nächsten Schritt steht die **Impulskonstante** vom Zähler: „1 Imp = 0,01 m³“ (Einheit je Impuls) oder „100 Imp/m³“ (Impulse je Einheit).
+
+| Impulszähler wählen | Impulskonstante |
+|---|---|
+| ![Quelle](img/abnahme-26-impuls-quelle.png) | ![Einheit](img/abnahme-27-impuls-einheit.png) |
+
+Hinweis unter Reparaturen, wenn der Sensor abweicht (hier im Abnahme-Durchlauf: 50 Impulse gezählt, 60 abgelesen):
+
+![Reparatur](img/abnahme-28-abgleich-reparatur.png)
+
+**Abgleich mit den Ablesungen:** Bei jedem Zähler mit Sensor (Impulse oder Zählerstand) vergleicht die Integration die gemessene Menge zwischen zwei Ablesungen mit der abgelesenen. Die (echte) Ablesung gilt: Fehlen Impulse, werden die Tageswerte zwischen den beiden Ablesungen anteilig angeglichen und als „abgeglichen“ markiert. Ab 2 % Abweichung steht ein Hinweis unter Einstellungen → Reparaturen, und die Tarifübersicht zeigt „Sensor weicht … ab, angeglichen“. Der Diagnose-Sensor „Abgleich mit Ablesung“ zeigt die Abweichung des letzten Intervalls. Eine Ablesung „jetzt“ (Aktion `tarif_cockpit.add_ablesung` ohne Zeitpunkt) merkt sich den Sensorstand dazu; der aktuelle Stand bezieht sich danach auf diese Ablesung, wie eine Referenz.
+
+**Gas mit Impulsen** liefert zusätzlich die Gasleistung (live), Brennerlaufzeit und Brennerstarts. Hängt eine Gastherme mit kleinster Modulationsleistung am Zähler, wird gemeldet, wenn der Brenner taktet.
+
 ## Hinweise
 
 - Texte, die die Integration selbst einsetzt (z. B. die Zählernamen im Abschluss-Schritt, Zahlen in der Zusammenfassung), folgen der **Systemsprache** von Home Assistant (Einstellungen → System → Allgemein), nicht der Sprache deines Profils.

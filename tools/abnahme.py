@@ -11,7 +11,7 @@ Vorbereitung (Beispiel, Port 8124):
     -v <leerer-ordner>:/config -v <repo>/custom_components/tarif_cockpit:/config/custom_components/tarif_cockpit:ro \
     ghcr.io/home-assistant/home-assistant:2026.11.1
 Aufruf:
-  python tools/abnahme.py <leerer-ordner> [http://127.0.0.1:8124] [alles|haushalt|zaehler|karte|dialog|waermeerzeuger|analyse]
+  python tools/abnahme.py <leerer-ordner> [http://127.0.0.1:8124] [alles|haushalt|zaehler|karte|dialog|waermeerzeuger|analyse|impulse]
 """
 from __future__ import annotations
 
@@ -328,6 +328,63 @@ def step_analyse(page: Page, base: str) -> None:
     shot(page, "25-analyse-dashboard", "tarif-cockpit-analyse-card")
 
 
+def step_impulse(page: Page, base: str) -> None:
+    """Gaszähler mit Impulszähler über die Oberfläche (0.9): Impulskonstante, Abgleich-Sensor."""
+    page.evaluate(f"async () => {{ const s = await {HASS}.callWS({{type: 'counter/list'}}); "
+                  f"if (!s.some((x) => x.name === 'Gas Impulse')) await {HASS}.callWS({{type: 'counter/create', name: 'Gas Impulse', initial: 0, step: 1}}); }}")
+    page.goto(f"{base}/config/integrations/integration/tarif_cockpit")
+    page.wait_for_timeout(2500)
+    page.set_viewport_size({"width": 1280, "height": 1400})
+    page.get_by_role("button", name="Zähler hinzufügen").first.click()
+    page.wait_for_timeout(2000)
+    choose(page, "Medium", "Gas")
+    ok(page)
+    pick_entity(page, "Impulszähler", "Gas Impulse")
+    shot(page, "26-impuls-quelle")
+    ok(page)
+    num(page, "Brennwert").fill("11.2")
+    num(page, "Zustandszahl").fill("0.95")
+    num(page, "Impulskonstante").fill("0.01")
+    choose(page, "Angabe als", "Einheit je Impuls (z. B. 0,01 m³/Imp)")
+    page.wait_for_timeout(300)
+    shot(page, "27-impuls-einheit")
+    ok(page)
+    tb(page, "Lieferant").fill("Gasversorger")
+    ok(page)
+    num(page, "Arbeitspreis").fill("0.10")
+    num(page, "Grundpreis").fill("15")
+    ok(page)
+    num(page, "Abschlag").fill("150")
+    ok(page)
+    num(page, "Zählerstand").fill("9800")
+    ok(page)
+    page.wait_for_timeout(1500)
+    ok(page)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.wait_for_timeout(2500)
+    found = page.evaluate(f"() => Object.keys({HASS}.states).filter((e) => e.startsWith('sensor.gas') && "
+                          f"({HASS}.states[e].attributes.friendly_name || '').includes('Abgleich'))")
+    assert found, "Abgleich-Sensor fehlt"
+    print("Abgleich-Sensor:", found[0])
+    # Abgleich: Ablesung jetzt (merkt den Sensorstand), 50 Impulse (0,5 m³), Ablesung 0,6 m³ später → −16,7 %
+    dev = page.evaluate(f"async () => (await {HASS}.callWS({{type: 'config/device_registry/list'}}))"
+                        f".find((d) => d.name === 'Gas' && d.manufacturer === 'Tarif-Cockpit').id")
+    page.evaluate(f"async () => {HASS}.callService('tarif_cockpit', 'add_ablesung', {{zaehler: '{dev}', stand: 9800.0}})")
+    page.wait_for_timeout(1500)
+    page.evaluate(f"async () => {{ for (let i = 0; i < 50; i++) await {HASS}.callService('counter', 'increment', "
+                  f"{{entity_id: 'counter.gas_impulse'}}); }}")
+    page.wait_for_timeout(1500)
+    page.evaluate(f"async () => {HASS}.callService('tarif_cockpit', 'add_ablesung', {{zaehler: '{dev}', stand: 9800.6}})")
+    page.wait_for_timeout(3000)
+    val = float(page.evaluate(f"() => {HASS}.states['{found[0]}'].state"))
+    assert abs(val + 16.67) < 0.1, val
+    print("Abgleich:", val, "%")
+    page.goto(f"{base}/config/repairs")
+    page.wait_for_timeout(2500)
+    expect(page.get_by_text("Sensor weicht von der Ablesung ab").first).to_be_visible()
+    shot(page, "28-abgleich-reparatur", "ha-config-repairs-dashboard")
+
+
 def pick_entity(page: Page, label: str, name: str) -> None:
     """Entitätsauswahl im Dialog: Feld öffnen, Namen suchen, Treffer wählen."""
     d = dialog(page)
@@ -347,10 +404,10 @@ def click_center(page: Page, loc) -> None:
 
 
 def step_alles(page: Page, base: str) -> None:
-    for name in ("haushalt", "zaehler", "karte", "dialog", "waermeerzeuger", "analyse"):
+    for name in ("haushalt", "zaehler", "karte", "dialog", "waermeerzeuger", "analyse", "impulse"):
         print("Schritt", name)
         globals()[f"step_{name}"](page, base)
-    print("Abnahme bestanden: Einrichtung ohne YAML bis zur Karte, Abschlag über den Dialog, Wärmeerzeuger, Auswertungskarte.")
+    print("Abnahme bestanden: Einrichtung ohne YAML bis zur Karte, Abschlag über den Dialog, Wärmeerzeuger, Auswertungskarte, Impulszähler.")
 
 
 def tb(page: Page, label: str):

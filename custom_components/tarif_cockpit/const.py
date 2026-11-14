@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 DOMAIN: Final = "tarif_cockpit"
-VERSION: Final = "0.8.0"
+VERSION: Final = "0.9.0"
 
 SUBENTRY_METER: Final = "zaehler"
 SUBENTRY_GENERATOR: Final = "waermeerzeuger"
@@ -44,6 +44,7 @@ ISSUE_STORE_INVALID: Final = "store_ungueltig"
 ISSUE_STORE_TOO_NEW: Final = "store_zu_neu"
 ISSUE_OLD_RESOURCE: Final = "alte_dashboard_installation"
 ISSUE_NO_STATISTICS: Final = "zaehler_ohne_statistik"
+ISSUE_RECONCILE: Final = "abgleich_abweichung"
 
 
 def signal_updated(entry_id: str) -> str:

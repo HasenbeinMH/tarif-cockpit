@@ -229,8 +229,12 @@ def calculate_consumption(
     period_start: date,
     tz: tzinfo,
     current: tuple[datetime, float] | None,
+    sensor_offset: float | None = None,
 ) -> ConsumptionState:
     """Verbrauch seit Periodenbeginn.
+
+    ``sensor_offset`` (Abgleich, 0.9): Ablesung − Sensorstand bei der letzten Ablesung. Kommt der Startwert aus einer
+    Ablesung, wird der Sensorstand damit auf die Ablesungen bezogen (wie eine Referenz bei jeder Ablesung).
 
     Startwert: Ablesung zum Periodenbeginn (bzw. linear dazwischen), sonst Zählerstand am Ende des Vortags aus
     den Tageswerten. Endwert: ``current`` (Zählerstand jetzt, in der Zählereinheit) oder die letzte Ablesung.
@@ -254,6 +258,10 @@ def calculate_consumption(
     if current is not None:
         when, raw = current
         end_value = raw + _offset_on(meter, when.astimezone(tz).date())
+        if sensor_offset is not None and st.start_source == "reading":
+            # Sensor durchlaufend (Tauschoffset) + Abgleich-Offset der letzten Ablesung
+            end_value = raw + _offset_on(meter, when.astimezone(tz).date()) + sensor_offset
+            st.flags.append("abgleich_offset")
         st.known_until = when
         quality = Quality.REAL
     else:

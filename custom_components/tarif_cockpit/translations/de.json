@@ -65,11 +65,13 @@
             "name": "Name",
             "entity": "Zählerstand-Sensor (leer = nur Ablesungen)",
             "history_entity": "Ersatzquelle für fehlende Historie",
-            "role": "Art des Zählers"
+            "role": "Art des Zählers",
+            "pulse_entity": "Impulszähler (statt Zählerstand-Sensor)"
           },
           "data_description": {
             "history_entity": "Optional. Füllt Tage, für die der Zähler-Sensor noch keine Statistik hat, z. B. mit dem Bezugszähler des Wechselrichters. Solche Tage gelten als geschätzt.",
-            "role": "Wallbox bzw. Gartenzähler sind Unterzähler eines Hauptzählers ohne eigenen Vertrag."
+            "role": "Wallbox bzw. Gartenzähler sind Unterzähler eines Hauptzählers ohne eigenen Vertrag.",
+            "pulse_entity": "Z. B. ESPHome-Impulszähler oder Zähler-Helfer, der die Impulse des Zählers zählt. Die Impulskonstante folgt im nächsten Schritt."
           }
         },
         "unterzaehler": {
@@ -81,15 +83,18 @@
         },
         "einheit": {
           "title": "Einheit",
-          "description": "In welcher Einheit zählt der Zähler? Zählt ein Gaszähler in m³, braucht es den Brennwert von der Gasrechnung (Zustandszahl optional).",
+          "description": "In welcher Einheit zählt der Zähler? Zählt ein Gaszähler in m³, braucht es Brennwert und Zustandszahl von der Gasrechnung.",
           "data": {
             "unit": "Einheit des Zählers",
             "calorific": "Brennwert",
             "z_factor": "Zustandszahl",
-            "annual_consumption": "Jahresverbrauch laut letzter Rechnung"
+            "annual_consumption": "Jahresverbrauch laut letzter Rechnung",
+            "pulse_constant": "Impulskonstante",
+            "pulse_mode": "Angabe als"
           },
           "data_description": {
-            "annual_consumption": "Optional. Rückfallebene für die Prognose, solange es kein Vorjahr und keine 30 Tage eigene Daten gibt."
+            "annual_consumption": "Optional. Rückfallebene für die Prognose, solange es kein Vorjahr und keine 30 Tage eigene Daten gibt.",
+            "pulse_constant": "Steht auf dem Zähler, z. B. „1 Imp = 0,01 m³“ (dann 0,01 und „Einheit je Impuls“) oder „100 Imp/m³“."
           }
         },
         "preis": {
@@ -154,7 +159,12 @@
             "history_entity": "Ersatzquelle für fehlende Historie",
             "annual_consumption": "Jahresverbrauch laut letzter Rechnung",
             "calorific": "Brennwert",
-            "z_factor": "Zustandszahl"
+            "z_factor": "Zustandszahl",
+            "pulse_constant": "Impulskonstante",
+            "pulse_mode": "Angabe als"
+          },
+          "data_description": {
+            "pulse_constant": "Steht auf dem Zähler, z. B. „1 Imp = 0,01 m³“ (dann 0,01 und „Einheit je Impuls“) oder „100 Imp/m³“."
           }
         },
         "reconfigure": {
@@ -253,7 +263,8 @@
         "required_for_m3": "Bei einem Gaszähler in m³ werden Brennwert und Zustandszahl gebraucht (stehen auf der Gasrechnung).",
         "billing_error": "Nicht möglich, siehe Hinweis oben.",
         "switch_invalid": "Wechsel an diesem Datum nicht möglich, siehe Hinweis oben.",
-        "switch_reading_future": "Der Wechsel liegt in der Zukunft: den Zählerstand bitte erst nach dem Wechsel eintragen (Aktion „Ablesung hinzufügen“)."
+        "switch_reading_future": "Der Wechsel liegt in der Zukunft: den Zählerstand bitte erst nach dem Wechsel eintragen (Aktion „Ablesung hinzufügen“).",
+        "entity_or_pulses": "Bitte entweder einen Zählerstand-Sensor oder einen Impulszähler wählen, nicht beides."
       },
       "abort": {
         "reconfigure_successful": "Der Zähler wurde geändert.",
@@ -519,6 +530,12 @@
         "kwh": "kWh",
         "mwh": "MWh"
       }
+    },
+    "pulse_mode": {
+      "options": {
+        "per_unit": "Impulse je Einheit (z. B. 100 Imp/m³)",
+        "per_pulse": "Einheit je Impuls (z. B. 0,01 m³/Imp)"
+      }
     }
   },
   "entity": {
@@ -609,6 +626,18 @@
       },
       "holzkosten_geschaetzt": {
         "name": "Holzkosten (geschätzt)"
+      },
+      "abgleich": {
+        "name": "Abgleich mit Ablesung"
+      },
+      "gasleistung": {
+        "name": "Gasleistung"
+      },
+      "brennerlaufzeit": {
+        "name": "Brennerlaufzeit"
+      },
+      "brennerstarts": {
+        "name": "Brennerstarts"
       }
     }
   },
@@ -910,6 +939,10 @@
     "zaehler_ohne_statistik": {
       "title": "Tarif-Cockpit: keine Statistik für {meter}",
       "description": "Für `{entity}` gibt es keine Langzeitstatistik mit laufender Summe. Der Sensor braucht `state_class: total_increasing` (oder `total`). Bis dahin fehlen die Tageswerte dieses Zählers; sie werden nicht als 0 gezählt."
+    },
+    "abgleich_abweichung": {
+      "title": "{meter}: Sensor weicht von der Ablesung ab",
+      "description": "Zwischen den Ablesungen vom {von} bis {bis} hat der Sensor {pct} % gegenüber der abgelesenen Menge gezählt (fehlend: {fehlt} {unit}). Angeglichen: {angeglichen}. Ursachen: verlorene Impulse, falsche Impulskonstante, Zählertausch oder eine falsch eingetragene Ablesung. Der Hinweis verschwindet, wenn die nächste Ablesung wieder unter 2 % liegt."
     }
   },
   "exceptions": {

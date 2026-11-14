@@ -195,6 +195,7 @@ def evaluate_meter(
     stove_relief: float | None = None,
     hp_energy: Mapping[date, float | None] | None = None,
     power_heat: PowerHeat | None = None,
+    sensor_offset: float | None = None,
 ) -> MeterResult:
     """Vollständige Auswertung eines Zählers für die laufende Periode.
 
@@ -210,8 +211,17 @@ def evaluate_meter(
     res.period = spec
     contract = next(c for c in contracts if c.contract_id == spec.contract_id)
     res.contract = contract
-    cons = calculate_consumption(meter, readings, daily, spec.start_date, tz, current)
+    cons = calculate_consumption(meter, readings, daily, spec.start_date, tz, current, sensor_offset)
     res.consumption = cons
+    if cons.used is not None and cons.start_source == "daily_end_value" and current is not None:
+        # Startwert aus der Statistik: angeglichene Tageswerte gelten (Ablesung schlägt Sensor), heute der Sensor
+        today_ = now.astimezone(tz).date()
+        days_ = [spec.start_date + timedelta(days=i) for i in range((today_ - spec.start_date).days)]
+        vals = [daily.get(d) for d in days_]
+        if days_ and all(v is not None and v.consumption is not None and usable(v.quality) for v in vals) \
+                and any("abgeglichen" in v.quality_flags for v in vals) and vals[-1].end_value is not None:
+            cons.used = round(sum(v.consumption for v in vals) + max(current[1] - vals[-1].end_value, 0.0), 6)
+            cons.flags.append("abgleich_tageswerte")
     start_dt = day_bounds(spec.start_date, tz)[0]
     end_dt = day_bounds(spec.end_date, tz)[1]
     known_until = cons.known_until or now

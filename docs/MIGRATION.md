@@ -1,5 +1,13 @@
 # Migration
 
+## 0.8 → 0.9: Impulszähler und Abgleich
+
+Update einspielen, neu starten, Browser-Cache leeren. Umzustellen ist nichts. Beim ersten Start gleicht die Integration alle Zähler mit Sensor mit den vorhandenen echten Ablesungen ab: Tageswerte (auch ältere) können sich dadurch ändern und als „geschätzt“ erscheinen, „Kosten bisher“ bezieht sich auf die letzte Ablesung. Beendete, eingefrorene Perioden bleiben unverändert.
+
+Neu: Jeder Zähler mit Sensor wird mit deinen Ablesungen abgeglichen. Die Ablesung gilt; weicht der Sensor ab, werden die Tageswerte zwischen zwei Ablesungen angeglichen, und ab 2 % gibt es einen Hinweis unter Reparaturen. Wer bisher per Automation eine „Referenz“ bei jeder Ablesung setzt (z. B. Wechselrichter-Zähler gegen die Strom-Ablesung), braucht das für Tarif-Cockpit nicht mehr; abschalten erst nach einem Parallelbetrieb.
+
+Impulszähler legst du beim Zähler über „Impulszähler“ an (bestehende Zähler: neu anlegen, weil die Quelle zum Zähler gehört).
+
 ## 0.7 → 0.8: Wärmeerzeuger (optional)
 
 Update einspielen, neu starten, Browser-Cache leeren. Es ist nichts umzustellen: Einträge, Zähler und Karten laufen unverändert weiter.

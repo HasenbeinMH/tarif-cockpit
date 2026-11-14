@@ -54,6 +54,9 @@ JOBS = [
     ('analyse.html', 'waermepumpe-analyse', 'scene=waermepumpe', 1100, CARD),
     ('analyse.html', 'fernwaerme-analyse', 'scene=fernwaerme', 1100, CARD),
     ('analyse.html', 'heizung-analyse-schmal', 'scene=heizung&narrow', 420, CARD),
+    # Impulszähler (0.9)
+    ('overview.html', 'impulse-uebersicht', 'scene=impulse', 1100, CARD),
+    ('analyse.html', 'impulse-analyse', 'scene=impulse', 1100, CARD),
 ]
 
 

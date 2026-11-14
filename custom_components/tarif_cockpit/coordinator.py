@@ -24,7 +24,13 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
 from .const import signal_updated
+from collections import deque
+
+from .engine import billing
 from .engine.balance import HEAT_MEDIA, MeterResult, PowerHeat, evaluate_meter
+from .engine.burner import current_power, max_gap_for
+from .engine.pulses import offset_at, unit_per_pulse
+from .engine.reconcile import Reconciliation, reconcile
 from .engine.generators import ON_POWER_KINDS, GeneratorResult, evaluate_generator, stove_relief_per_hour
 from .engine.model import ForecastSnapshot, GeneratorKind, HeatGenerator, Medium, Meter
 from .engine.regression import HeatModel
@@ -43,6 +49,8 @@ class TarifCoordinator:
         self.rt = rt
         self.results: dict[str, MeterResult] = {}
         self.gen_results: dict[str, GeneratorResult] = {}
+        self.reconciliations: dict[str, Reconciliation] = {}
+        self._pulses: dict[str, deque] = {}  # letzte Zählerstand-Wechsel je Impulszähler (Momentanleistung)
         self._models: dict[str, HeatModel] = {}
         self._samples: dict[str, tuple[list, bool]] = {}  # Stichproben zum Modell (Streudiagramm ohne Neuberechnung)
         self._dirty: dict[str, set[str]] = {m: set(ALL) for m in rt.meters}
@@ -53,6 +61,13 @@ class TarifCoordinator:
     @callback
     def async_start(self) -> None:
         entities = {m.entity for m in self.rt.meters.values() if m.entity}
+        # Impulszähler: aktuellen Stand als Ausgangspunkt für die Leistung (nach einem Neustart sonst leer)
+        for m in self.rt.meters.values():
+            if m.pulse_constant and m.entity:
+                st = self.hass.states.get(m.entity)
+                v = self._raw_value(m, st)
+                if v is not None:
+                    self._pulses.setdefault(m.meter_id, deque(maxlen=50)).append((st.last_changed, v))
         if entities:
             self.rt.unsubs.append(async_track_state_change_event(self.hass, sorted(entities), self._on_state))
         self.rt.unsubs.append(self._debouncer.async_shutdown)
@@ -61,6 +76,16 @@ class TarifCoordinator:
     def _on_state(self, event: Event[EventStateChangedData]) -> None:
         for m in self.rt.meters.values():
             if m.entity == event.data["entity_id"]:
+                if m.pulse_constant:
+                    v = self._raw_value(m, event.data.get("new_state"))
+                    if v is not None:
+                        last = self.rt.data.sensor_last_raw.get(m.meter_id)
+                        if last is not None and v < last - 1e-9:
+                            self.rt.add_reset(m.meter_id, dt_util.now(), last)  # Zähler neu gestartet
+                        if last is None or abs(v - last) > 1e-12:
+                            self.rt.data.sensor_last_raw[m.meter_id] = v
+                            # nur echte Wertänderungen sind Impulse (nicht unavailable → gleicher Wert, Attribute)
+                            self._pulses.setdefault(m.meter_id, deque(maxlen=50)).append((dt_util.now(), v))
                 self.mark(m.meter_id, ALL, debounce=True)
 
     @callback
@@ -87,17 +112,56 @@ class TarifCoordinator:
 
     # ------------------------------------------------------------ Rechnen
 
+    @staticmethod
+    def _raw_value(m: Meter, st) -> float | None:
+        """Stand des Zähler-Sensors in der Zählereinheit (Impulszähler: Impulse × Menge je Impuls)."""
+        if st is None or st.state in ("unavailable", "unknown", ""):
+            return None
+        try:
+            if m.pulse_constant:
+                k = unit_per_pulse(m.pulse_constant, m.pulse_mode)
+                return float(st.state) * k if k else None
+            return convert(float(st.state), st.attributes.get("unit_of_measurement"), m.unit)
+        except (TypeError, ValueError):
+            return None
+
+    def sensor_raw(self, meter_id: str) -> float | None:
+        """Sensorstand in der Zählereinheit; Impulszähler über Neustarts durchlaufend."""
+        m = self.rt.meters[meter_id]
+        v = self._raw_value(m, self.hass.states.get(m.entity)) if m.entity else None
+        if v is not None and m.pulse_constant:
+            v += offset_at(self.rt.resets(meter_id), dt_util.now())
+        return v
+
+    def kwh_per_unit(self, meter: Meter) -> float | None:
+        contract = billing.contract_on(self.rt.contracts(meter.meter_id), self.rt.today())
+        segs = [p for p in self.rt.data.prices if contract is not None and p.contract_id == contract.contract_id]
+        return billing.energy_factor(meter, billing.segment_on(segs, self.rt.today()))
+
+    def gas_power(self, meter_id: str) -> float | None:
+        """Momentanleistung (kW) aus den letzten Impulsen."""
+        m = self.rt.meters[meter_id]
+        f = self.kwh_per_unit(m)
+        pts = list(self._pulses.get(meter_id, ()))
+        if not f or not pts:
+            return None
+        return current_power(pts, dt_util.now(), f, max_gap_for(unit_per_pulse(m.pulse_constant, m.pulse_mode), f, self.boiler_min_power(m)))
+
+    def boiler_min_power(self, m: Meter) -> float | None:
+        """Kleinste Leistung der Gastherme an diesem Zähler als Gaseinsatz nach Brennwert (kW)."""
+        from .engine.generators import BOILER_EFFICIENCY, HS_HI  # noqa: PLC0415
+        from .engine.model import PowerBasis  # noqa: PLC0415
+
+        b = next((g for g in self.rt.generators.values() if g.kind == GeneratorKind.GAS_BOILER and g.meter_id == m.meter_id and g.min_kw), None)
+        if b is None:
+            return None
+        return b.min_kw * HS_HI if b.power_basis == PowerBasis.INPUT else b.min_kw / (b.efficiency or BOILER_EFFICIENCY) * HS_HI
+
     def _current(self, meter_id: str) -> tuple[datetime, float] | None:
         m = self.rt.meters[meter_id]
         if not m.entity:
             return None
-        st = self.hass.states.get(m.entity)
-        value: float | None = None
-        if st is not None and st.state not in ("unavailable", "unknown", ""):
-            try:
-                value = convert(float(st.state), st.attributes.get("unit_of_measurement"), m.unit)
-            except (TypeError, ValueError):
-                value = None
+        value = self.sensor_raw(meter_id)
         if value is not None:
             return dt_util.now(), value
         # Sensor gerade nicht verfügbar: letzter bekannter Stand = Ende von gestern aus der Statistik (nie die Startablesung)
@@ -190,12 +254,18 @@ class TarifCoordinator:
             flags = self._dirty.pop(meter_id, set())
             if not flags and meter_id in self.results:
                 continue
+            if meter.entity and rt.readings(meter_id) and meter.role != "main" and not rt.contracts(meter_id):
+                self.reconciliations[meter_id] = reconcile(meter, rt.data.readings, rt.daily(meter_id), rt.tz)
             if meter.role != "main" and not rt.contracts(meter_id):
                 continue  # Unterzähler ohne eigenen Vertrag: fließen in den Hauptzähler ein
             refit = bool(flags & {"consumption", "forecast"}) or meter_id not in self._models
             subs = [m for m in rt.meters.values() if m.parent_meter_id == meter_id]
             wallbox = next((rt.daily(m.meter_id) for m in subs if m.role == "wallbox"), None)
             garden = next((rt.daily(m.meter_id) for m in subs if m.role == "garden"), None)
+            rec = None
+            if meter.entity and rt.readings(meter_id):
+                rec = reconcile(meter, rt.data.readings, rt.daily(meter_id), rt.tz)
+                self.reconciliations[meter_id] = rec
             try:
                 res = evaluate_meter(
                     meter, rt.contracts(meter_id), rt.data.prices, rt.data.advance_plans, rt.data.payments,
@@ -203,6 +273,7 @@ class TarifCoordinator:
                     rt.household.tolerance_pct, rt.actual_ends(meter_id), sub_daily=wallbox, garden_daily=garden,
                     heat_model_override=None if refit else self._models.get(meter_id),
                     **self._heat_inputs(meter),
+                    sensor_offset=rec.offset if rec is not None else None,
                 )
             except Exception:  # noqa: BLE001 - ein Fehler in einem Zähler darf die anderen nicht stoppen
                 _LOGGER.exception("Tarif-Cockpit: Auswertung von Zähler %s fehlgeschlagen", meter.name or meter_id)

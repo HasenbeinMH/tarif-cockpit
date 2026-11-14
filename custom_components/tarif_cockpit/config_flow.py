@@ -334,6 +334,18 @@ def current_advance(rt: Any, meter_id: str) -> dict[str, Any]:
     return out
 
 
+def _rescale_pulses(rt: Any, meter_id: str, f: float) -> None:
+    """Impulskonstante geändert: gemerkte Sensorstände umrechnen und die Tageswerte beim Neuladen neu holen."""
+    rt.data.readings = [replace(r, sensor_value=r.sensor_value * f) if r.meter_id == meter_id and r.sensor_value is not None else r
+                        for r in rt.data.readings]
+    rt.data.sensor_resets = [replace(x, prev_raw=x.prev_raw * f) if x.meter_id == meter_id else x for x in rt.data.sensor_resets]
+    if meter_id in rt.data.sensor_last_raw:
+        rt.data.sensor_last_raw[meter_id] *= f
+    if meter_id in rt.data.reaggregated_meters:
+        rt.data.reaggregated_meters.remove(meter_id)  # beim Start einmal alle Tageswerte neu (overwrite)
+    rt.store.schedule_save(rt.data)
+
+
 class MeterSubentryFlow(ConfigSubentryFlow):
     """Zähler mit erstem Vertrag, Preisen, Abschlägen und Startstand; Menü zum Ändern."""
 
@@ -370,6 +382,11 @@ class MeterSubentryFlow(ConfigSubentryFlow):
         roles = self._roles(medium)
         if user_input is not None:
             entity = user_input.get("entity")
+            pulse = user_input.get("pulse_entity")
+            if entity and pulse:
+                errors["base"] = "entity_or_pulses"
+            entity = entity or pulse
+            self._data["pulses"] = bool(pulse) and not errors
             if entity:
                 for sub in self._get_entry().subentries.values():
                     if sub.subentry_type == SUBENTRY_METER and sub.data.get(CONF_METER, {}).get("entity") == entity:
@@ -384,6 +401,8 @@ class MeterSubentryFlow(ConfigSubentryFlow):
             vol.Required("name", default=self._data.get("name") or _media_label(self.hass, medium.value)): str,
             vol.Optional("entity"): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", device_class=DEVICE_CLASSES[medium])),
             vol.Optional("history_entity"): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", device_class=DEVICE_CLASSES[medium])),
+            # Impulszähler: ohne Geräteklasse (z. B. ESPHome pulse_counter, Zähler-Helfer)
+            vol.Optional("pulse_entity"): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor", "counter", "input_number"])),
         }
         if len(roles) > 1:
             fields[vol.Required("role", default="main")] = _select(roles, "role")
@@ -424,6 +443,7 @@ class MeterSubentryFlow(ConfigSubentryFlow):
             "conversion": self._data.get("conversion", {}), "history_entity": self._data.get("history_entity"),
             "role": self._data.get("role", "main"), "parent_meter_id": self._data.get("parent_meter_id"),
             "annual_consumption": self._data.get("annual_consumption"),
+            "pulse_constant": self._data.get("pulse_constant"), "pulse_mode": self._data.get("pulse_mode", "per_unit"),
         }
 
     async def async_step_einheit(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
@@ -433,6 +453,9 @@ class MeterSubentryFlow(ConfigSubentryFlow):
                 return self.async_show_form(step_id="einheit", data_schema=self._einheit_schema(medium), errors={"calorific": "required_for_m3"})
             self._data["unit"] = user_input["unit"]
             self._data["conversion"] = {k: float(user_input[k]) for k in ("calorific", "z_factor") if user_input.get(k) is not None}
+            if self._data.get("pulses"):
+                self._data["pulse_constant"] = float(user_input["pulse_constant"])
+                self._data["pulse_mode"] = user_input["pulse_mode"]
             if user_input.get("annual_consumption") is not None:
                 self._data["annual_consumption"] = float(user_input["annual_consumption"])
             if self._data.get("role", "main") != "main":
@@ -449,6 +472,9 @@ class MeterSubentryFlow(ConfigSubentryFlow):
             if unit in units:
                 default_unit = unit
         fields: dict[Any, Any] = {vol.Required("unit", default=default_unit): selector.SelectSelector(selector.SelectSelectorConfig(options=units))}
+        if self._data.get("pulses"):
+            fields[vol.Required("pulse_constant", default=self._data.get("pulse_constant", 100.0))] = _number(0.000001, 1e6, "any")
+            fields[vol.Required("pulse_mode", default=self._data.get("pulse_mode", "per_unit"))] = _select(["per_unit", "per_pulse"], "pulse_mode")
         if medium == Medium.GAS:
             # bei m³ Pflicht: ohne Brennwert und Zustandszahl lässt sich der Zähler nicht in kWh umrechnen
             fields[vol.Optional("calorific")] = _number(8, 13, "any", "kWh/m³")
@@ -557,6 +583,16 @@ class MeterSubentryFlow(ConfigSubentryFlow):
         if user_input is not None:
             meter["name"] = user_input["name"]
             meter["history_entity"] = user_input.get("history_entity")
+            if meter.get("pulse_constant"):
+                from .engine.pulses import unit_per_pulse  # noqa: PLC0415
+
+                old_k = unit_per_pulse(meter["pulse_constant"], meter.get("pulse_mode", "per_unit"))
+                meter["pulse_constant"] = float(user_input["pulse_constant"])
+                meter["pulse_mode"] = user_input["pulse_mode"]
+                new_k = unit_per_pulse(meter["pulse_constant"], meter["pulse_mode"])
+                rt = getattr(entry, "runtime_data", None)
+                if rt is not None and old_k and new_k and abs(new_k - old_k) > 1e-15:
+                    _rescale_pulses(rt, sub.subentry_id, new_k / old_k)
             if medium == Medium.GAS:
                 meter["conversion"] = {k: float(user_input[k]) for k in ("calorific", "z_factor") if user_input.get(k) is not None}
             else:
@@ -568,6 +604,9 @@ class MeterSubentryFlow(ConfigSubentryFlow):
             vol.Optional("history_entity", description={"suggested_value": meter.get("history_entity")}):
                 selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", device_class=DEVICE_CLASSES[medium])),
         }
+        if meter.get("pulse_constant"):
+            fields[vol.Required("pulse_constant", default=meter["pulse_constant"])] = _number(0.000001, 1e6, "any")
+            fields[vol.Required("pulse_mode", default=meter.get("pulse_mode", "per_unit"))] = _select(["per_unit", "per_pulse"], "pulse_mode")
         if medium == Medium.GAS:
             fields[vol.Optional("calorific", description={"suggested_value": conv.get("calorific")})] = _number(8, 13, "any", "kWh/m³")
             fields[vol.Optional("z_factor", description={"suggested_value": conv.get("z_factor")})] = _number(0.8, 1.1, "any")

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9.0 – 2026-11-14
+
+**Impulszähler und Abgleich mit Ablesungen.** Abnahme: Abgleich-Test mit verlorenen Impulsen grün (5 % fehlende Impulse: Faktor 1,0526, angeglichene Tageswerte summieren sich exakt auf die Ablesung, fehlende Tage bleiben fehlend, Hinweis ab 2 %).
+
+### Neu
+- **Impulszähler** im Zähler-Dialog (Sensor ohne Geräteklasse, Zähler-Helfer, Zahl-Helfer) mit Impulskonstante (Impulse je Einheit oder Einheit je Impuls), änderbar unter „Stammdaten“. Zählerneustarts werden überbrückt; ohne Langzeitstatistik kommen die Werte aus dem Verlauf.
+- **Abgleich mit den Ablesungen** für jeden Zähler mit Sensor: Faktor, Abweichung und fehlende Menge je Intervall. Die Ablesung gilt: Tageswerte werden angeglichen (Rohwert bleibt gespeichert, bei jeder neuen Ablesung neu gerechnet), Ausreißer über 30 % nur gemeldet. Hinweis unter Reparaturen ab 2 %, Diagnose-Sensor „Abgleich mit Ablesung“, Zeile in der Tarifübersicht.
+- Nur echte Ablesungen gleichen an; geschätzte Ablesungen (z. B. vom Versorger) und Ausreißer über 30 % nicht. Zählertausch und Neustarts des Impulszählers (dauerhaft gemerkt) werden berücksichtigt.
+- Eine Ablesung „jetzt“ merkt sich den Sensorstand; der aktuelle Stand bezieht sich danach auf die letzte Ablesung (Offset, wie eine Referenz).
+- **Gas mit Impulsen:** Gasleistung (live), Brennerlaufzeit und Brennerstarts je Tag und Periode, **Takten** gegen die kleinste Modulationsleistung der Gastherme. Die Gastherme übernimmt die Laufzeit von dort, wenn sie keine Betriebszustand-Entität hat. Kacheln in der Auswertungskarte.
+- Testseiten-Szenario `impulse`, Abnahme-Durchlauf um den Impulszähler erweitert.
+
+### Geändert
+- Text im Schritt „Einheit“: Gas in m³ braucht Brennwert und Zustandszahl (das verlangte der Dialog schon).
+
 ## 0.8.0 – 2026-11-14
 
 **Wärmeerzeuger und erweiterte Prognose.** Abnahme: Szenario-Tests Heizung (Gas mit Kaminofen, Wärmepumpe am eigenen Zähler, Split-Klima am Hausstrom, Fernwärme in MWh, Warmwasser per Durchlauferhitzer) grün. Anleitung: [docs/EINRICHTUNG.md](docs/EINRICHTUNG.md#5-wärmeerzeuger-optional-ab-08), Formeln: [docs/RECHNUNG.md](docs/RECHNUNG.md).

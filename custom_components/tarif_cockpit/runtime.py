@@ -14,16 +14,18 @@ from zoneinfo import ZoneInfo
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 
-from .const import signal_updated
+from .const import DOMAIN, ISSUE_RECONCILE, signal_updated
 from .engine import billing
 from .engine.model import (
     AdvancePlan, AdvanceStep, BillingPeriod, Contract, DailyConsumption, Dataset, GeneratorDaily, HeatGenerator, Household,
-    Invoice, Meter, Payment, PaymentStatus, PaymentType, PeriodStatus, PriceSegment, Reading, ReadingSource, new_id,
+    Invoice, Meter, Payment, PaymentStatus, PaymentType, PeriodStatus, PriceSegment, Reading, ReadingSource, SensorReset, new_id,
 )
 from .engine.quality import Quality, usable
+from .engine.reconcile import Reconciliation, apply_reconciliation, reconcile
 from .store import TarifStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -163,9 +165,12 @@ class TarifRuntime:
         source: ReadingSource = ReadingSource.MANUAL,
         note: str | None = None,
         replaces: str | None = None,
+        sensor_value: float | None = None,
     ) -> Reading:
-        """Neue Ablesung anhängen. Mit ``replaces`` wird eine frühere Ablesung als ersetzt markiert (nicht gelöscht)."""
-        reading = Reading(new_id(), meter_id, dt_util.as_utc(timestamp), float(value), quality, source, note)
+        """Neue Ablesung anhängen. Mit ``replaces`` wird eine frühere Ablesung als ersetzt markiert (nicht gelöscht).
+        ``sensor_value``: Stand des Zähler-Sensors zum Ablesezeitpunkt (für den Abgleich)."""
+        reading = Reading(new_id(), meter_id, dt_util.as_utc(timestamp), float(value), quality, source, note,
+                          sensor_value=sensor_value)
         if replaces:
             idx = self._reading_index(meter_id, replaces)
             target = self.data.readings[idx]
@@ -181,7 +186,52 @@ class TarifRuntime:
         if self.aggregator is not None and self.meters[meter_id].entity is None:
             await self.aggregator.async_run(meters=[meter_id], overwrite=True)
         else:
+            self.reconcile_meter(meter_id)
             self.changed(meter_id=meter_id)
+
+    def resets(self, meter_id: str) -> list[tuple[datetime, float]]:
+        return [(r.at, r.prev_raw) for r in self.data.sensor_resets if r.meter_id == meter_id]
+
+    def add_reset(self, meter_id: str, at: datetime, prev_raw: float) -> bool:
+        """Neustart eines Impulszählers merken (doppelte innerhalb von 2 Stunden ignoriert)."""
+        for r in self.data.sensor_resets:
+            if r.meter_id == meter_id and abs((r.at - at).total_seconds()) < 7200:
+                return False
+        self.data.sensor_resets.append(SensorReset(meter_id, dt_util.as_utc(at), float(prev_raw)))
+        self.store.schedule_save(self.data)
+        return True
+
+    def reconcile_meter(self, meter_id: str) -> Reconciliation | None:
+        """Zähler mit Sensor mit den Ablesungen abgleichen (0.9): Tageswerte angleichen, Hinweis unter Reparaturen."""
+        meter = self.meters.get(meter_id)
+        if meter is None or not meter.entity:
+            return None
+        rec = reconcile(meter, self.data.readings, self.daily(meter_id), self.tz)
+        changed = apply_reconciliation(self.daily(meter_id), rec, self.tz)
+        if changed and self.put_daily(changed):
+            self.store.schedule_save(self.data)
+        issue_id = f"{ISSUE_RECONCILE}_{meter_id}"
+        last = rec.last
+        if rec.notice and last is not None:
+            de = str(self.hass.config.language or "de").startswith("de")
+
+            def num(v: float, fmt: str) -> str:
+                txt = format(v, fmt)
+                return txt.replace(".", ",") if de else txt
+
+            datefmt = "%d.%m.%Y" if de else "%Y-%m-%d"
+            ir.async_create_issue(
+                self.hass, DOMAIN, issue_id, is_fixable=False, severity=ir.IssueSeverity.WARNING, translation_key=ISSUE_RECONCILE,
+                translation_placeholders={
+                    "meter": meter.name or meter_id, "pct": num(last.deviation_pct, "+.1f"),
+                    "von": last.start.astimezone(self.tz).strftime(datefmt), "bis": last.end.astimezone(self.tz).strftime(datefmt),
+                    "fehlt": num(last.missing or 0.0, ".2f"), "unit": meter.unit,
+                    "angeglichen": ("ja" if last.applied else "nein") if de else ("yes" if last.applied else "no"),
+                },
+            )
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+        return rec
 
     def invalidate_reading(self, meter_id: str, reading_id: str, reason: str | None) -> Reading:
         """Ablesung als ungültig markieren. Der Wert bleibt erhalten (Regel 3)."""
@@ -253,6 +303,9 @@ class TarifRuntime:
                 cur = self.data.daily[index[key]]
                 if usable(cur.quality) and not usable(v.quality) and v.source != "readings":
                     continue
+                if v.heating_hours is None and cur.heating_hours is not None:
+                    # Brennerdaten älter als der Recorder-Verlauf nicht verlieren
+                    v = replace(v, heating_hours=cur.heating_hours, burner_starts=cur.burner_starts, cycling=cur.cycling)
                 if cur != v:
                     self.data.daily[index[key]] = v
                     changed += 1

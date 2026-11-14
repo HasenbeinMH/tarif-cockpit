@@ -17,6 +17,7 @@ from .const import BACKFILL_DAYS
 from .engine.balance import evaluate_meter
 from .engine.model import AdvancePlan, AdvanceStep, Contract, Meter, PriceSegment, Reading, from_dict
 from .engine.quality import Quality
+from .engine.pulses import unit_per_pulse
 from .engine.units import convert
 
 _LOGGER = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ async def _probe_summary(hass: HomeAssistant, rt: Any, data: dict[str, Any]) -> 
     # Mit Sensor oder mit Jahresverbrauch (Annahme) lässt sich schon eine erste Prognose rechnen
     if rt is None or rt.aggregator is None or contract is None or not (data.get("entity") or data.get("annual_consumption")):
         return out
-    meter_raw = {k: v for k, v in data.items() if k in ("medium", "unit", "entity", "name", "history_entity", "annual_consumption")}
+    meter_raw = {k: v for k, v in data.items() if k in ("medium", "unit", "entity", "name", "history_entity", "annual_consumption", "pulse_constant", "pulse_mode")}
     meter, _ = from_dict(Meter, {**meter_raw, "meter_id": "probe", "conversion": data.get("conversion", {}),
                                     "data_level": 2, "role": "main"})
     if meter is None:
@@ -93,7 +94,10 @@ async def _probe_summary(hass: HomeAssistant, rt: Any, data: dict[str, Any]) -> 
     st = hass.states.get(meter.entity) if meter.entity else None
     current = None
     try:
-        if st is not None:
+        if st is not None and meter.pulse_constant:
+            k = unit_per_pulse(meter.pulse_constant, meter.pulse_mode)
+            current = (dt_util.now(tz), float(st.state) * k) if k else None
+        elif st is not None:
             current = (dt_util.now(tz), convert(float(st.state), st.attributes.get("unit_of_measurement"), meter.unit))
     except (TypeError, ValueError):
         current = None

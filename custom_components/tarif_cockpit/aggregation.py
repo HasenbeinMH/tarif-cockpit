@@ -26,7 +26,9 @@ from homeassistant.helpers.start import async_at_started
 from .const import AGG_HOUR, AGG_MINUTE, BACKFILL_DAYS, DOMAIN, ISSUE_NO_STATISTICS, RETRY_MISSING_DAYS
 from .engine import billing
 from .engine.consumption import aggregate_day, day_bounds, daily_from_readings
+from .engine.burner import burner_day, max_gap_for
 from .engine.generators import build_generator_day, is_on, on_hours, stove_hours_from_room
+from .engine.pulses import apply_resets, detect_resets, scale, unit_per_pulse
 from .engine.model import DailyConsumption, GeneratorDaily, GeneratorKind, HeatGenerator, Medium, Meter
 from .engine.quality import Quality, usable
 from .runtime import TarifRuntime
@@ -130,6 +132,10 @@ class Aggregator:
                 continue
             values = await self.async_compute(meter, days, rt.readings(meter.meter_id), check=True)
             changed += rt.put_daily(values)
+        for meter_id in meters or list(rt.meters):
+            meter = rt.meters.get(meter_id)
+            if meter is not None and meter.entity and rt.readings(meter_id):
+                rt.reconcile_meter(meter_id)  # Abgleich mit den Ablesungen (0.9), auch ohne neue Tage
         if meters is None:
             changed += await self.async_run_generators(start, end, overwrite)
         periods = rt.sync_periods()
@@ -152,12 +158,31 @@ class Aggregator:
         sums: Series = {}
         states: Series = {}
         hist: Series = {}
+        pulse_changes: list = []
         if not readings_based:
-            units = _unit_class(meter.unit)
+            k = unit_per_pulse(meter.pulse_constant, meter.pulse_mode) if meter.pulse_constant else None
+            units = None if k else _unit_class(meter.unit)
             sums = (await self._fetch({meter.entity}, q_start, q_end, "sum", units)).get(meter.entity, {})
             states = (await self._fetch({meter.entity}, q_start, q_end, "state", units)).get(meter.entity, {})
+            if k:
+                # Impulszähler: Impulse → Zählereinheit; Neustarts dauerhaft gemerkt und überall gleich angewendet
+                sums, states = scale(sums, k), scale(states, k)
+                hist_start = max(q_start, day_bounds(self.rt.today() - timedelta(days=12), tz)[0])
+                raw_changes: dict = {}
+                if hist_start < q_end:
+                    raw_changes = {t: v * k for t, v in await self._numeric_changes(meter.entity, hist_start, q_end)}
+                if check:
+                    for at, prev in detect_resets(states) + detect_resets(raw_changes):
+                        self.rt.add_reset(meter.meter_id, at, prev)
+                    self._reset_between_runs(meter, days[0], states or raw_changes)
+                resets = self.rt.resets(meter.meter_id)
+                states = apply_resets(states, resets)
+                pulse_changes = sorted(apply_resets(raw_changes, resets).items())
+                if not sums and pulse_changes:
+                    # ohne Langzeitstatistik (z. B. Zähler-Helfer): Stundenwerte aus dem Verlauf
+                    sums = states = _hourly_from_changes(pulse_changes, q_start, q_end)
             if meter.history_entity:
-                hist = (await self._fetch({meter.history_entity}, q_start, q_end, "sum", units)).get(meter.history_entity, {})
+                hist = (await self._fetch({meter.history_entity}, q_start, q_end, "sum", _unit_class(meter.unit))).get(meter.history_entity, {})
             if check:
                 self._check_statistics(meter, sums)
         outdoor = temps.get(hh.outdoor_temp_entity or "", {})
@@ -175,7 +200,70 @@ class Aggregator:
         if readings_based:
             by_day = {v.date: v for v in daily_from_readings(meter, readings, days[0], days[-1], tz)}
             values = [_merge_readings(v, by_day.get(v.date)) for v in values]
+        if pulse_changes and meter.medium == Medium.GAS:
+            values = self._with_burner(meter, values, pulse_changes)
         return values
+
+    def _reset_between_runs(self, meter: Meter, first_day: date, raw: dict) -> None:
+        """Neustart zwischen zwei Läufen (z. B. während HA aus war): erster Rohwert + bekannte Offsets liegt unter dem
+        gespeicherten Stand am Ende des Vortags."""
+        if not raw:
+            return
+        prev = self.rt.daily(meter.meter_id).get(first_day - timedelta(days=1))
+        if prev is None or prev.end_value is None:
+            return
+        t0 = min(raw)
+        known = sum(p for at, p in self.rt.resets(meter.meter_id) if at <= t0)
+        if raw[t0] + known < prev.end_value - 1e-6:
+            self.rt.add_reset(meter.meter_id, t0, prev.end_value - known)
+
+    def _with_burner(self, meter: Meter, values: list[DailyConsumption], changes: list) -> list[DailyConsumption]:
+        """Gas mit Impulsen: Brennerlaufzeit, Starts und Takten je Tag (nur Tage, die der Recorder-Verlauf noch hat)."""
+        tz = self.rt.tz
+        f = self._to_kwh(meter, self.rt.today(), 1.0)
+        if not f:
+            return values
+        first = changes[0][0]
+        min_power = self.rt.coordinator.boiler_min_power(meter) if self.rt.coordinator is not None else None
+        k = unit_per_pulse(meter.pulse_constant, meter.pulse_mode)
+        gap = max_gap_for(k, f, min_power)
+        out = []
+        for v in values:
+            a, b = day_bounds(v.date, tz)
+            if a < first:
+                out.append(v)
+                continue
+            bd = burner_day(changes, a, b, f, min_power, gap, k)
+            if "keine_impulse" in bd.flags and (v.consumption or 0) > 0:
+                # Verbrauch, aber keine Impulse im Verlauf (Lücke): fehlend, nicht 0 (Regel 5)
+                out.append(v)
+                continue
+            out.append(replace(v, heating_hours=bd.hours, burner_starts=bd.starts, cycling=bd.cycling))
+        return out
+
+    async def _numeric_changes(self, entity_id: str, start: datetime, end: datetime) -> list:
+        """Zahlenwerte einer Entität aus dem Recorder-Verlauf (inklusive Wert zu Beginn)."""
+        if not self._recorder_ready():
+            return []
+        from homeassistant.components.recorder import get_instance, history  # noqa: PLC0415
+
+        try:
+            states = await get_instance(self.hass).async_add_executor_job(
+                lambda: history.get_significant_states(
+                    self.hass, start, end, [entity_id], include_start_time_state=True, significant_changes_only=False,
+                    minimal_response=False, no_attributes=True,
+                )
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Tarif-Cockpit: Verlauf von %s nicht lesbar: %s", entity_id, err)
+            return []
+        out = []
+        for s in states.get(entity_id, []):
+            try:
+                out.append((s.last_changed.astimezone(self.rt.tz), float(s.state)))
+            except (TypeError, ValueError):
+                continue
+        return out
 
     # ------------------------------------------------------------ Wärmeerzeuger
 
@@ -239,6 +327,8 @@ class Aggregator:
             p_vals = [v for ts, v in power.items() if a <= ts < b]
             p_mean = sum(p_vals) / len(p_vals) if p_vals else None
             hours = None
+            if not use_state and not room_series and meter_daily.get(d) is not None and meter_daily[d].heating_hours is not None:
+                hours = meter_daily[d].heating_hours  # Brennerlaufzeit aus den Impulsen des Gaszählers
             if use_state:
                 hours = on_hours(state_changes, a, b)
             elif room_series:
@@ -292,7 +382,8 @@ class Aggregator:
     @callback
     def _check_statistics(self, meter: Meter, sums: Series) -> None:
         issue_id = f"{ISSUE_NO_STATISTICS}_{meter.meter_id}"
-        if sums or not self._recorder_ready():
+        helper = meter.pulse_constant and (meter.entity or "").split(".")[0] in ("counter", "input_number")
+        if sums or not self._recorder_ready() or helper:  # Zähler-Helfer haben nie Statistik: Werte aus dem Verlauf
             ir.async_delete_issue(self.hass, DOMAIN, issue_id)
             return
         ir.async_create_issue(
@@ -313,6 +404,23 @@ def _unit_class(unit: str) -> dict[str, str] | None:
 
 def _gen_empty(g: GeneratorDaily) -> bool:
     return g.energy_input is None and g.thermal_output is None and g.hours is None
+
+
+def _hourly_from_changes(changes: list, start: datetime, end: datetime) -> Series:
+    """Stundenreihe wie die Statistik (Schlüssel = Stundenbeginn, Wert = Stand am Ende der Stunde) aus Zustandswechseln."""
+    out: Series = {}
+    t = start.replace(minute=0, second=0, microsecond=0)
+    i = 0
+    last = None
+    while t < end:
+        stop = t + timedelta(hours=1)
+        while i < len(changes) and changes[i][0] <= stop:
+            last = changes[i][1]
+            i += 1
+        if last is not None:
+            out[t] = last
+        t = stop
+    return out
 
 
 def _merge_readings(stat_day: DailyConsumption, read_day: DailyConsumption | None) -> DailyConsumption:

@@ -5,7 +5,9 @@ Eine Integration für Home Assistant, die Zähler, Verträge, Abrechnungsperiode
 
 ![Tarifübersicht](docs/img/integration-uebersicht.png)
 
-> **Stand 0.8:** Wärmeerzeuger (Gastherme, Wärmepumpe, Split-Klima, Fernwärme, Kaminofen) mit getrennter eingesetzter Energie, Wärme und Entlastung; Kaminofen und Split-Klima entlasten die Gasprognose, sobald es genug Vergleichstage gibt; Heizen am Haushaltsstrom wird vor der Strom-Grundlast abgezogen; temperaturbereinigter Kennwert; Auswertungskarte mit Streudiagramm und Kostenverlauf. Details: [CHANGELOG.md](CHANGELOG.md).
+> **Stand 0.9:** Impulszähler (Impulskonstante, Zählerneustarts), Abgleich jedes Zähler-Sensors mit den Ablesungen (die Ablesung gilt, Tageswerte werden angeglichen, Hinweis ab 2 %), Gasleistung, Brennerlaufzeit, Brennerstarts und Takten bei Gas mit Impulsen.
+>
+> **Seit 0.8:** Wärmeerzeuger (Gastherme, Wärmepumpe, Split-Klima, Fernwärme, Kaminofen) mit getrennter eingesetzter Energie, Wärme und Entlastung; Kaminofen und Split-Klima entlasten die Gasprognose, sobald es genug Vergleichstage gibt; Heizen am Haushaltsstrom wird vor der Strom-Grundlast abgezogen; temperaturbereinigter Kennwert; Auswertungskarte mit Streudiagramm und Kostenverlauf. Details: [CHANGELOG.md](CHANGELOG.md).
 >
 > **Seit 0.7:** Einrichtung komplett in der Oberfläche, ohne YAML: ein paar Fragen zum Haushalt, Zähler mit Vertrag, Preisen und Abschlägen, die Karte im Editor wählen, fertig. Die Karte zeigt die Werte der Integration (Urteil, Saldo, Prognose mit Qualität, Abschlagsstufen, empfohlener Abschlag), ein Tipp auf den Abschlag ändert ihn. Schritt für Schritt mit Bildern: [docs/EINRICHTUNG.md](docs/EINRICHTUNG.md). Umstieg: [docs/MIGRATION.md](docs/MIGRATION.md).
 
@@ -59,6 +61,8 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 | Letzte Ablesung | Zeitpunkt der letzten gültigen Ablesung. Attribute: `stand`, `qualitaet`, `quelle`, `ablesung_id` |
 | Zählerstand (abgelesen) | Letzter gültiger abgelesener Stand |
 | Tageswerte vollständig | Diagnose: Anteil verwendbarer Tageswerte der letzten 30 Tage |
+| Abgleich mit Ablesung | Diagnose, Zähler mit Sensor: Abweichung des Sensors von der abgelesenen Menge im letzten Intervall (%); Attribute `faktor`, `fehlende_menge`, `angeglichen`, `offset`, `intervalle` |
+| Gasleistung, Brennerlaufzeit, Brennerstarts | Gas mit Impulszähler: Momentanleistung (kW); Laufzeit und Starts der Periode, Attribute `taktet_gestern`, `taktet_tage` |
 
 **Sensoren je Wärmeerzeuger** (eigenes Gerät, Werte der laufenden Periode bis gestern)
 | Sensor | Inhalt |
@@ -90,6 +94,12 @@ data:
   zaehler: 1a2b3c…          # Gerät „Gas“ des Tarif-Cockpits
   stand: 9812.4
 ```
+
+**Was du je Datenstufe bekommst**
+| Datenstufe | Quelle | Was dazukommt |
+|---|---|---|
+| 1 | Ablesungen von Hand (`add_ablesung`) | Kosten, Abschläge, Prognose, Kennwert je Ableseperiode |
+| 2 | Zählerstand-Sensor oder Impulszähler | Tageswerte, Tagesregression, Ofen- und Klima-Effekt, Abgleich mit den Ablesungen; bei Gas mit Impulsen Leistung, Brennerlaufzeit, Starts, Takten |
 
 **Prognose ohne belastbare Daten:** Bei Gas und Fernwärme gibt es erst eine Prognose, wenn der Kennwert aus deinen eigenen Daten mindestens „vorläufig“ ist (genug Tage oder Ableseperioden, mindestens 5 K Temperaturspanne, R² ≥ 0,6). Eine Annahme wird nicht verwendet. Bei Strom und Wasser gilt: Vorjahr im gleichen Kalenderfenster, sonst der Durchschnitt seit Periodenbeginn (ab 30 Tagen, „vorläufig“), sonst der Jahresverbrauch laut letzter Rechnung („Annahme“). Hat ein Zählerstand-Sensor noch keine Jahreshistorie, kannst du beim Zähler eine **Ersatzquelle für fehlende Historie** eintragen (z. B. den Bezugszähler des Wechselrichters).
 

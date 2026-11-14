@@ -72,6 +72,19 @@ Die Regression ist ab 0.8 allgemein (kleinste Quadrate mit beliebig vielen Regre
 - **Innentemperatur:** (nur wenn auch das Modell mit Außentemperatur mindestens „vorläufig“ ist) zweiter Kennwert mit Gradtagen aus dem gemessenen Tagesmittel innen (innen − außen an Heiztagen). %/K = 100 ÷ mittlere Differenz innen–außen an Heiztagen, gelernt erst ab „vorläufig“ und 60 Tagen mit Innentemperatur, sonst 6 %/K als Annahme. Die Aufteilung gegenüber dem Vorjahr („+8 %: +3 % Raumtemperatur, +5 % Mehrverbrauch“) gibt es nur mit gelerntem %/K und je 60 Heiztagen mit Innentemperatur in beiden Fenstern.
 - **Fernwärme:** wie Gas; Arbeitspreis wahlweise je MWh (intern je kWh), Leistungspreis × Anschlussleistung tagesgenau, Messpreis je Monat.
 
+### Impulszähler und Abgleich (0.9)
+
+- **Impulse → Zählereinheit:** Menge je Impuls = 1 ÷ (Impulse je Einheit) bzw. die Einheit je Impuls. Startet der Zähler neu (Stand fällt auf 0), merkt sich die Integration den Stand davor dauerhaft und zählt ab dort weiter, für Tageswerte, aktuellen Stand und gemerkte Sensorstände gleich. Erkannt wird ein Neustart live, in der Statistik und zwischen zwei Läufen (erster Stand unter dem Stand am Ende des Vortags). Ohne Langzeitstatistik (z. B. Zähler-Helfer) kommen die Stundenwerte aus dem Verlauf; den hält der Recorder nur einige Tage.
+- **Abgleich** je Intervall zwischen zwei gültigen, echten Ablesungen (geschätzte Ablesungen, z. B. Schätzungen des Versorgers, gleichen nichts an): abgelesene Menge ΔA, gemessene Menge ΔS (Sensorstand zu beiden Ablesezeitpunkten: gemerkter Stand der Ablesung, sonst Stand am Ende des Vortags + Anteil des Tages). Faktor = ΔA ÷ ΔS, Abweichung = (ΔS ÷ ΔA − 1) × 100 %, fehlende Menge = ΔA − ΔS.
+  - Angleichen: Tageswerte, deren Tagesmitte im Intervall liegt, werden mit dem Faktor multipliziert (Qualität „geschätzt“, Rohwert bleibt gespeichert, bei jeder neuen Ablesung neu gerechnet). Fehlende Tage bleiben fehlend; decken die vorhandenen Tage weniger als 80 % ab, wird nicht angeglichen.
+  - Über 30 % Abweichung gilt als Fehler (falsche Ablesung, Zählertausch, falsche Konstante): nicht angleichen, nur melden.
+  - Hinweis unter Reparaturen ab 2 % im letzten Intervall.
+  - Offset nach der letzten plausiblen Ablesung (nicht nach einem Ausreißer) = Ablesung − Sensorstand, beide über einen Zählertausch durchlaufend; kommt der Startwert der Periode aus einer Ablesung, ist der aktuelle Stand = Sensor + Offset. Kommt er aus der Statistik, gelten die angeglichenen Tageswerte bis gestern plus der Sensor seit gestern.
+  - Angeglichen werden alle Intervalle, auch ältere (Vorjahr): Nach dem Update können sich historische Tageswerte und „Kosten bisher“ ändern. Beendete, eingefrorene Perioden bleiben unberührt.
+- **Gasleistung:** Δm³ ÷ Δt zwischen den letzten beiden Impulsen × Brennwert × Zustandszahl; kommt `max_gap` lang kein Impuls, ist sie 0.
+- **Brennerlaufzeit und Starts:** Abschnitte zwischen Impulsen mit höchstens `max_gap` Abstand zählen als Betrieb (`max_gap` = 1,5 × Impulsabstand bei kleinster Leistung, mindestens 6 Minuten; ohne Gastherme mit kleinster Leistung 3 kW angenommen). Der erste Impuls nach einer Pause ist ein Start; ein Lauf aus nur einem Impuls zählt mit der Laufzeit eines Impulses bei kleinster Leistung. Läufe über Mitternacht werden geteilt, der Start zählt am Tag, an dem er begann. Nur für Tage, die der Recorder-Verlauf noch hat; ohne Impulse an einem Tag mit Verbrauch bleiben die Werte leer.
+- **Takten:** mittlere Leistung im Betrieb höchstens 120 % der kleinsten Modulationsleistung der Gastherme (als Gaseinsatz nach Brennwert: Belastung × Hs/Hi bzw. Leistung ÷ Wirkungsgrad × Hs/Hi) und mehr als 3 Starts je Betriebsstunde, bei mindestens 30 Minuten Betrieb.
+
 ## Ergebnis
 
 - `Prognose Kosten = Kosten bisher + Kosten der Restmenge + Grundpreis bis Periodenende`
