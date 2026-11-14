@@ -4,6 +4,10 @@ Quelle für Zähler mit Sensor ist die Langzeitstatistik (Stundenwerte, laufende
 Ablesungen die Ablesungen selbst (linear verteilt). Temperaturen kommen als Stundenmittel aus der Statistik.
 Läuft täglich um 00:05 und beim Start (holt fehlende Tage nach). Bestehende Tageswerte von Zählern mit Sensor
 überschreibt nur ``recalculate``; fehlende Tage der letzten 7 Tage werden erneut versucht.
+
+Wärmeerzeuger (0.8): Energie und Wärme aus der Statistik (Summe), Leistung als Stundenmittel, Betriebsstunden aus dem
+Verlauf der Betriebszustand-Entität; Kaminofen ohne Entität aus der Raumtemperatur (5-Minuten-Statistik). Verlauf und
+5-Minuten-Werte hält der Recorder nur einige Tage: Betriebsstunden gibt es ab der Einrichtung (plus diese Tage).
 """
 
 from __future__ import annotations
@@ -20,9 +24,11 @@ from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.start import async_at_started
 
 from .const import AGG_HOUR, AGG_MINUTE, BACKFILL_DAYS, DOMAIN, ISSUE_NO_STATISTICS, RETRY_MISSING_DAYS
+from .engine import billing
 from .engine.consumption import aggregate_day, day_bounds, daily_from_readings
-from .engine.model import DailyConsumption, Meter
-from .engine.quality import Quality
+from .engine.generators import build_generator_day, is_on, on_hours, stove_hours_from_room
+from .engine.model import DailyConsumption, GeneratorDaily, GeneratorKind, HeatGenerator, Medium, Meter
+from .engine.quality import Quality, usable
 from .runtime import TarifRuntime
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,7 +47,8 @@ class Aggregator:
         return "recorder" in self.hass.config.components
 
     async def _fetch(
-        self, ids: set[str], start: datetime, end: datetime, kind: str, units: dict[str, str] | None = None
+        self, ids: set[str], start: datetime, end: datetime, kind: str, units: dict[str, str] | None = None,
+        period: str = "hour",
     ) -> dict[str, Series]:
         """Stundenwerte aus der Langzeitstatistik: kind 'sum'/'state' (Zähler) oder 'mean' (Temperatur).
         ``units`` rechnet in die gewünschte Einheit um (z. B. Wh-Sensor → kWh-Zähler)."""
@@ -53,7 +60,7 @@ class Aggregator:
 
         try:
             rows = await get_instance(self.hass).async_add_executor_job(
-                statistics_during_period, self.hass, start, end, ids, "hour", units, {kind}
+                statistics_during_period, self.hass, start, end, ids, period, units, {kind}
             )
         except Exception as err:  # noqa: BLE001 - Statistik darf die Integration nie stoppen
             _LOGGER.warning("Tarif-Cockpit: Langzeitstatistik nicht lesbar: %s", err)
@@ -123,6 +130,8 @@ class Aggregator:
                 continue
             values = await self.async_compute(meter, days, rt.readings(meter.meter_id), check=True)
             changed += rt.put_daily(values)
+        if meters is None:
+            changed += await self.async_run_generators(start, end, overwrite)
         periods = rt.sync_periods()
         if changed:
             _LOGGER.debug("Tarif-Cockpit: %s Tageswerte aktualisiert", changed)
@@ -168,6 +177,118 @@ class Aggregator:
             values = [_merge_readings(v, by_day.get(v.date)) for v in values]
         return values
 
+    # ------------------------------------------------------------ Wärmeerzeuger
+
+    async def async_run_generators(self, start: date | None = None, end: date | None = None, overwrite: bool = False) -> int:
+        rt = self.rt
+        if not rt.generators:
+            return 0
+        today = rt.today()
+        yesterday = today - timedelta(days=1)
+        horizon = today - timedelta(days=BACKFILL_DAYS)
+        retry_from = today - timedelta(days=RETRY_MISSING_DAYS)
+        changed = 0
+        for gid, gen in rt.generators.items():
+            existing = rt.generator_daily(gid)
+            lo, hi = max(start or horizon, horizon), min(end or yesterday, yesterday)
+            days = []
+            d = lo
+            while d <= hi:
+                cur = existing.get(d)
+                if overwrite or cur is None or (d >= retry_from and _gen_empty(cur)):
+                    days.append(d)
+                d += timedelta(days=1)
+            if not days:
+                continue
+            values = await self.async_compute_generator(gen, days)
+            # leere alte Tage nicht speichern (der Recorder hat sie nicht mehr); fehlend bleibt fehlend
+            values = [v for v in values if not (_gen_empty(v) and v.date < retry_from)]
+            changed += rt.put_generator_daily(values)
+        return changed
+
+    async def async_compute_generator(self, gen: HeatGenerator, days: list[date]) -> list[GeneratorDaily]:
+        if not days:
+            return []
+        rt = self.rt
+        tz = rt.tz
+        q_start = day_bounds(days[0], tz)[0] - timedelta(hours=1)
+        q_end = day_bounds(days[-1], tz)[1]
+        ent = gen.entities
+        energy = (await self._fetch({ent.get("energy", "")}, q_start, q_end, "sum", {"energy": "kWh"})).get(ent.get("energy", ""), {})
+        heat = (await self._fetch({ent.get("heat", "")}, q_start, q_end, "sum", {"energy": "kWh"})).get(ent.get("heat", ""), {})
+        power = (await self._fetch({ent.get("power", "")}, q_start, q_end, "mean", {"power": "kW"})).get(ent.get("power", ""), {})
+        state_changes: list = []
+        state_entity = ent.get("state")
+        use_state = state_entity and not (gen.kind == GeneratorKind.FIREPLACE and gen.stove_detection == "room")
+        if use_state:
+            state_changes = await self._state_changes(state_entity, q_start, q_end)
+        room_series: Series = {}
+        room = gen.room_entity or ent.get("room")
+        if gen.kind == GeneratorKind.FIREPLACE and not use_state and room:
+            five_start = max(q_start, day_bounds(rt.today() - timedelta(days=12), tz)[0])
+            if five_start < q_end:
+                room_series = (await self._fetch({room}, five_start, q_end, "mean", {"temperature": "°C"}, "5minute")).get(room, {})
+        meter = rt.meters.get(gen.meter_id or "")
+        meter_daily = rt.daily(meter.meter_id) if meter is not None and not gen.on_household_power else {}
+        any_daily = self._degree_days()
+        out = []
+        for d in days:
+            a, b = day_bounds(d, tz)
+            e = aggregate_day(gen.generator_id, d, tz, energy).consumption if energy else None
+            h = aggregate_day(gen.generator_id, d, tz, heat).consumption if heat else None
+            p_vals = [v for ts, v in power.items() if a <= ts < b]
+            p_mean = sum(p_vals) / len(p_vals) if p_vals else None
+            hours = None
+            if use_state:
+                hours = on_hours(state_changes, a, b)
+            elif room_series:
+                dd = any_daily.get(d)
+                if dd is not None and dd > 0:
+                    hours = stove_hours_from_room([(ts, v) for ts, v in room_series.items() if a <= ts < b], gen.stove_threshold_k)
+                elif dd == 0:
+                    hours = 0.0  # außerhalb der Heizperiode zählt kein Ofenbetrieb
+            mk = None
+            if meter_daily:
+                mv = meter_daily.get(d)
+                if mv is not None and mv.consumption is not None and usable(mv.quality):
+                    mk = self._to_kwh(meter, d, mv.consumption)
+            out.append(build_generator_day(gen, d, energy=e, power_mean_kw=p_mean, heat=h, hours=hours, meter_kwh=mk,
+                                           power_coverage=len(p_vals) / 24))
+        return out
+
+    def _to_kwh(self, meter: Meter, day: date, value: float) -> float | None:
+        """Zählereinheit → kWh wie in der Abrechnung (Gas m³: Brennwert/Zustandszahl des Preisabschnitts, sonst des Zählers)."""
+        contract = billing.contract_on(self.rt.contracts(meter.meter_id), day)
+        segs = [p for p in self.rt.data.prices if contract is not None and p.contract_id == contract.contract_id]
+        f = billing.energy_factor(meter, billing.segment_on(segs, day))
+        return value * f if f else None
+
+    def _degree_days(self) -> dict[date, float | None]:
+        """Gradtage je Tag aus den Tageswerten irgendeines Zählers (alle haben dieselbe Außentemperatur)."""
+        out: dict[date, float | None] = {}
+        for d in self.rt.data.daily:
+            if d.degree_days is not None and d.date not in out:
+                out[d.date] = d.degree_days
+        return out
+
+    async def _state_changes(self, entity_id: str, start: datetime, end: datetime) -> list:
+        """Zustandswechsel aus dem Recorder-Verlauf (inklusive Zustand zu Beginn)."""
+        if not self._recorder_ready():
+            return []
+        from homeassistant.components.recorder import get_instance, history  # noqa: PLC0415
+
+        try:
+            states = await get_instance(self.hass).async_add_executor_job(
+                lambda: history.get_significant_states(
+                    self.hass, start, end, [entity_id], include_start_time_state=True, significant_changes_only=False,
+                    minimal_response=False, no_attributes=True,
+                )
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Tarif-Cockpit: Verlauf von %s nicht lesbar: %s", entity_id, err)
+            return []
+        return [(s.last_changed.astimezone(self.rt.tz), is_on(s.state)) for s in states.get(entity_id, [])]
+
     @callback
     def _check_statistics(self, meter: Meter, sums: Series) -> None:
         issue_id = f"{ISSUE_NO_STATISTICS}_{meter.meter_id}"
@@ -188,6 +309,10 @@ def _unit_class(unit: str) -> dict[str, str] | None:
     if unit in ("m³", "L"):
         return {"volume": unit}
     return None
+
+
+def _gen_empty(g: GeneratorDaily) -> bool:
+    return g.energy_input is None and g.thermal_output is None and g.hours is None
 
 
 def _merge_readings(stat_day: DailyConsumption, read_day: DailyConsumption | None) -> DailyConsumption:

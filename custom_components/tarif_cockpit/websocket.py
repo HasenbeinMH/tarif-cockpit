@@ -1,7 +1,8 @@
 """WebSocket-Befehl für die Karten (Integrations-Modus): welche Zähler gibt es, welche Sensoren gehören dazu.
 
 Die Karten rechnen nichts (Regel 2): Sie bekommen hier nur die Zuordnung Kennung → entity_id und die Verträge und
-lesen dann die Zustände dieser Sensoren aus ``hass.states``.
+lesen dann die Zustände dieser Sensoren aus ``hass.states``. ``tarif_cockpit/reihen`` liefert die fertig gerechneten
+Reihen für die Diagramme der Auswertungskarte (Streudiagramm, Kostenverlauf).
 """
 
 from __future__ import annotations
@@ -16,11 +17,13 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .const import DOMAIN
+from .engine import series
 
 
 @callback
 def async_setup_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_meters)
+    websocket_api.async_register_command(hass, ws_series)
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/zaehler"})
@@ -39,6 +42,7 @@ def build_meters(hass: HomeAssistant) -> dict[str, Any]:
         rt = entry.runtime_data
         entities = er.async_entries_for_config_entry(ent_reg, entry.entry_id)
         by_meter: dict[str, dict[str, str]] = {}
+        by_gen: dict[str, dict[str, str]] = {}
         total = None
         for e in entities:
             if e.disabled_by is not None:  # deaktiviert: hat nie einen Zustand, die Karte würde darauf warten
@@ -50,6 +54,9 @@ def build_meters(hass: HomeAssistant) -> dict[str, Any]:
             for meter_id in rt.meters:
                 if uid.startswith(f"{meter_id}_"):
                     by_meter.setdefault(meter_id, {})[uid[len(meter_id) + 1:]] = e.entity_id
+            for gid in rt.generators:
+                if uid.startswith(f"{gid}_"):
+                    by_gen.setdefault(gid, {})[uid[len(gid) + 1:]] = e.entity_id
         meters = []
         for meter_id, m in rt.meters.items():
             dev = next((d for d in dr.async_entries_for_config_entry(dev_reg, entry.entry_id) if (DOMAIN, meter_id) in d.identifiers), None)
@@ -57,8 +64,55 @@ def build_meters(hass: HomeAssistant) -> dict[str, Any]:
                 "zaehler_id": meter_id, "device_id": dev.id if dev else None, "name": m.name or meter_id,
                 "medium": m.medium.value, "unit": m.unit, "rolle": m.role, "hauptzaehler": m.parent_meter_id,
                 "sensoren": by_meter.get(meter_id, {}),
+                "ww_heizung": rt.coordinator.hot_water_on(m) if rt.coordinator is not None else None,
                 "vertraege": [{"lieferant": c.supplier, "tarif": c.tariff, "beginn": c.start_date.isoformat(),
                                "ende": c.end_date.isoformat() if c.end_date else None} for c in rt.contracts(meter_id)],
             })
-        out["haushalte"].append({"entry_id": entry.entry_id, "name": rt.household.name, "saldo_gesamt": total, "zaehler": meters})
+        gens = []
+        for gid, g in rt.generators.items():
+            dev = next((d for d in dr.async_entries_for_config_entry(dev_reg, entry.entry_id) if (DOMAIN, gid) in d.identifiers), None)
+            gens.append({
+                "erzeuger_id": gid, "device_id": dev.id if dev else None, "name": g.name or gid, "typ": g.kind.value,
+                "zaehler_id": g.meter_id, "am_haushaltsstrom": g.on_household_power, "ww_zentral": g.central_dhw,
+                "sensoren": by_gen.get(gid, {}),
+            })
+        hw = rt.household.situation.get("hot_water")
+        out["haushalte"].append({"entry_id": entry.entry_id, "name": rt.household.name, "saldo_gesamt": total, "zaehler": meters,
+                                 "waermeerzeuger": gens, "warmwasser": hw})
     return out
+
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/reihen", vol.Required("zaehler"): str})
+@callback
+def ws_series(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Reihen eines Zählers (Zähler-ID oder Geräte-ID): Streudiagramm und Kostenverlauf der laufenden Periode."""
+    result = build_series(hass, msg["zaehler"])
+    if result is None:
+        connection.send_error(msg["id"], "not_found", "Zähler nicht gefunden oder noch nicht ausgewertet")
+        return
+    connection.send_result(msg["id"], result)
+
+
+def build_series(hass: HomeAssistant, key: str) -> dict[str, Any] | None:
+    dev_reg = dr.async_get(hass)
+    dev = dev_reg.async_get(key)
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.state is not ConfigEntryState.LOADED:
+            continue
+        rt = entry.runtime_data
+        meter_id = key if key in rt.meters else next(
+            (mid for mid in rt.meters if dev is not None and (DOMAIN, mid) in dev.identifiers), None)
+        if meter_id is None or rt.coordinator is None:
+            continue
+        res = rt.coordinator.results.get(meter_id)
+        if res is None:
+            return None
+        meter = rt.meters[meter_id]
+        return {
+            "zaehler_id": meter_id,
+            "streuung": series.scatter(res),
+            "kosten": series.cost_curve(res, meter, rt.data.prices, rt.tz, rt.today()),
+            "waehrung": hass.config.currency,
+        }
+    return None

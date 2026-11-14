@@ -24,8 +24,9 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
 from .const import signal_updated
-from .engine.balance import MeterResult, evaluate_meter
-from .engine.model import ForecastSnapshot
+from .engine.balance import HEAT_MEDIA, MeterResult, PowerHeat, evaluate_meter
+from .engine.generators import ON_POWER_KINDS, GeneratorResult, evaluate_generator, stove_relief_per_hour
+from .engine.model import ForecastSnapshot, GeneratorKind, HeatGenerator, Medium, Meter
 from .engine.regression import HeatModel
 from .engine.units import convert
 from .runtime import TarifRuntime
@@ -41,7 +42,9 @@ class TarifCoordinator:
         self.hass = hass
         self.rt = rt
         self.results: dict[str, MeterResult] = {}
+        self.gen_results: dict[str, GeneratorResult] = {}
         self._models: dict[str, HeatModel] = {}
+        self._samples: dict[str, tuple[list, bool]] = {}  # Stichproben zum Modell (Streudiagramm ohne Neuberechnung)
         self._dirty: dict[str, set[str]] = {m: set(ALL) for m in rt.meters}
         self._debouncer = Debouncer(hass, _LOGGER, cooldown=STATE_DEBOUNCE_S, immediate=False, function=self._async_refresh_dirty)
 
@@ -104,6 +107,80 @@ class TarifCoordinator:
             return datetime.combine(today, datetime.min.time(), tzinfo=self.rt.tz), y.end_value
         return None
 
+    # ------------------------------------------------------------ Wärmeerzeuger
+
+    def heat_meter_id(self) -> str | None:
+        """Der Wärmezähler (Gas/Fernwärme), den Ofen und Klimageräte entlasten: der erste Hauptzähler dieser Medien."""
+        for m in self.rt.meters.values():
+            if m.role == "main" and m.medium in HEAT_MEDIA:
+                return m.meter_id
+        return None
+
+    def _gen_series(self, gens: list[HeatGenerator], attr: str) -> dict:
+        out: dict = {}
+        for g in gens:
+            for day, v in self.rt.generator_daily(g.generator_id).items():
+                val = getattr(v, attr)
+                if val is not None:
+                    out[day] = (out.get(day) or 0.0) + val
+        return out
+
+    def _heat_inputs(self, meter: Meter) -> dict:
+        """Zusätzliche Eingaben für ``evaluate_meter`` aus Situation und Wärmeerzeugern (Arbeitspaket 2.4/3.2)."""
+        rt = self.rt
+        gens = list(rt.generators.values())
+        kw: dict = {}
+        if meter.role != "main":
+            return kw
+        if meter.medium in HEAT_MEDIA:
+            kw["hot_water"] = self.hot_water_on(meter)
+            if meter.meter_id == self.heat_meter_id():
+                stoves = [g for g in gens if g.kind == GeneratorKind.FIREPLACE]
+                if stoves:
+                    kw["stove_hours"] = self._gen_series(stoves, "hours")
+                    kw["stove_relief"] = stove_relief_per_hour(stoves[0], meter.medium)
+                hps = [g for g in gens if g.kind in ON_POWER_KINDS and g.meter_id != meter.meter_id]
+                if hps:
+                    kw["hp_energy"] = self._gen_series(hps, "energy_input")
+        elif meter.medium == Medium.STROM:
+            own = [g for g in gens if g.meter_id == meter.meter_id and g.kind in ON_POWER_KINDS]
+            on_power = [g for g in gens if g.on_household_power and g.kind in ON_POWER_KINDS]
+            if own:
+                # eigener Zähler der Wärmepumpe (WP-Tarif): der ganze Zähler ist Heizstrom
+                kw["power_heat"] = PowerHeat(measured={d: v.consumption for d, v in rt.daily(meter.meter_id).items()}, whole_meter=True)
+            elif on_power and meter.meter_id == self.main_power_id():
+                measured = all(g.entities.get("energy") or g.entities.get("power") for g in on_power)
+                kw["power_heat"] = PowerHeat(measured=self._gen_series(on_power, "energy_input") if measured else None)
+        return kw
+
+    def hot_water_on(self, meter: Meter) -> bool:
+        """Läuft Warmwasser über die Heizung dieses Zählers? Ohne Antwort (Haushalt aus 0.6) wie bisher: ja.
+        Solarthermie unterstützt nur, das Warmwasser kommt dann weiterhin auch über die Heizung."""
+        hw = self.rt.household.situation.get("hot_water")
+        own_dhw = any(g.central_dhw and g.meter_id == meter.meter_id for g in self.rt.generators.values())
+        return hw is None or hw in ("heizung", "solarthermie") or own_dhw
+
+    def main_power_id(self) -> str | None:
+        own = {g.meter_id for g in self.rt.generators.values() if g.meter_id}
+        for m in self.rt.meters.values():
+            if m.role == "main" and m.medium == Medium.STROM and m.meter_id not in own:
+                return m.meter_id
+        return None
+
+    def _refresh_generators(self) -> None:
+        rt = self.rt
+        today = dt_util.now(rt.tz).date()
+        heat_id = self.heat_meter_id()
+        for gid, gen in rt.generators.items():
+            ref = gen.meter_id if gen.meter_id in self.results else (heat_id if heat_id in self.results else self.main_power_id())
+            res = self.results.get(ref) if ref else None
+            start = res.period.start_date if res is not None and res.period is not None else today.replace(month=1, day=1)
+            model = self._models.get(heat_id) if heat_id else None
+            try:
+                self.gen_results[gid] = evaluate_generator(gen, rt.generator_daily(gid), start, today, model)
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("Tarif-Cockpit: Auswertung des Wärmeerzeugers %s fehlgeschlagen", gen.name or gid)
+
     @callback
     def _refresh(self) -> None:
         rt = self.rt
@@ -125,18 +202,27 @@ class TarifCoordinator:
                     rt.readings(meter_id), rt.daily(meter_id), now, rt.tz, self._current(meter_id),
                     rt.household.tolerance_pct, rt.actual_ends(meter_id), sub_daily=wallbox, garden_daily=garden,
                     heat_model_override=None if refit else self._models.get(meter_id),
+                    **self._heat_inputs(meter),
                 )
             except Exception:  # noqa: BLE001 - ein Fehler in einem Zähler darf die anderen nicht stoppen
                 _LOGGER.exception("Tarif-Cockpit: Auswertung von Zähler %s fehlgeschlagen", meter.name or meter_id)
                 continue
             if res.heat_model is not None:
                 self._models[meter_id] = res.heat_model
+                if res.samples:
+                    self._samples[meter_id] = (res.samples, res.samples_per_period)
+                elif not refit and meter_id in self._samples:
+                    # Modell aus dem Speicher (nur Kosten/Zahlungen geändert): Stichproben fürs Streudiagramm übernehmen
+                    res.samples, res.samples_per_period = self._samples[meter_id]
             old = self.results.get(meter_id)
             if old is not None and old.period is not None and res.period is not None and old.period.period_id != res.period.period_id:
                 # Periodenwechsel: letzte Prognose der beendeten Periode einfrieren (Entscheidung L, Regel 4)
                 if self._snapshot(old, now):
                     rt.store.schedule_save(rt.data)
             self.results[meter_id] = res
+            changed = True
+        if rt.generators:
+            self._refresh_generators()
             changed = True
         if changed:
             async_dispatcher_send(self.hass, signal_updated(rt.entry.entry_id))

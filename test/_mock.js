@@ -1,5 +1,5 @@
 /* Testdaten für die Testseiten: nachgebautes hass-Objekt und Szenarien. Wird vor ../custom_components/tarif_cockpit/frontend/tarif-cockpit.js geladen.
-   URL-Parameter: scene (haus, miete, wasser, nachzahlung, ohne, leer, en, integration, lernt), theme, shot (ohne Knopfleiste), narrow */
+   URL-Parameter: scene (haus, miete, wasser, nachzahlung, ohne, leer, en, integration, lernt, heizung, waermepumpe, fernwaerme), user (kein Admin), theme, shot (ohne Knopfleiste), narrow */
 (() => {
   // Platzhalter für HA-Elemente
   if (!customElements.get('ha-icon')) customElements.define('ha-icon', class extends HTMLElement { connectedCallback() { this.textContent = '●'; this.style.fontSize = '10px'; } });
@@ -131,6 +131,104 @@
     },
   });
 
+  // ---- 0.8: Wärmeerzeuger und Diagramme (Streudiagramm, Kostenverlauf) über tarif_cockpit/reihen
+  const gsid = (g, k) => `sensor.${g}_${k}`;
+  const GKEYS = ['energie_eingang', 'waerme', 'entlastung', 'betriebsstunden', 'betriebstage', 'holz_geschaetzt', 'holzkosten_geschaetzt'];
+  const gsens = (g) => { const o = {}; GKEYS.forEach((k) => { o[k] = gsid(g, k); }); return o; };
+  const scatterData = (k, ww, stove, klima) => {
+    const pts = [];
+    for (let i = 0; i < 300; i++) {
+      const t = 9 - 9 * Math.cos((2 * Math.PI * (i + 280)) / 365) + 1.5 * Math.sin(i * 0.9);
+      const dd = t < 15 ? 20 - t : 0;
+      let y = ww + k * dd + ((i * 37) % 11 - 5) * 0.6;
+      const p = { x: +dd.toFixed(2), y: 0 };
+      if (stove && dd > 8 && i % 3 === 0) { p.ofen = 4; y -= 24; }
+      if (klima && dd > 2 && dd < 10 && i % 5 === 0) { p.klima = +(0.6 * dd).toFixed(1); y -= 1.5 * 0.6 * dd; }
+      p.y = +Math.max(y, 0).toFixed(2);
+      pts.push(p);
+    }
+    return { punkte: pts, gerade: { x0: 0, y0: ww, x1: 25, y1: ww + k * 25 }, kennwert: k, ww, r2: 0.91, qualitaet: 'gut', je_periode: false,
+      ofen_effekt: stove ? 6 : null, ofen_qualitaet: stove ? 'gut' : null };
+  };
+  const costData = (beginn, ende, heute, perMonth, adv) => {
+    const ist = [[beginn, 0]], prognose = [], abschlaege = [[beginn, 0]];
+    let d = new Date(beginn + 'T00:00:00'), cum = 0, acum = 0, i = 0;
+    const iso = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+    while (iso(d) <= ende && i < 14) {
+      const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      const winter = [10, 11, 0, 1, 2].includes(d.getMonth()) ? 1.8 : [3, 9].includes(d.getMonth()) ? 1 : 0.35;
+      cum += perMonth * winter;
+      const stamp = iso(mEnd) > ende ? ende : iso(mEnd);
+      if (stamp < heute) ist.push([stamp, +cum.toFixed(2)]);
+      else { if (!prognose.length) prognose.push([heute, ist[ist.length - 1][1]]); prognose.push([stamp, +cum.toFixed(2)]); }
+      acum += adv;
+      abschlaege.push([iso(new Date(d.getFullYear(), d.getMonth(), 1)) < beginn ? beginn : iso(new Date(d.getFullYear(), d.getMonth() + 1, 1)), +acum.toFixed(2)]);
+      d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      i += 1;
+    }
+    return { beginn, ende, heute, ist, prognose, abschlaege: abschlaege.filter((x) => x[0] <= ende) };
+  };
+  const HEAT_SCENES = {
+    heizung: {
+      meta: () => {
+        const m = strip(META);
+        m.haushalte[0].warmwasser = 'heizung';
+        m.haushalte[0].zaehler[1].sensoren.kennwert_temperaturbereinigt = sid('gas', 'kennwert_temperaturbereinigt');
+        m.haushalte[0].waermeerzeuger = [
+          { erzeuger_id: 'o1', device_id: 'dev_ofen', name: 'Kaminofen', typ: 'fireplace', zaehler_id: null, am_haushaltsstrom: false, ww_zentral: false, sensoren: gsens('ofen') },
+          { erzeuger_id: 'k1', device_id: 'dev_klima', name: 'Split-Klima Wohnzimmer', typ: 'air_air_hp', zaehler_id: null, am_haushaltsstrom: true, ww_zentral: false, sensoren: gsens('klima') },
+        ];
+        return m;
+      },
+      states: {
+        [sid('gas', 'kennwert_temperaturbereinigt')]: S(6.1, 'kWh/Kd', 'Kennwert temperaturbereinigt', { prozent_je_kelvin: 6.8, prozent_je_kelvin_qualitaet: 'gut',
+          vorjahr: { gesamt_pct: 8.2, raumtemperatur_pct: 3.4, verhalten_pct: 4.8, innen_aenderung_k: 0.5, tage: 92 } }),
+        [gsid('ofen', 'energie_eingang')]: S(1640, 'kWh', 'Ofen Eingang'), [gsid('ofen', 'waerme')]: S(1230, 'kWh', 'Ofen Wärme', { geschaetzt: true }),
+        [gsid('ofen', 'entlastung')]: S(1140, 'kWh', 'Ofen Entlastung', { qualitaet: 'gut' }), [gsid('ofen', 'betriebsstunden')]: S(205, 'h', 'Ofen Stunden'),
+        [gsid('ofen', 'betriebstage')]: S(48, 'd', 'Ofen Tage'), [gsid('ofen', 'holz_geschaetzt')]: S(390, 'kg', 'Holz'),
+        [gsid('ofen', 'holzkosten_geschaetzt')]: S(117, 'EUR', 'Holzkosten', EUR),
+        [gsid('klima', 'energie_eingang')]: S(212, 'kWh', 'Klima Eingang'), [gsid('klima', 'waerme')]: S(742, 'kWh', 'Klima Wärme', { geschaetzt: true }),
+        [gsid('klima', 'entlastung')]: S('unknown'), [gsid('klima', 'betriebsstunden')]: S(96, 'h', 'Klima Stunden'), [gsid('klima', 'betriebstage')]: S(21, 'd', 'Klima Tage'),
+      },
+      series: { zaehler_id: 'm2', streuung: scatterData(6.4, 9, true, true), kosten: costData('2026-08-15', '2027-08-14', '2026-11-13', 95, 175) },
+    },
+    waermepumpe: {
+      meta: () => ({ haushalte: [{ entry_id: 'e1', name: 'Haus', saldo_gesamt: null, warmwasser: 'waermepumpe', zaehler: [
+        { zaehler_id: 'm3', device_id: 'dev_wp', name: 'Wärmepumpe', medium: 'strom', unit: 'kWh', rolle: 'main', hauptzaehler: null,
+          sensoren: Object.assign(sensoren('wp'), { kennwert: sid('wp', 'kennwert') }), vertraege: [{ lieferant: 'Stadtwerke', tarif: 'WP-Tarif', beginn: '2026-01-01', ende: null }] },
+      ], waermeerzeuger: [{ erzeuger_id: 'w1', device_id: 'dev_wpg', name: 'Wärmepumpe', typ: 'water_hp', zaehler_id: 'm3', am_haushaltsstrom: false, ww_zentral: true, sensoren: gsens('wp_gen') }] }] }),
+      states: {
+        [sid('wp', 'kennwert')]: S(1.82, 'kWh/Kd', 'WP Kennwert'), [sid('wp', 'prognose_qualitaet')]: S('gut', '', 'WP Qualität', { sample_count: 312, r_squared: 0.93 }),
+        [gsid('wp_gen', 'energie_eingang')]: S(3120, 'kWh', 'WP Eingang'), [gsid('wp_gen', 'waerme')]: S(10920, 'kWh', 'WP Wärme', { geschaetzt: true }),
+        [gsid('wp_gen', 'entlastung')]: S('unknown'),
+      },
+      series: { zaehler_id: 'm3', streuung: scatterData(1.8, 2.5, false, false), kosten: costData('2026-01-01', '2026-12-31', '2026-11-13', 70, 95) },
+    },
+    fernwaerme: {
+      meta: () => ({ haushalte: [{ entry_id: 'e1', name: 'Wohnung', saldo_gesamt: null, warmwasser: 'heizung', zaehler: [
+        { zaehler_id: 'f1', device_id: 'dev_fw', name: 'Fernwärme', medium: 'fernwaerme', unit: 'MWh', rolle: 'main', hauptzaehler: null,
+          sensoren: sensoren('fw', true), vertraege: [{ lieferant: 'Fernwärme GmbH', tarif: '', beginn: '2026-01-01', ende: null }] },
+      ], waermeerzeuger: [] }] }),
+      states: {
+        [sid('fw', 'kennwert')]: S(5.1, 'kWh/Kd', 'FW Kennwert'), [sid('fw', 'ww_grundlast')]: S(6.2, 'kWh/d', 'FW WW'),
+        [sid('fw', 'prognose_qualitaet')]: S('sehr_gut', '', 'FW Qualität', { sample_count: 340, r_squared: 0.95 }),
+      },
+      series: { zaehler_id: 'f1', streuung: scatterData(5.1, 6.2, false, false), kosten: costData('2026-01-01', '2026-12-31', '2026-11-13', 110, 140) },
+    },
+  };
+  const heatHass = (key) => (hass) => {
+    const sc = HEAT_SCENES[key];
+    integHass(false)(hass);
+    Object.assign(hass.states, strip(sc.states));
+    const meta = sc.meta();
+    hass.callWS = async (m) => {
+      if (m.type === 'tarif_cockpit/zaehler') return strip(meta);
+      if (m.type === 'tarif_cockpit/reihen') return strip(sc.series);
+      return monthly(m);
+    };
+    return hass;
+  };
+
   const only = (keys) => { const o = {}; keys.forEach((k) => { o[k] = base[k]; }); return o; };
   const SCENES = {
     haus: { name: 'Haus mit Strom und Gas (Konfiguration aus 0.3)', states: {}, overview: legacy, analyse: Object.assign({}, analysis) },
@@ -145,6 +243,9 @@
     integration: { name: 'Integrations-Modus: Strom mit Anbieterwechsel, Gas mit Abschlagsstufen', states: {}, hook: integHass(false), overview: { integration: true }, analyse: { integration: true } },
     lernt: { name: 'Integrations-Modus: Kennwert wird noch gelernt', states: {}, hook: integHass(true), overview: { integration: true }, analyse: { integration: true } },
     integ_neu: { name: 'Integration vorhanden, Karte frisch hinzugefügt (getStubConfig)', states: {}, hook: integHass(false), overview: 'stub', analyse: 'stub' },
+    heizung: { name: 'Gas mit Kaminofen und Split-Klima (Wärmeerzeuger, Diagramme)', states: {}, hook: heatHass('heizung'), overview: { integration: true }, analyse: { integration: true } },
+    waermepumpe: { name: 'Wärmepumpe am eigenen Zähler', states: {}, hook: heatHass('waermepumpe'), overview: { integration: true }, analyse: { integration: true } },
+    fernwaerme: { name: 'Fernwärme in MWh', states: {}, hook: heatHass('fernwaerme'), overview: { integration: true }, analyse: { integration: true } },
     en: { name: 'Englische Oberfläche', states: {}, lang: 'en', overview: Object.assign({}, legacy, { analysis: undefined, title: 'Tariffs and billing' }), analyse: Object.assign({}, analysis, { title: 'Gas, weather-adjusted', explain: undefined }) },
   };
   const strip = (o) => JSON.parse(JSON.stringify(o));

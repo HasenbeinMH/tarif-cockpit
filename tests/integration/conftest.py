@@ -74,3 +74,16 @@ def meter_device_id(hass: HomeAssistant, meter_id: str) -> str:
             if (DOMAIN, meter_id) in dev.identifiers:
                 return dev.id
     raise AssertionError(f"kein Gerät für {meter_id}")
+
+
+def generator_subentry(subentry_id: str, kind: str = "fireplace", title: str = "Kaminofen", **fields: Any) -> ConfigSubentryData:
+    """Wärmeerzeuger-Subentry (0.8)."""
+    from custom_components.tarif_cockpit.const import CONF_GENERATOR, SUBENTRY_GENERATOR
+
+    return ConfigSubentryData(
+        data={CONF_GENERATOR: {"kind": kind, "name": title, **fields}},
+        subentry_id=subentry_id,
+        subentry_type=SUBENTRY_GENERATOR,
+        title=title,
+        unique_id=None,
+    )

@@ -26,7 +26,7 @@
       'pick.overview.name': 'Tarif-Cockpit',
       'pick.overview.desc': 'Kosten, Abschläge und Prognose für Strom, Gas und Wasser: passt, Nachzahlung oder Rückzahlung auf einen Blick',
       'pick.analyse.name': 'Tarif-Cockpit Auswertung',
-      'pick.analyse.desc': 'Gas witterungsbereinigt: Kennwert je Gradtag, Vergleich mit der Vorperiode und Verlauf',
+      'pick.analyse.desc': 'Heizung: Kennwert je Gradtag, Streudiagramm, Kostenverlauf gegen die Abschläge, Wärmeerzeuger',
       'warn.analysis': 'Der Block "analysis" in tarif-cockpit-card ist veraltet. Bitte die Karte "custom:tarif-cockpit-analyse-card" verwenden (docs/MIGRATION.md).',
       // Editor und Assistent
       'ed.tab_wiz': 'Assistent', 'ed.tab_form': 'Alle Felder', 'ed.tab_integ': 'Integration', 'ed.loading': 'Formular wird geladen …',
@@ -67,7 +67,7 @@
       'pick.overview.name': 'Tarif-Cockpit',
       'pick.overview.desc': 'Costs, advance payments and annual forecast for electricity, gas and water: on track, back payment or refund at a glance',
       'pick.analyse.name': 'Tarif-Cockpit analysis',
-      'pick.analyse.desc': 'Weather-adjusted gas: coefficient per degree day, comparison with the previous period and history',
+      'pick.analyse.desc': 'Heating: coefficient per degree day, scatter plot, cost curve against advances, heat generators',
       'warn.analysis': 'The "analysis" block in tarif-cockpit-card is deprecated. Please use the card "custom:tarif-cockpit-analyse-card" (docs/MIGRATION.md).',
       'ed.tab_wiz': 'Wizard', 'ed.tab_form': 'All fields', 'ed.tab_integ': 'Integration', 'ed.loading': 'Loading form …',
       'ei.text': 'The card shows the values of the Tarif-Cockpit integration. Choose the meters; everything else (contracts, prices, advances) is set in the integration.',

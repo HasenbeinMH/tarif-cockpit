@@ -16,7 +16,7 @@ from homeassistant.helpers import issue_registry as ir
 from custom_components.tarif_cockpit.const import DOMAIN, ISSUE_NO_STATISTICS
 from custom_components.tarif_cockpit.engine.quality import Quality
 
-from .conftest import HOUSEHOLD, TODAY, make_entry, meter_subentry, setup
+from .conftest import HOUSEHOLD, TODAY, generator_subentry, make_entry, meter_subentry, setup
 
 TZ = ZoneInfo("Europe/Berlin")
 
@@ -144,3 +144,44 @@ async def test_history_entity_set_later_refills_old_days(hass: HomeAssistant, re
     await entry.runtime_data.aggregator.async_run()  # normaler Lauf, kein overwrite
     d = entry.runtime_data.daily("m1")[date(2026, 11, 2)]
     assert d.consumption == 24.0 and "ersatzquelle" in d.quality_flags
+
+
+
+async def test_generator_energy_from_statistics(hass: HomeAssistant, recorder_mock) -> None:
+    """Split-Klima am Haushaltsstrom mit Energie-Sensor: Eingang je Tag gemessen, Wärme = Strom × COP (geschätzt)."""
+    start = datetime(2026, 11, 9, 23, tzinfo=TZ)
+    end = datetime(2026, 11, 12, 23, tzinfo=TZ)
+    sums = [{"start": t, "sum": float(i) * 0.5, "state": float(i) * 0.5} for i, t in enumerate(_hours(start, end))]
+    async_import_statistics(hass, {
+        "has_mean": False, "has_sum": True, "mean_type": StatisticMeanType.NONE, "name": "Klima", "source": "recorder",
+        "statistic_id": "sensor.klima_energie", "unit_class": "energy", "unit_of_measurement": "kWh",
+    }, sums)
+    await async_wait_recording_done(hass)
+    contract = {"supplier": "SW", "start_date": "2026-11-01", "billing_rule": "calendar_year"}
+    klima = generator_subentry("k1", "air_air_hp", "Split-Klima", on_household_power=True, cop=4.0,
+                               entities={"energy": "sensor.klima_energie"})
+    entry = make_entry(meter_subentry("m1", "Strom", "strom", "kWh", contract=contract), klima)
+    assert await setup(hass, entry)
+    await entry.runtime_data.aggregator.async_run()
+    g = entry.runtime_data.generator_daily("k1")[date(2026, 11, 11)]
+    assert g.energy_input == 12.0 and g.estimated_thermal_output == 48.0 and g.measurement_quality == Quality.REAL
+    res = entry.runtime_data.coordinator.gen_results["k1"]
+    assert res.energy_input is not None and res.energy_input >= 36.0
+
+
+async def test_stove_hours_from_state_history(hass: HomeAssistant, recorder_mock, freezer) -> None:
+    """Kaminofen mit Betriebszustand-Entität: Betriebsstunden aus dem Verlauf (Recorder)."""
+    day = datetime(2026, 11, 12, 0, tzinfo=TZ)
+    for hour, state in ((0, "off"), (18, "on"), (21.5, "off")):
+        freezer.move_to(day + timedelta(hours=hour))
+        hass.states.async_set("binary_sensor.ofen", state)
+        await hass.async_block_till_done()
+    await async_wait_recording_done(hass)
+    freezer.move_to(TODAY)
+    ofen = generator_subentry("o1", "fireplace", "Kaminofen", nominal_kw=6.0, efficiency=0.75, entities={"state": "binary_sensor.ofen"})
+    entry = make_entry(meter_subentry("g1", "Gas", "gas", "kWh"), ofen)
+    assert await setup(hass, entry)
+    await entry.runtime_data.aggregator.async_run()
+    g = entry.runtime_data.generator_daily("o1")[date(2026, 11, 12)]
+    assert g.hours == 3.5
+    assert g.energy_input == 28.0 and g.measurement_quality == Quality.ASSUMPTION  # 3,5 h × 6 kW ÷ 0,75

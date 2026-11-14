@@ -1,4 +1,4 @@
-# Einrichtung Schritt für Schritt (ab 0.7)
+# Einrichtung Schritt für Schritt (ab 0.7, Wärmeerzeuger ab 0.8)
 
 Diese Anleitung führt durch eine Einrichtung **ohne YAML**: Haushalt, Zähler mit Vertrag, Preisen und Abschlägen, Karte im Dashboard. Die Bilder stammen aus dem Abnahme-Durchlauf in einer frischen Home-Assistant-Testinstanz (2026.11, deutsche Oberfläche), den `tools/abnahme.py` automatisch durchklickt.
 
@@ -87,6 +87,38 @@ Ein Tipp auf „Abschlag 85 €“ öffnet einen kleinen Dialog: neuer Betrag (v
 | ![Dialog](img/abnahme-15-abschlag-dialog.png) | ![Danach](img/abnahme-16-karte-nach-aenderung.png) |
 
 Mit 112 € statt 85 € ab Dezember passt die Periode: +1,30 € Guthaben erwartet.
+
+## 5. Wärmeerzeuger (optional, ab 0.8)
+
+Beim Eintrag „Tarif-Cockpit“ → **Wärmeerzeuger hinzufügen**: Gastherme, Wärmepumpe, Split-Klima, Fernwärme, Kaminofen oder Elektroheizung. Vorgeschlagen wird, was zu den Antworten beim Haushalt passt. Wärmeerzeuger sind optional; sie trennen eingesetzte Energie, Wärme und Entlastung und machen die Gasprognose genauer, wenn ein Kaminofen oder ein Split-Klima mitheizt.
+
+| Art | Leistung (Typschild) | Messwerte (optional) |
+|---|---|---|
+| ![Art](img/abnahme-17-erzeuger-typ.png) | ![Leistung](img/abnahme-18-erzeuger-leistung.png) | ![Messwerte](img/abnahme-19-erzeuger-messwerte.png) |
+
+| Kaminofen | Zusammenfassung | Split-Klima: Energie aus dem Haushaltsstrom |
+|---|---|---|
+| ![Ofen](img/abnahme-20-erzeuger-ofen.png) | ![Zusammenfassung](img/abnahme-21-erzeuger-zusammenfassung.png) | ![Zuordnung](img/abnahme-22-erzeuger-zuordnung.png) |
+
+- **Energie:** eigener Zähler (Gastherme am Gaszähler, Wärmepumpe am WP-Zähler) oder **Haushaltsstrom** (vorbelegt bei Strom-Erzeugern). Ein eigener Stromzähler gilt dann komplett als Heizstrom, also nur den WP-Zähler wählen, nicht den Hauszähler. Am Haushaltsstrom wird der witterungsabhängige Anteil vor der Grundlast abgezogen und über die Gradtage fortgeschrieben; mit einem eigenen Energie- oder Leistungssensor zählt dessen Messung.
+- **Leistung:** Nennleistung im Heizbetrieb laut Typschild (z. B. 16 bei „5–16 kW“). Bei der Gastherme wählst du, ob die Angabe die Nennwärmeleistung (Wärmeabgabe) oder die Nennwärmebelastung (Gaseinsatz) ist; umgerechnet wird mit Hs/Hi = 1,11.
+- **Messwerte:** eingesetzte Energie, Leistung, erzeugte Wärme, Betriebszustand, Raumtemperatur. Optional; je mehr gemessen wird, desto weniger Annahmen. Der Kaminofen braucht den Betriebszustand oder die Raumtemperatur am Aufstellort.
+- **Kaminofen:** Betrieb aus der Betriebszustand-Entität (z. B. ein Binärsensor „Kaminofen läuft“) oder aus dem Temperaturanstieg im Raum (≥ 1,5 K in 30 Minuten, nur in der Heizperiode). Die Entlastung der Gasheizung wird gelernt, sobald es je 10 Tage mit und ohne Ofen bei ähnlichen Gradtagen gibt; bis dahin gilt eine Annahme aus Nennleistung × wirksamem Anteil, deutlich als Annahme gekennzeichnet. Holz und Holzkosten sind eine Schätzung.
+- **Split-Klima/Wärmepumpe:** Wärme = Strom × COP (Annahme bis ein Wärmemengenzähler da ist). Eine Entlastung der Gasheizung gibt es erst, wenn sie aus deinen Daten gelernt ist (Vergleichstage), nie aus dem COP allein.
+
+Jeder Wärmeerzeuger ist ein eigenes Gerät mit den Sensoren eingesetzte Energie, Wärme, Entlastung, Betriebsstunden und Betriebstage; der Kaminofen zusätzlich mit Holz und Holzkosten (geschätzt).
+
+![Liste](img/abnahme-23-erzeuger-liste.png)
+
+## 6. Auswertungskarte
+
+Dashboard → Karte hinzufügen → „Tarif-Cockpit Auswertung“. Der Editor öffnet mit dem Reiter **Integration**; vorgeschlagen wird der Gas- oder Fernwärmezähler, ohne diese ein Stromzähler mit Wärmepumpe oder Split-Klima.
+
+| Editor | Karte (frisch eingerichtet, Kennwert wird noch gelernt) |
+|---|---|
+| ![Editor](img/abnahme-24-analyse-editor.png) | ![Karte](img/abnahme-25-analyse-dashboard.png) |
+
+Die Karte zeigt den gelernten Kennwert, die Warmwasser-Grundlast (nur wenn Warmwasser über die Heizung läuft), den temperaturbereinigten Kennwert, ein **Streudiagramm** Verbrauch über Gradtage mit Regressionsgerade und Qualität, den **Kostenverlauf** der Periode (Ist, Prognose, Abschlags-Treppe) und je Wärmeerzeuger Eingang, Wärme und Entlastung. Mit Daten sieht das so aus: [Beispiele](BEISPIELE.md#heizung-gas-mit-kaminofen-und-split-klima-08).
 
 ## Hinweise
 

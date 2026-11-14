@@ -1,5 +1,6 @@
 """Sensoren je Zähler: Periode, Ablesung, Tageswerte (0.5) und Ergebnis (0.6: Kosten, Abschläge, Prognose, Saldo,
-Urteil, empfohlener Abschlag, Qualität, Kennwert). Dazu der Gesamtsaldo am Gerät "Haushalt".
+Urteil, empfohlener Abschlag, Qualität, Kennwert). Dazu der Gesamtsaldo am Gerät "Haushalt" und je Wärmeerzeuger
+(0.8) eingesetzte Energie, Wärme, Entlastung, Betriebsstunden/-tage, beim Kaminofen Holz und Holzkosten (geschätzt).
 Aktualisierung über das Dispatcher-Signal des Coordinators.
 """
 
@@ -21,7 +22,8 @@ from . import TarifConfigEntry
 from .const import DOMAIN, VERSION, signal_updated
 from .engine.consumption import latest_reading
 from .engine.balance import MeterResult
-from .engine.model import Medium, Meter
+from .engine.generators import GeneratorResult
+from .engine.model import GeneratorKind, HeatGenerator, Medium, Meter
 from .engine.regression import ModelQuality
 from .engine.quality import Quality, usable
 from .runtime import TarifRuntime
@@ -36,8 +38,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: TarifConfigEntry, async_
             classes += [CostSoFarSensor, AdvancesPaidSensor, CurrentAdvanceSensor, AdvancesPeriodSensor, ForecastConsumptionSensor, ForecastCostSensor,
                         SaldoSensor, VerdictSensor, RecommendedAdvanceSensor, ForecastQualitySensor]
             if meter.medium in HEAT:
-                classes += [HeatCoefficientSensor, HotWaterSensor]
+                classes += [HeatCoefficientSensor, HotWaterSensor, IndoorCoefficientSensor]
+            elif meter.medium == Medium.STROM and _heats_with_power(rt, meter):
+                classes += [HeatCoefficientSensor]  # kWh Strom je Gradtag (Wärmepumpe, Split-Klima)
         async_add_entities([cls(rt, meter) for cls in classes], config_subentry_id=meter.meter_id)
+    for gen in rt.generators.values():
+        gclasses: list[type[GeneratorSensor]] = [GenInputSensor, GenHeatSensor, GenAvoidedSensor, GenHoursSensor, GenDaysSensor]
+        if gen.kind == GeneratorKind.FIREPLACE:
+            gclasses += [GenWoodSensor, GenWoodCostSensor]
+        async_add_entities([cls(rt, gen) for cls in gclasses], config_subentry_id=gen.generator_id)
 
 
 class TarifSensor(SensorEntity):
@@ -357,11 +366,12 @@ class HeatCoefficientSensor(ResultSensor):
     _attr_suggested_display_precision = 2
 
     def value(self, res):
-        m = res.heat_model
+        m = res.heat_model or res.power_heat_model
         return round(m.heat_coefficient, 3) if m is not None and m.usable else None
 
     def attributes(self, res):
-        return res.heat_model.as_dict() if res.heat_model is not None else {}
+        m = res.heat_model or res.power_heat_model
+        return m.as_dict() if m is not None else {}
 
 
 class HotWaterSensor(ResultSensor):
@@ -410,3 +420,183 @@ class TotalSaldoSensor(SensorEntity):
         # Unvollständig ist keine Summe: fehlt ein Zähler, gibt es keinen Gesamtsaldo (Regel 10)
         self._attr_native_value = round(sum(parts.values()), 2) if parts and not missing else None
         self._attr_extra_state_attributes = {"zaehler": parts, "ohne_prognose": missing, "vollstaendig": not missing}
+
+
+
+class IndoorCoefficientSensor(ResultSensor):
+    """Kennwert temperaturbereinigt: Gradtage aus der gemessenen Innentemperatur; Attribute %/K und Aufteilung zum Vorjahr."""
+
+    key = "kennwert_temperaturbereinigt"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = "kWh/Kd"
+    _attr_suggested_display_precision = 2
+
+    def value(self, res):
+        m = res.heat_model
+        return round(m.heat_coefficient_indoor, 3) if m is not None and m.heat_coefficient_indoor is not None else None
+
+    def attributes(self, res):
+        m = res.heat_model
+        if m is None:
+            return {}
+        attrs = {
+            "qualitaet": m.indoor_confidence.value if m.indoor_confidence else None,
+            "prozent_je_kelvin": None if m.indoor_pct_per_k is None else round(m.indoor_pct_per_k, 2),
+            "prozent_je_kelvin_qualitaet": m.indoor_pct_quality.value if m.indoor_pct_quality else None,
+            "innentemperatur_mittel": None if m.indoor_mean is None else round(m.indoor_mean, 2),
+        }
+        if res.indoor_split:
+            attrs["vorjahr"] = res.indoor_split
+        return attrs
+
+
+# ---------------------------------------------------------------- Wärmeerzeuger (0.8)
+
+GEN_MODELS = {
+    GeneratorKind.GAS_BOILER: "Gastherme", GeneratorKind.AIR_AIR_HP: "Split-Klima / Luft-Luft-Wärmepumpe",
+    GeneratorKind.WATER_HP: "Wärmepumpe", GeneratorKind.DISTRICT_HEATING: "Fernwärme", GeneratorKind.FIREPLACE: "Kaminofen",
+    GeneratorKind.ELECTRIC: "Elektroheizung",
+}
+
+
+class GeneratorSensor(SensorEntity):
+    """Sensor je Wärmeerzeuger (eigenes Gerät). Werte der laufenden Periode bis gestern, aus dem Coordinator."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    key: str = ""
+
+    def __init__(self, rt: TarifRuntime, gen: HeatGenerator) -> None:
+        self.rt = rt
+        self.gen = gen
+        self._attr_translation_key = self.key
+        self._attr_unique_id = f"{gen.generator_id}_{self.key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, gen.generator_id)},
+            name=gen.name or GEN_MODELS.get(gen.kind, gen.kind.value),
+            manufacturer="Tarif-Cockpit",
+            model=f"Wärmeerzeuger {GEN_MODELS.get(gen.kind, gen.kind.value)}",
+            sw_version=VERSION,
+            entry_type=DeviceEntryType.SERVICE,
+        )
+        self._update()
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(async_dispatcher_connect(self.hass, signal_updated(self.rt.entry.entry_id), self._refresh))
+
+    @callback
+    def _refresh(self, *_: Any) -> None:
+        self._update()
+        self.async_write_ha_state()
+
+    def _result(self) -> GeneratorResult | None:
+        coord = self.rt.coordinator
+        return coord.gen_results.get(self.gen.generator_id) if coord is not None else None
+
+    def value(self, res: GeneratorResult) -> Any:
+        raise NotImplementedError
+
+    def attributes(self, res: GeneratorResult) -> dict[str, Any]:
+        attrs: dict[str, Any] = {"messqualitaet": res.measurement_quality.value, "tage_mit_daten": res.days_with_data,
+                                 "tage": res.days_total}
+        if res.flags:
+            attrs["hinweise"] = res.flags
+        return attrs
+
+    def _update(self) -> None:
+        res = self._result()
+        self._attr_native_value = None if res is None else self.value(res)
+        self._attr_extra_state_attributes = {} if res is None else self.attributes(res)
+
+
+class _GenEnergy(GeneratorSensor):
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_suggested_display_precision = 0
+
+
+class GenInputSensor(_GenEnergy):
+    key = "energie_eingang"
+
+    def value(self, res):
+        return res.energy_input
+
+
+class GenHeatSensor(_GenEnergy):
+    """Wärme: gemessen (Wärmemengenzähler), sonst geschätzt (Attribut ``geschaetzt``)."""
+
+    key = "waerme"
+
+    def value(self, res):
+        return res.thermal_output if res.thermal_output is not None else res.estimated_thermal_output
+
+    def attributes(self, res):
+        return {**super().attributes(res), "geschaetzt": res.thermal_output is None and res.estimated_thermal_output is not None}
+
+
+class GenAvoidedSensor(_GenEnergy):
+    """Entlastung des Wärmezählers; leer, solange sie nicht gelernt ist (Kaminofen: vorher Annahme, so gekennzeichnet)."""
+
+    key = "entlastung"
+
+    def value(self, res):
+        return res.avoided_energy
+
+    def attributes(self, res):
+        return {**super().attributes(res), "qualitaet": res.avoided_quality}
+
+
+class GenHoursSensor(GeneratorSensor):
+    key = "betriebsstunden"
+    _attr_native_unit_of_measurement = "h"
+    _attr_suggested_display_precision = 1
+
+    def value(self, res):
+        return res.hours
+
+
+class GenDaysSensor(GeneratorSensor):
+    key = "betriebstage"
+    _attr_native_unit_of_measurement = "d"
+
+    def value(self, res):
+        return res.days_on if res.hours is not None else None
+
+
+class GenWoodSensor(GeneratorSensor):
+    key = "holz_geschaetzt"
+    _attr_native_unit_of_measurement = "kg"
+    _attr_suggested_display_precision = 0
+
+    def value(self, res):
+        return res.wood_kg
+
+    def attributes(self, res):
+        return {**super().attributes(res), "annahme": "Eingesetzte Energie ÷ 4,2 kWh/kg"}
+
+
+class GenWoodCostSensor(GeneratorSensor):
+    key = "holzkosten_geschaetzt"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, rt: TarifRuntime, gen: HeatGenerator) -> None:
+        self._attr_native_unit_of_measurement = rt.hass.config.currency
+        super().__init__(rt, gen)
+
+    def value(self, res):
+        return res.wood_cost
+
+
+
+def _heats_with_power(rt: TarifRuntime, meter: Meter) -> bool:
+    """Strom-Hauptzähler, an dem eine Wärmepumpe/ein Split-Klima hängt (eigener Zähler oder Haushaltsstrom)."""
+    if meter.role != "main":
+        return False
+    kinds = (GeneratorKind.AIR_AIR_HP, GeneratorKind.WATER_HP, GeneratorKind.ELECTRIC)
+    gens = [g for g in rt.generators.values() if g.kind in kinds]
+    if any(g.meter_id == meter.meter_id for g in gens):
+        return True
+    # Haushaltsstrom: nur der Strom-Hauptzähler, den der Coordinator dafür nimmt
+    main = rt.coordinator.main_power_id() if rt.coordinator is not None else None
+    return meter.meter_id == main and any(g.on_household_power for g in gens)

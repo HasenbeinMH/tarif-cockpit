@@ -24,7 +24,16 @@
     'dlg.cancel': 'Abbrechen', 'dlg.save': 'Speichern', 'dlg.saved': 'Gespeichert.',
     'dlg.invalid': 'Bitte einen Betrag (0 oder mehr) und ein Datum eingeben.',
     'in.no_heat': '<b>Kein Wärmezähler.</b> Die Auswertung braucht einen Gas- oder Fernwärmezähler in der Integration.',
-    'in.learning': 'Wird gelernt', 'in.kw_learned': 'gelernt aus den Tageswerten', 'in.ww': 'WW-Grundlast', 'in.days': 'Tage im Modell', 'in.r2': 'Bestimmtheit R²',
+    'in.learning': 'Wird gelernt', 'in.kw_learned': 'gelernt aus den Tageswerten',
+    'in.kw_indoor': 'Kennwert temperaturbereinigt', 'in.pct_k': '{p} % je Kelvin Raumtemperatur',
+    'in.split': 'Gegenüber dem Vorjahr {g}: davon {r} durch die Raumtemperatur ({k}), {v} Mehr-/Minderverbrauch.',
+    'ch.scatter': 'Verbrauch je Tag über Gradtage', 'ch.x_dd': 'Gradtage je Tag (Kd)', 'ch.days': 'Tage', 'ch.periods': 'Ableseperioden (Mittel je Tag)',
+    'ch.stove_days': 'Ofentage', 'ch.hp_days': 'Klimatage', 'ch.line': 'Gerade: {ww} + {k} × Gradtage',
+    'ch.cost': 'Kosten der Periode', 'ch.ist': 'Kosten bisher', 'ch.fc': 'Prognose', 'ch.adv': 'Abschläge',
+    'g.input': 'Eingesetzt', 'g.heat': 'Wärme', 'g.heat_est': 'Wärme (geschätzt)', 'g.avoided': 'Entlastung', 'g.not_learned': 'noch nicht gelernt',
+    'g.hours': 'Betrieb', 'g.wood': 'Holz (geschätzt)', 'g.title': 'Wärmeerzeuger in dieser Periode',
+    'g.kind.gas_boiler': 'Gastherme', 'g.kind.air_air_hp': 'Split-Klima', 'g.kind.water_hp': 'Wärmepumpe', 'g.kind.district_heating': 'Fernwärme',
+    'g.kind.fireplace': 'Kaminofen', 'g.kind.electric': 'Elektroheizung', 'in.ww': 'WW-Grundlast', 'in.days': 'Tage im Modell', 'in.r2': 'Bestimmtheit R²',
     'in.an_pending': 'Der Kennwert erscheint, sobald die Integration genug Tage mit unterschiedlicher Außentemperatur gesehen hat.',
   });
   TC.addStrings('en', {
@@ -45,7 +54,16 @@
     'dlg.cancel': 'Cancel', 'dlg.save': 'Save', 'dlg.saved': 'Saved.',
     'dlg.invalid': 'Please enter an amount (0 or more) and a date.',
     'in.no_heat': '<b>No heat meter.</b> The analysis needs a gas or district heating meter in the integration.',
-    'in.learning': 'Being learned', 'in.kw_learned': 'learned from daily values', 'in.ww': 'Hot water baseload', 'in.days': 'Days in the model', 'in.r2': 'Coefficient of determination R²',
+    'in.learning': 'Being learned', 'in.kw_learned': 'learned from daily values',
+    'in.kw_indoor': 'Heat coefficient (indoor-adjusted)', 'in.pct_k': '{p} % per kelvin room temperature',
+    'in.split': 'Compared with last year {g}: of which {r} due to room temperature ({k}), {v} more/less consumption.',
+    'ch.scatter': 'Consumption per day over degree days', 'ch.x_dd': 'Degree days per day (Kd)', 'ch.days': 'Days', 'ch.periods': 'Reading periods (mean per day)',
+    'ch.stove_days': 'Stove days', 'ch.hp_days': 'Air-con days', 'ch.line': 'Line: {ww} + {k} × degree days',
+    'ch.cost': 'Costs of the period', 'ch.ist': 'Costs so far', 'ch.fc': 'Forecast', 'ch.adv': 'Advances',
+    'g.input': 'Input', 'g.heat': 'Heat', 'g.heat_est': 'Heat (estimated)', 'g.avoided': 'Relief', 'g.not_learned': 'not learned yet',
+    'g.hours': 'Operation', 'g.wood': 'Wood (estimated)', 'g.title': 'Heat generators in this period',
+    'g.kind.gas_boiler': 'Gas boiler', 'g.kind.air_air_hp': 'Split air-con', 'g.kind.water_hp': 'Heat pump', 'g.kind.district_heating': 'District heating',
+    'g.kind.fireplace': 'Wood stove', 'g.kind.electric': 'Electric heating', 'in.ww': 'Hot water baseload', 'in.days': 'Days in the model', 'in.r2': 'Coefficient of determination R²',
     'in.an_pending': 'The coefficient appears once the integration has seen enough days with different outdoor temperatures.',
   });
 
@@ -205,7 +223,14 @@
     const hh = card._meta && card._meta.haushalte && card._meta.haushalte[0];
     if (!hh) return null;
     const want = Array.isArray(card._c.zaehler) && card._c.zaehler.length ? card._c.zaehler : null;
-    return hh.zaehler.find((m) => (want ? want.includes(m.device_id) || want.includes(m.zaehler_id) : m.rolle === 'main' && HEAT.includes(m.medium))) || null;
+    if (want) return hh.zaehler.find((m) => want.includes(m.device_id) || want.includes(m.zaehler_id)) || null;
+    const heat = hh.zaehler.find((m) => m.rolle === 'main' && HEAT.includes(m.medium));
+    if (heat) return heat;
+    // ohne Gas/Fernwärme: Stromzähler mit Wärmepumpe/Split-Klima (eigener Zähler zuerst, sonst Haushaltsstrom)
+    const gens = (hh.waermeerzeuger || []).filter((g) => ['water_hp', 'air_air_hp', 'electric'].includes(g.typ));
+    const own = gens.map((g) => g.zaehler_id).filter(Boolean);
+    return hh.zaehler.find((m) => own.includes(m.zaehler_id))
+      || (gens.some((g) => g.am_haushaltsstrom) ? hh.zaehler.find((m) => m.rolle === 'main' && m.medium === 'strom') : null) || null;
   };
 
   // Felder der Sensor-Karte aus den Sensoren der Integration (Verlauf und Darstellung wie bisher)
@@ -214,11 +239,19 @@
     if (!m) return null;
     const s = m.sensoren || {};
     const c = card._c;
+    // Warmwasser-Kachel nur, wenn Warmwasser über diese Heizung läuft
+    const wwOn = m.ww_heizung !== false; // entscheidet die Integration (Regel 2)
+    const extras = [];
+    if (s.ww_grundlast && wwOn) extras.push({ name: TC.T('in.ww'), entity: s.ww_grundlast, unit: 'kWh/d', decimals: 1 });
+    if (s.kennwert_temperaturbereinigt && TC.num(card._h, s.kennwert_temperaturbereinigt) !== null) {
+      extras.push({ name: TC.T('in.kw_indoor'), entity: s.kennwert_temperaturbereinigt, unit: 'kWh/Kd', decimals: 2 });
+    }
     return {
       kennwert: s.kennwert,
-      color: (c.colors || {})[m.medium] || c.color,
+      // Farbe des Mediums (Hex aus colors/color, sonst die Standardfarbe als #rrggbb)
+      color: (c.colors || {})[m.medium] || c.color || '#' + (TC.MEDIA[m.medium] || TC.MEDIA.gas).color.split(',').map((x) => Number(x).toString(16).padStart(2, '0')).join(''),
       months: c.months, history: c.history,
-      extras: s.ww_grundlast ? [{ name: TC.T('in.ww'), entity: s.ww_grundlast, unit: 'kWh/d', decimals: 1 }] : [],
+      extras,
       pending_text: TC.T('in.an_pending'), wait_text: TC.T('in.learning'), kw_caption: TC.T('in.kw_learned'),
     };
   };
@@ -238,17 +271,115 @@
     const s = m.sensoren || {};
     if (Object.values(s).some((id) => !h.states[id])) I.load(card, true);
     const a = I.analyseConfig(card);
-    const qs = (st(h, s.prognose_qualitaet) || {}).state;
+    // Qualität des Kennwerts (Attribute des Kennwert-Sensors; bei Gas gleich der Prognose-Qualität)
+    const kq = attr(h, s.kennwert, 'confidence');
+    const qs = kq || (st(h, s.prognose_qualitaet) || {}).state;
     const quality = QUAL.includes(qs) ? qs : 'unzureichend';
-    const days = attr(h, s.prognose_qualitaet, 'sample_count');
-    const r2 = attr(h, s.prognose_qualitaet, 'r_squared');
+    const days = kq ? attr(h, s.kennwert, 'sample_count') : attr(h, s.prognose_qualitaet, 'sample_count');
+    const r2 = kq ? attr(h, s.kennwert, 'r_squared') : attr(h, s.prognose_qualitaet, 'r_squared');
     const facts = [t('in.quality', { q: t('q.' + quality) })];
     if (typeof days === 'number') facts.push(`${t('in.days')}: ${days}`);
     if (typeof r2 === 'number') facts.push(`${t('in.r2')}: ${TC.nf(r2, 2)}`);
     // Verlauf erst laden, wenn die Zuordnung da ist
     if (!card._histKey) TC.loadHistory(card, a);
+    I.loadSeries(card, m.zaehler_id);
+    const hints = [];
+    const pct = attr(h, s.kennwert_temperaturbereinigt, 'prozent_je_kelvin');
+    const pctQ = attr(h, s.kennwert_temperaturbereinigt, 'prozent_je_kelvin_qualitaet');
+    if (typeof pct === 'number' && pctQ && pctQ !== 'annahme') hints.push(esc(t('in.pct_k', { p: TC.nf(pct, 1) })));
+    const split = attr(h, s.kennwert_temperaturbereinigt, 'vorjahr');
+    if (split && typeof split.gesamt_pct === 'number') {
+      const sg = (v) => (v >= 0 ? '+' : '−') + TC.nf(Math.abs(v), 1) + ' %';
+      hints.push(esc(t('in.split', { g: sg(split.gesamt_pct), r: sg(split.raumtemperatur_pct), v: sg(split.verhalten_pct),
+        k: (split.innen_aenderung_k >= 0 ? '+' : '−') + TC.nf(Math.abs(split.innen_aenderung_k), 1) + ' K' })));
+    }
     return head(`<small>${esc(m.name)}</small>`) + TC.analysisHtml(a, h, card._hist, t('an.kennwert'), '')
-      + `<div class="qual">${esc(facts.join(' · '))}</div>`;
+      + `<div class="qual">${esc(facts.join(' · '))}</div>`
+      + hints.map((x) => `<div class="hint">${x}</div>`).join('')
+      + I.seriesHtml(card, m) + I.genHtml(card);
+  };
+
+  // Reihen für die Diagramme (Streudiagramm, Kostenverlauf): gedrosselt wie die Zuordnung
+  I.loadSeries = async (card, meterId) => {
+    const h = card._h;
+    if (!h || typeof h.callWS !== 'function' || card._seriesLoading || card._c.diagramme === false) return;
+    if (card._seriesAt && card._seriesKey === meterId) {
+      const age = Date.now() - card._seriesAt;
+      if (age < (card._seriesErr ? 60e3 : 600e3)) return;
+    }
+    card._seriesLoading = true;
+    card._seriesKey = meterId;
+    try {
+      card._series = await h.callWS({ type: 'tarif_cockpit/reihen', zaehler: meterId });
+      card._seriesErr = null;
+    } catch (e) {
+      card._series = null;
+      card._seriesErr = e;
+    }
+    card._seriesAt = Date.now();
+    card._seriesLoading = false;
+    card._last = null;
+    card._render();
+  };
+
+  I.seriesHtml = (card, m) => {
+    const t = TC.T;
+    const r = card._series;
+    if (!r || r.zaehler_id !== m.zaehler_id) return '';
+    const med = TC.MEDIA[m.medium] || TC.MEDIA.gas;
+    const c = TC.rgbOf((card._c.colors || {})[m.medium] || card._c.color, med.color);
+    const adv = TC.rgbOf(card._c.advance_color, TC.OK);
+    let out = '';
+    const sc = r.streuung;
+    if (sc && sc.punkte && sc.punkte.length) {
+      const leg = [`<span class="leg"><i></i>${esc(sc.je_periode ? t('ch.periods') : t('ch.days'))}</span>`];
+      if (sc.punkte.some((p) => p.ofen)) leg.push(`<span class="leg"><i class="of"></i>${esc(t('ch.stove_days'))}</span>`);
+      if (sc.punkte.some((p) => p.klima)) leg.push(`<span class="leg"><i class="kl"></i>${esc(t('ch.hp_days'))}</span>`);
+      const line = sc.kennwert !== null ? t('ch.line', { ww: TC.nf(sc.ww || 0, 1), k: TC.nf(sc.kennwert, 2) }) : '';
+      out += `<div class="panel wide" style="--c:${c};--lc:${c}"><div class="chead"><span class="lbl">${esc(t('ch.scatter'))}</span>${leg.join('')}</div>`
+        + TC.svgScatter(sc)
+        + `<div class="qual">${esc([line, t('in.quality', { q: t('q.' + sc.qualitaet) }), sc.r2 !== null ? `R² ${TC.nf(sc.r2, 2)}` : ''].filter(Boolean).join(' · '))}</div></div>`;
+    }
+    const k = r.kosten;
+    if (k && (k.ist.length || k.abschlaege.length)) {
+      const leg = `<span class="leg"><i class="ist"></i>${esc(t('ch.ist'))}</span>`
+        + (k.prognose.length ? `<span class="leg"><i class="fc"></i>${esc(t('ch.fc'))}</span>` : '')
+        + (k.abschlaege.length ? `<span class="leg"><i class="st"></i>${esc(t('ch.adv'))}</span>` : '');
+      out += `<div class="panel wide" style="--c:${c};--adv:${adv}"><div class="chead"><span class="lbl">${esc(t('ch.cost'))}</span>${leg}</div>${TC.svgCumul(k)}</div>`;
+    }
+    return out;
+  };
+
+  // Kacheln je Wärmeerzeuger: Eingang, Wärme, Entlastung (mit Qualität), Betrieb; Ofen zusätzlich Holz
+  I.genHtml = (card) => {
+    const h = card._h;
+    const t = TC.T;
+    const hh = card._meta && card._meta.haushalte && card._meta.haushalte[0];
+    const gens = (hh && hh.waermeerzeuger) || [];
+    if (!gens.length || card._c.erzeuger === false) return '';
+    const kwh = (v) => (v === null ? '—' : TC.nf(v, 0) + ' kWh');
+    // Entlastung nur, wenn es einen Wärmezähler gibt, der entlastet werden kann (Gas, Fernwärme)
+    const relievable = hh.zaehler.some((m) => m.rolle === 'main' && HEAT.includes(m.medium));
+    const items = gens.map((g) => {
+      const s = g.sensoren || {};
+      const hours = val(h, s.betriebsstunden);
+      if (g.typ === 'fireplace' && !(hours > 0)) return ''; // Ofen-Kachel nur, wenn der Ofen gelaufen ist
+      const input = val(h, s.energie_eingang), heat = val(h, s.waerme), avoided = val(h, s.entlastung);
+      const est = attr(h, s.waerme, 'geschaetzt');
+      const aq = attr(h, s.entlastung, 'qualitaet');
+      const rows = [];
+      if (input !== null) rows.push([t('g.input'), kwh(input)]);
+      if (heat !== null) rows.push([est ? t('g.heat_est') : t('g.heat'), kwh(heat)]);
+      if (relievable && ['fireplace', 'air_air_hp', 'water_hp', 'electric'].includes(g.typ)) {
+        rows.push([t('g.avoided'), avoided === null ? `<small>${esc(t('g.not_learned'))}</small>` : `${kwh(avoided)} <small>${esc(t('q.' + (aq || 'annahme')))}</small>`]);
+      }
+      if (hours !== null) rows.push([t('g.hours'), `${TC.nf(hours, 0)} h · ${TC.nf(val(h, s.betriebstage) || 0, 0)} d`]);
+      const kg = val(h, s.holz_geschaetzt), cost = val(h, s.holzkosten_geschaetzt);
+      if (kg !== null) rows.push([t('g.wood'), `${TC.nf(kg, 0)} kg${cost !== null ? ' · ' + money(cost) : ''}`]);
+      if (!rows.length) return '';
+      return `<div class="gen"><div class="gh"><span>${esc(g.name)}</span><small>${esc(t('g.kind.' + g.typ))}</small></div><dl>${rows.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${b}</dd>`).join('')}</dl></div>`;
+    }).join('');
+    return items ? `<div class="chead"><span class="lbl">${esc(t('g.title'))}</span></div><div class="gens">${items}</div>` : '';
   };
 
   // ---------------------------------------------------------------- Abschlagsdialog (Entscheidung B)

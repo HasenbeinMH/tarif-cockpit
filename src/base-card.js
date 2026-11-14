@@ -17,7 +17,7 @@
     _afterHass() {}
 
     _build() {
-      this.shadowRoot.innerHTML = `<style>${TC.CSS}${TC.integ ? TC.integ.CSS : ''}</style><ha-card><div class="wrap" id="w"></div></ha-card>`;
+      this.shadowRoot.innerHTML = `<style>${TC.CSS}${TC.integ ? TC.integ.CSS : ''}${TC.CHART2_CSS || ''}</style><ha-card><div class="wrap" id="w"></div></ha-card>`;
       this._w = this.shadowRoot.getElementById('w');
       // Tipp auf ein Element mit data-entity öffnet den Dialog der Entität (z. B. Datums-Helfer des Zeitraums)
       this._w.addEventListener('click', (e) => {

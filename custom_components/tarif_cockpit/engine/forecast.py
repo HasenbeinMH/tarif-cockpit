@@ -108,8 +108,17 @@ def submeter_forecast(sub_values: Mapping[date, float | None], known_day: date, 
                     method="mittel_30_tage", details={"tage": len(got), "mittel_je_tag": round(avg, 3)})
 
 
-def heat_forecast(model: HeatModel, prev_degree_days: Mapping[date, float | None], known_day: date, period_end: date) -> Forecast:
-    """Wärme-Prognose in kWh: Kennwert × Rest-Gradtage aus dem Vorjahresfenster (+ WW × Resttage)."""
+def heat_forecast(
+    model: HeatModel,
+    prev_degree_days: Mapping[date, float | None],
+    known_day: date,
+    period_end: date,
+    relief_per_dd: float = 0.0,
+) -> Forecast:
+    """Wärme-Prognose in kWh: Kennwert × Rest-Gradtage aus dem Vorjahresfenster (+ WW × Resttage).
+
+    ``relief_per_dd``: erwartete Entlastung je Gradtag (Kaminofen, Split-Klima), z. B. Ofenstunden je Gradtag × Ofen-Effekt;
+    wird vom Kennwert abgezogen (nie unter 0)."""
     rest_days = _days(known_day, period_end)
     if not rest_days:
         return Forecast(rest=0.0, quality=model.confidence, method="periode_beendet")
@@ -120,11 +129,13 @@ def heat_forecast(model: HeatModel, prev_degree_days: Mapping[date, float | None
     if dd.total is None:
         return Forecast(quality=model.confidence, details={"grund": "Gradtage des Vorjahres fehlen"})
     k, ww = model.heat_coefficient or 0.0, model.hot_water_baseload or 0.0
-    rest = k * dd.total + ww * len(rest_days)
-    by_day = _spread(k * dd.total, rest_days, shifted)
+    k_eff = max(k - max(relief_per_dd, 0.0), 0.0)
+    rest = k_eff * dd.total + ww * len(rest_days)
+    by_day = _spread(k_eff * dd.total, rest_days, shifted)
     for d in rest_days:
         by_day[d] = by_day.get(d, 0.0) + ww
-    return Forecast(
-        rest=round(rest, 4), rest_by_day=by_day, quality=model.confidence, method="waerme",
-        details={"gradtage_rest": round(dd.total, 2), "hochgerechnet": dd.scaled, **model.as_dict()},
-    )
+    details = {"gradtage_rest": round(dd.total, 2), "hochgerechnet": dd.scaled, **model.as_dict()}
+    if relief_per_dd > 0:
+        details["entlastung_je_gradtag"] = round(relief_per_dd, 4)
+        details["entlastung_rest"] = round((k - k_eff) * dd.total, 3)
+    return Forecast(rest=round(rest, 4), rest_by_day=by_day, quality=model.confidence, method="waerme", details=details)

@@ -159,7 +159,10 @@ class Meter:
 
 @dataclass(slots=True)
 class HeatGenerator:
-    """Wärmeerzeuger (Abschnitt 2.4). Ausgewertet ab 0.8; hier nur das Datenmodell."""
+    """Wärmeerzeuger (Abschnitt 2.4, Subentry "waermeerzeuger"), ausgewertet ab 0.8.
+
+    ``entities``: energy (eingesetzte Energie kWh, total_increasing), power (Leistung W/kW), modulation (%),
+    heat (erzeugte Wärme kWh), state (Betriebszustand, an/aus), room (Raumtemperatur)."""
 
     generator_id: str
     kind: GeneratorKind
@@ -175,7 +178,13 @@ class HeatGenerator:
     room_entity: str | None = None
     effective_share: float | None = None
     wood_price: float | None = None
-    entities: dict[str, str] = field(default_factory=dict)  # power, modulation, heat, state, room
+    entities: dict[str, str] = field(default_factory=dict)  # energy, power, modulation, heat, state, room
+    name: str | None = None
+    # Kaminofen: Betrieb aus der Entität "state" oder selbst aus der Raumtemperatur erkannt
+    stove_detection: str = "entity"  # entity | room
+    stove_threshold_k: float = 1.5  # Anstieg in 30 Minuten
+    wood_price_unit: str = "kg"  # kg | rm (Raummeter)
+    kg_per_rm: float = 400.0  # Annahme Buche/Hartholz
 
 
 # ---------------------------------------------------------------- Historie (Store)
@@ -339,6 +348,7 @@ class GeneratorDaily:
     estimated_thermal_output: float | None = None  # geschätzte Wärme (Strom × COP, Ofenstunden × Leistung × Anteil)
     avoided_energy: float | None = None  # tatsächliche Entlastung anderer Erzeuger, nur aus Daten gelernt
     measurement_quality: Quality = Quality.MISSING
+    hours: float | None = None  # Betriebsstunden des Tages
 
 
 @dataclass(slots=True)
@@ -541,5 +551,10 @@ def check_consistency(ds: Dataset) -> list[str]:
         for it in group:
             if it.contract_id not in contracts:
                 errors.append(f"{name}: Vertrag {it.contract_id} fehlt")
+    gen_days: set[tuple[str, date]] = set()
+    for g in ds.generator_daily:
+        if (g.generator_id, g.date) in gen_days:
+            errors.append(f"Erzeuger-Tageswerte: {g.generator_id} {g.date} doppelt")
+        gen_days.add((g.generator_id, g.date))
     del periods  # Schnappschüsse dürfen auf die laufende, noch nicht gespeicherte Periode verweisen
     return errors

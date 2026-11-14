@@ -408,6 +408,127 @@ SUB["abort"].update({"price_saved": T("Der Preis wurde gespeichert.", "The price
                                      "The integration is not loaded right now. Please check and reload it under Settings → Devices & services.")})
 
 
+# ---------------------------------------------------------------- 0.8: Wärmeerzeuger, Fernwärme je MWh, neue Sensoren
+
+S["config"]["step"]["abschluss"]["description"] = T(
+    "Danach legst du beim Eintrag „Tarif-Cockpit“ über „Zähler hinzufügen“ deine Zähler an. Passend zu deinen Antworten: {zaehler}.\n\n"
+    "Optional über „Wärmeerzeuger hinzufügen“: {erzeuger}.",
+    "Afterwards add your meters via “Add meter” on the “Tarif-Cockpit” entry. Matching your answers: {zaehler}.\n\n"
+    "Optional via “Add heat generator”: {erzeuger}.")
+EXTRA_PRICE = {"price_unit": T("Arbeitspreis je", "Unit price per"), "demand_price": T("Leistungspreis je kW und Jahr", "Demand charge per kW and year"),
+               "demand_kw": T("Anschlussleistung", "Connected load"), "calorific": T("Brennwert", "Calorific value"), "z_factor": T("Zustandszahl", "Conversion factor (Z)")}
+for step in ("preis", "preis_aendern", "wechsel_preis"):
+    S["config_subentries"]["zaehler"]["step"][step]["data"].update(EXTRA_PRICE)
+S["config_subentries"]["zaehler"]["step"]["preis"].setdefault("data_description", {})["price_unit"] = T(
+    "Fernwärme wird oft je MWh abgerechnet; gerechnet wird intern je kWh.", "District heating is often billed per MWh; internally it is calculated per kWh.")
+
+GEN_LEISTUNG = {
+    "nominal_kw": T("Nennleistung Heizbetrieb", "Rated power (heating)"),
+    "min_kw": T("Kleinste Modulationsleistung", "Minimum modulation power"),
+    "power_basis": T("Die Angabe ist die …", "The rating is the …"),
+    "efficiency": T("Wirkungsgrad", "Efficiency"),
+    "cop": T("COP/SCOP (Jahresarbeitszahl)", "COP/SCOP (seasonal)"),
+    "central_dhw": T("Macht zentrales Warmwasser", "Produces central hot water"),
+    "max_dhw_kw": T("Maximalleistung Warmwasser", "Maximum power hot water"),
+}
+GEN_LEISTUNG_DESC = {
+    "nominal_kw": T("Steht auf dem Typschild oder im Datenblatt. Werte für den Heizbetrieb verwenden, z. B. 16 bei „5–16 kW“.",
+                    "On the rating plate or data sheet. Use the values for heating, e.g. 16 for “5–16 kW”."),
+    "min_kw": T("Optional, z. B. 5 bei „5–16 kW“.", "Optional, e.g. 5 for “5–16 kW”."),
+    "efficiency": T("Annahme, bis Messwerte da sind. Gastherme bezogen auf den Heizwert (≈ 0,9), Kaminofen ≈ 0,75.",
+                    "Assumption until measurements exist. Gas boiler based on net calorific value (≈ 0.9), wood stove ≈ 0.75."),
+    "cop": T("Annahme, bis ein Wärmemengenzähler da ist.", "Assumption until a heat meter exists."),
+    "max_dhw_kw": T("Optional: Spitzen beim Warmwasser gelten dann nicht als Fehler.", "Optional: hot water peaks are then not flagged."),
+}
+GEN_ENT = {
+    "energy": T("Eingesetzte Energie (kWh, z. B. Steckdose oder Zähler der Wärmepumpe)", "Energy input (kWh, e.g. smart plug or heat pump meter)"),
+    "power": T("Leistung", "Power"),
+    "heat": T("Erzeugte Wärme (Wärmemengenzähler)", "Heat produced (heat meter)"),
+    "state": T("Betriebszustand (an/aus)", "Operating state (on/off)"),
+    "room": T("Raumtemperatur am Aufstellort", "Room temperature where installed"),
+    "modulation": T("Modulation (%)", "Modulation (%)"),
+}
+GEN_ENT_DESC = {
+    "state": T("Z. B. ein Binärsensor „läuft“. Daraus kommen die Betriebsstunden.", "E.g. a binary sensor “running”. Operating hours come from it."),
+    "room": T("Beim Kaminofen ohne Betriebszustand: Erkennung über den Temperaturanstieg.", "For a wood stove without operating state: detection by the temperature rise."),
+}
+GEN_OFEN = {
+    "stove_detection": T("Ofenbetrieb erkennen über", "Detect stove operation by"),
+    "stove_threshold_k": T("Anstieg in 30 Minuten", "Rise within 30 minutes"),
+    "effective_share": T("Wirksamer Anteil", "Effective share"),
+    "wood_price": T("Holzpreis", "Wood price"),
+    "wood_price_unit": T("Preis je", "Price per"),
+    "kg_per_rm": T("Gewicht je Raummeter", "Weight per stacked cubic metre"),
+}
+GEN_OFEN_DESC = {
+    "stove_threshold_k": T("Nur in der Heizperiode. Üblich 1,5 K.", "Only in the heating season. Usually 1.5 K."),
+    "effective_share": T("Welcher Teil der Ofenwärme die Heizung wirklich entlastet (Annahme, z. B. 0,6), bis es genug Vergleichstage gibt.",
+                         "Which part of the stove heat really relieves the heating (assumption, e.g. 0.6) until there are enough comparison days."),
+    "wood_price": T("Optional, für die geschätzten Holzkosten.", "Optional, for the estimated wood costs."),
+    "kg_per_rm": T("Annahme: Buche/Hartholz ca. 400 kg je Raummeter.", "Assumption: beech/hardwood about 400 kg per stacked cubic metre."),
+}
+S["config_subentries"]["waermeerzeuger"] = {
+    "initiate_flow": {"user": T("Wärmeerzeuger hinzufügen", "Add heat generator")},
+    "entry_type": T("Wärmeerzeuger", "Heat generator"),
+    "step": {
+        "user": {"title": T("Wärmeerzeuger hinzufügen", "Add heat generator"),
+                 "description": T("Optional: Heizung, Wärmepumpe, Split-Klima oder Kaminofen. Passend zu deinem Haushalt: {vorschlag}.",
+                                  "Optional: boiler, heat pump, split air conditioner or wood stove. Matching your household: {vorschlag}."),
+                 "data": {"kind": T("Art", "Type"), "name": T("Name", "Name")},
+                 "data_description": {"name": T("Optional, sonst der Name der Art.", "Optional, otherwise the name of the type.")}},
+        "zuordnung": {"title": T("Energie", "Energy"),
+                      "description": T("Woher bekommt der Erzeuger seine Energie? Ein Split-Klima hängt meist am Haushaltsstrom.",
+                                       "Where does the generator get its energy from? A split air conditioner usually runs on household electricity."),
+                      "data": {"source": T("Energie aus", "Energy from")}},
+        "leistung": {"title": T("Leistung", "Power"),
+                     "description": T("Leistungsbereich im Heizbetrieb laut Typschild oder Datenblatt.", "Power range for heating according to the rating plate or data sheet."),
+                     "data": GEN_LEISTUNG, "data_description": GEN_LEISTUNG_DESC},
+        "entitaeten": {"title": T("Messwerte (optional)", "Measurements (optional)"),
+                       "description": T("Je mehr gemessen wird, desto weniger Annahmen. Alles ist optional.", "The more is measured, the fewer assumptions. Everything is optional."),
+                       "data": GEN_ENT, "data_description": GEN_ENT_DESC},
+        "ofen": {"title": T("Kaminofen", "Wood stove"),
+                 "description": T("Die Entlastung der Heizung wird gelernt, sobald es je 10 Tage mit und ohne Ofen bei ähnlichem Wetter gibt; bis dahin gilt eine Annahme aus der Nennleistung.",
+                                  "The relief of the heating is learned once there are 10 days with and without the stove at similar weather; until then an assumption from the rated power applies."),
+                 "data": GEN_OFEN, "data_description": GEN_OFEN_DESC},
+        "zusammenfassung": {"title": T("Zusammenfassung", "Summary"),
+                            "description": T("{annahmen}\n\nMit „OK“ wird der Wärmeerzeuger angelegt.", "{annahmen}\n\n“OK” creates the heat generator.")},
+        "reconfigure": {"title": T("Wärmeerzeuger ändern", "Change heat generator"),
+                        "data": {"name": T("Name", "Name"), **GEN_LEISTUNG, **GEN_ENT, **GEN_OFEN},
+                        "data_description": {**GEN_LEISTUNG_DESC, **GEN_ENT_DESC, **GEN_OFEN_DESC}},
+    },
+    "error": {
+        "min_above_nominal": T("Die kleinste Leistung ist größer als die Nennleistung.", "The minimum power is above the rated power."),
+        "state_entity_missing": T("Dafür fehlt die Entität „Betriebszustand“ im Schritt davor.", "The “operating state” entity is missing in the previous step."),
+        "room_entity_missing": T("Dafür fehlt die Entität „Raumtemperatur am Aufstellort“.", "The “room temperature where installed” entity is missing."),
+        "stove_entity_required": T("Für den Kaminofen wird der Betriebszustand oder die Raumtemperatur am Aufstellort gebraucht, sonst lassen sich keine Ofenstunden erkennen.",
+                                   "The wood stove needs the operating state or the room temperature where installed, otherwise no stove hours can be detected."),
+    },
+    "abort": {"reconfigure_successful": T("Der Wärmeerzeuger wurde geändert.", "The heat generator was changed.")},
+}
+S["selector"].update({
+    "generator_kind": {"options": {
+        "gas_boiler": T("Gastherme", "Gas boiler"), "air_air_hp": T("Split-Klima / Luft-Luft-Wärmepumpe", "Split air conditioner / air-to-air heat pump"),
+        "water_hp": T("Wärmepumpe (Wasser)", "Heat pump (hydronic)"), "district_heating": T("Fernwärme", "District heating"),
+        "fireplace": T("Kaminofen", "Wood stove"), "electric": T("Elektroheizung", "Electric heating")}},
+    "power_basis": {"options": {"output": T("Nennwärmeleistung (Wärmeabgabe)", "Rated heat output"),
+                                "input": T("Nennwärmebelastung (Gaseinsatz, Heizwert)", "Rated heat input (gas, net calorific value)")}},
+    "stove_detection": {"options": {"entity": T("Betriebszustand-Entität", "Operating state entity"),
+                                    "room": T("Temperaturanstieg im Raum", "Room temperature rise")}},
+    "wood_price_unit": {"options": {"kg": T("kg", "kg"), "rm": T("Raummeter", "Stacked cubic metre")}},
+    "price_unit": {"options": {"kwh": T("kWh", "kWh"), "mwh": T("MWh", "MWh")}},
+})
+S["entity"]["sensor"].update({
+    "kennwert_temperaturbereinigt": {"name": T("Kennwert temperaturbereinigt", "Heat coefficient (indoor-adjusted)")},
+    "energie_eingang": {"name": T("Eingesetzte Energie", "Energy input")},
+    "waerme": {"name": T("Wärme", "Heat")},
+    "entlastung": {"name": T("Entlastung", "Relief")},
+    "betriebsstunden": {"name": T("Betriebsstunden", "Operating hours")},
+    "betriebstage": {"name": T("Betriebstage", "Operating days")},
+    "holz_geschaetzt": {"name": T("Holz (geschätzt)", "Wood (estimated)")},
+    "holzkosten_geschaetzt": {"name": T("Holzkosten (geschätzt)", "Wood costs (estimated)")},
+})
+
+
 def pick(o, i):
     if isinstance(o, tuple):
         return o[i]

@@ -181,7 +181,7 @@
     const draw = (meta) => {
       box.innerHTML = '';
       const hh = meta && meta.haushalte && meta.haushalte[0];
-      const mains = hh ? hh.zaehler.filter(pick) : [];
+      const mains = hh ? hh.zaehler.filter((m) => pick(m, hh)) : [];
       box.appendChild(el('div', 'font-weight:600;margin:8px 0 4px', t('ei.meters')));
       if (!mains.length) box.appendChild(el('div', 'opacity:.7', t('ei.none')));
       const chosen = Array.isArray(cfg.zaehler) && cfg.zaehler.length ? cfg.zaehler : single ? mains.slice(0, 1).map((m) => m.device_id) : mains.map((m) => m.device_id);
@@ -199,7 +199,7 @@
       });
       box.appendChild(el('div', 'font-weight:600;margin:12px 0 4px', t('ei.title')));
       const ti = el('input', 'width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--divider-color,#555);background:var(--card-background-color,#111);color:var(--primary-text-color,#fff);font:inherit');
-      ti.value = cfg.title || ''; ti.placeholder = t('card.title');
+      ti.value = cfg.title || ''; ti.placeholder = t((opts && opts.titleKey) || 'card.title');
       ti.addEventListener('change', () => { const next = Object.assign({}, api.config(), { integration: true, title: ti.value }); if (!ti.value) delete next.title; api.emit(next); });
       box.appendChild(ti);
       box.appendChild(el('div', 'font-weight:600;margin:12px 0 4px', t('ei.theme')));

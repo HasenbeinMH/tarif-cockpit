@@ -24,10 +24,12 @@ from .aggregation import async_setup_aggregation
 from .coordinator import TarifCoordinator
 from .const import (
     CONF_HOUSEHOLD, CONF_INITIAL_CONTRACT, CONF_INITIAL_PLAN, CONF_INITIAL_PRICE, CONF_INITIAL_READING, CONF_METER,
-    CONF_STORE_CREATED, DOMAIN,
-    ISSUE_STORE_INVALID, ISSUE_STORE_LOST, ISSUE_STORE_TOO_NEW, SUBENTRY_METER,
+    CONF_GENERATOR, CONF_STORE_CREATED, DOMAIN,
+    ISSUE_STORE_INVALID, ISSUE_STORE_LOST, ISSUE_STORE_TOO_NEW, SUBENTRY_GENERATOR, SUBENTRY_METER,
 )
-from .engine.model import AdvancePlan, Contract, Dataset, Household, Meter, PriceSegment, ReadingSource, from_dict, new_id
+from .engine.model import (
+    AdvancePlan, Contract, Dataset, HeatGenerator, Household, Meter, PriceSegment, ReadingSource, from_dict, new_id,
+)
 from .engine.quality import Quality
 from .frontend import async_register_frontend
 from .runtime import TarifRuntime
@@ -71,6 +73,23 @@ def meters_from_entry(entry: ConfigEntry) -> dict[str, Meter]:
             continue
         meters[meter.meter_id] = meter
     return meters
+
+
+def generators_from_entry(entry: ConfigEntry) -> dict[str, HeatGenerator]:
+    """Wärmeerzeuger aus den Subentries (generator_id = subentry_id)."""
+    out: dict[str, HeatGenerator] = {}
+    for sub in entry.subentries.values():
+        if sub.subentry_type != SUBENTRY_GENERATOR:
+            continue
+        raw = dict(sub.data.get(CONF_GENERATOR, {}))
+        raw["generator_id"] = sub.subentry_id
+        raw.setdefault("name", sub.title)
+        gen, errors = from_dict(HeatGenerator, raw)
+        if gen is None:
+            _LOGGER.error("Tarif-Cockpit: Wärmeerzeuger %s ungültig: %s", sub.title, "; ".join(errors))
+            continue
+        out[gen.generator_id] = gen
+    return out
 
 
 async def _async_load_dataset(hass: HomeAssistant, entry: ConfigEntry, store: TarifStore) -> Dataset:
@@ -168,6 +187,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TarifConfigEntry) -> boo
         data=dataset,
         household=household_from_entry(entry),
         meters=meters_from_entry(entry),
+        generators=generators_from_entry(entry),
         subentry_ids=frozenset(entry.subentries),
         subentry_signature=_subentry_signature(entry),
     )

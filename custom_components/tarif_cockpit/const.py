@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import Final
 
 DOMAIN: Final = "tarif_cockpit"
-VERSION: Final = "0.7.0"
+VERSION: Final = "0.8.0"
 
 SUBENTRY_METER: Final = "zaehler"
+SUBENTRY_GENERATOR: Final = "waermeerzeuger"
 
 # Config Entry
 CONF_HOUSEHOLD: Final = "household"
@@ -18,6 +19,8 @@ CONF_INITIAL_CONTRACT: Final = "initial_contract"
 CONF_INITIAL_READING: Final = "initial_reading"
 CONF_INITIAL_PRICE: Final = "initial_price"
 CONF_INITIAL_PLAN: Final = "initial_plan"
+# Subentry Wärmeerzeuger
+CONF_GENERATOR: Final = "generator"
 
 # Store
 STORAGE_VERSION: Final = 1

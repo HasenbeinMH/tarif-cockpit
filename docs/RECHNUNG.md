@@ -51,6 +51,27 @@ Vier Bereiche, strikt getrennt: **Verbrauch** (Tageswerte, Verbrauch seit Period
 - Qualität: „unzureichend“ (unter 21 Tagen bzw. 4 Perioden oder unter 5 K Spanne oder R² < 0,6), „vorläufig“ (R² ≥ 0,6), „gut“ (R² ≥ 0,8 und mindestens 42 Tage bzw. 6 Perioden), „sehr gut“ (mindestens 90 Tage, 10 K Spanne, R² ≥ 0,85).
 - **Unter „vorläufig“ gibt es keine Prognose**; eine Kennwert-Annahme wird nicht verwendet.
 
+### Wärme mit Wärmeerzeugern (0.8)
+
+Die Regression ist ab 0.8 allgemein (kleinste Quadrate mit beliebig vielen Regressoren, ohne Achsenabschnitt):
+
+`V = WW × Tage + Kennwert × Gradtage − Ofen-Effekt × Ofenstunden − Entlastung × Klima-Strom`
+
+- **Warmwasser:** Der WW-Term wird nur geschätzt, wenn Warmwasser über diese Heizung läuft (Antwort „über die Heizung“ oder „Solarthermie (unterstützend)“, oder ein Wärmeerzeuger mit „macht zentrales Warmwasser“ an diesem Zähler) und es Sommertage gibt. Sonst ist er 0 (Hinweis `ww_aus`). Ohne Antwort (Haushalt aus 0.6) bleibt es wie bisher.
+- **Vergleichstage (Entscheidung C):** Ein eigener Ofen- oder Klima-Term wird erst geschätzt, wenn es je mindestens 10 Heiztage mit und ohne Betrieb gibt, zu denen ein Tag der anderen Gruppe mit ähnlichen Gradtagen (± 2 Kd) existiert. Vorher:
+  - Kaminofen: Annahme `Ofenstunden × Nennleistung × wirksamer Anteil ÷ 0,9 × Hs/Hi` wird zum Gasverbrauch addiert, damit der Kennwert den Bedarf ohne Ofen beschreibt. Qualität des Ofen-Effekts: „Annahme“.
+  - Split-Klima/Wärmepumpe: Klimatage werden aus der Schätzung herausgenommen, wenn danach noch mindestens 21 Tage mit 5 K Temperaturspanne übrig bleiben; eine Entlastung gibt es nicht.
+  - Gibt es genug Vergleichstage, aber der gelernte Ofen-Effekt ist nicht positiv, gilt: kein messbarer Effekt. Der Ofen-Effekt ist dann 0 (Hinweis `ofen_kein_effekt`), eine Annahme wird nicht mehr angesetzt. Beim Klima entsprechend `klima_kein_effekt`.
+  - **Fehlend ist nicht 0 (Regel 5):** Ofenstunden gibt es erst ab der Einrichtung (und für die wenigen Tage, die der Recorder im Verlauf hält). Heiztage ohne bekannte Ofenstunden (bzw. Klima-Energie) werden aus der Schätzung herausgenommen, wenn genug Tage übrig bleiben (Hinweis `ofen_unbekannte_tage_ausgeschlossen`); sonst zählen sie als „ohne Ofen“ und das wird gekennzeichnet (`ofen_stunden_unvollstaendig`). Die Rate für die Restprognose zählt nur Tage mit bekanntem Wert.
+  - Außerhalb der Heizperiode zählt Klima-Strom nicht (das Gerät kühlt dann).
+- **Restprognose:** `(Kennwert − Entlastung je Gradtag) × Rest-Gradtage + WW × Resttage`. Entlastung je Gradtag = Ofenstunden (bzw. Klima-Strom) je Gradtag der laufenden Periode (unter 50 Gradtagen: gleiches Fenster im Vorjahr) × Ofen-Effekt (bzw. gelernte Entlastung je kWh).
+- **Heizen am Haushaltsstrom:** Mit eigener Messung zählt deren Tagesenergie als Unterzähler (wie die Wallbox) und wird über eine eigene Gradtag-Regression `E = a × Tage + b × Gradtage` fortgeschrieben. Ohne Messung wird der Hausstrom selbst regressiert (`V = Grundlast × Tage + b × Gradtage`); `b × Gradtage` wird vor der Grundlast-Prognose abgezogen und als `b × Rest-Gradtage` wieder addiert, nur mit einem Modell ab „vorläufig“ (sonst `heizstrom_nicht_getrennt`). Eine Wärmepumpe am eigenen Zähler (WP-Tarif) läuft ganz über diese Regression: Der Zähler gilt komplett als Heizstrom, die Prognose ist die Gradtag-Prognose mit deren Qualität (Methode `waermepumpe_waerme`), ohne Grundlast oder Jahresverbrauch.
+- **Umrechnungswege (Typschild):** Nennwärmebelastung × Hs/Hi = Gaseinsatz nach Brennwert; Nennwärmeleistung ÷ Wirkungsgrad × Hs/Hi. Hs/Hi = 1,11, Wirkungsgrad Therme 0,9 (Annahmen).
+- **Erzeuger-Tageswerte** (Entscheidung I): eingesetzte Energie (Energie-Entität, sonst eigener Zähler, sonst Leistung × 24 h, beim Ofen Stunden × Nennleistung ÷ Wirkungsgrad als Annahme), gemessene Wärme (nur Wärmemengenzähler), geschätzte Wärme (Strom × COP, Ofenstunden × Nennleistung × wirksamer Anteil, Gas ÷ Hs/Hi × Wirkungsgrad) und Entlastung (nur aus dem Modell, und nur wenn das Wärmemodell mindestens „vorläufig“ ist) bleiben getrennt.
+- **Holz (Schätzung):** kg = eingesetzte Energie ÷ 4,2 kWh/kg; Kosten = kg × Preis je kg bzw. Preis je Raummeter ÷ kg je Raummeter (Annahme 400 kg).
+- **Innentemperatur:** (nur wenn auch das Modell mit Außentemperatur mindestens „vorläufig“ ist) zweiter Kennwert mit Gradtagen aus dem gemessenen Tagesmittel innen (innen − außen an Heiztagen). %/K = 100 ÷ mittlere Differenz innen–außen an Heiztagen, gelernt erst ab „vorläufig“ und 60 Tagen mit Innentemperatur, sonst 6 %/K als Annahme. Die Aufteilung gegenüber dem Vorjahr („+8 %: +3 % Raumtemperatur, +5 % Mehrverbrauch“) gibt es nur mit gelerntem %/K und je 60 Heiztagen mit Innentemperatur in beiden Fenstern.
+- **Fernwärme:** wie Gas; Arbeitspreis wahlweise je MWh (intern je kWh), Leistungspreis × Anschlussleistung tagesgenau, Messpreis je Monat.
+
 ## Ergebnis
 
 - `Prognose Kosten = Kosten bisher + Kosten der Restmenge + Grundpreis bis Periodenende`

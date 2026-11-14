@@ -31,7 +31,7 @@
       },
       "abschluss": {
         "title": "Fast fertig",
-        "description": "Danach legst du beim Eintrag „Tarif-Cockpit“ über „Zähler hinzufügen“ deine Zähler an. Passend zu deinen Antworten: {zaehler}.",
+        "description": "Danach legst du beim Eintrag „Tarif-Cockpit“ über „Zähler hinzufügen“ deine Zähler an. Passend zu deinen Antworten: {zaehler}.\n\nOptional über „Wärmeerzeuger hinzufügen“: {erzeuger}.",
         "data": {
           "tolerance_pct": "Toleranz für „Passt“"
         },
@@ -104,8 +104,12 @@
             "z_factor": "Zustandszahl",
             "wastewater_price": "Abwasser je m³",
             "fixed_yearly": "Feste Beträge je Jahr (z. B. Niederschlagswasser)",
-            "demand_price": "Leistungspreis",
-            "demand_kw": "Anschlussleistung"
+            "demand_price": "Leistungspreis je kW und Jahr",
+            "demand_kw": "Anschlussleistung",
+            "price_unit": "Arbeitspreis je"
+          },
+          "data_description": {
+            "price_unit": "Fernwärme wird oft je MWh abgerechnet; gerechnet wird intern je kWh."
           }
         },
         "abschlag": {
@@ -179,8 +183,9 @@
             "z_factor": "Zustandszahl",
             "wastewater_price": "Abwasser je m³",
             "fixed_yearly": "Feste Beträge je Jahr (z. B. Niederschlagswasser)",
-            "demand_price": "Leistungspreis",
-            "demand_kw": "Anschlussleistung"
+            "demand_price": "Leistungspreis je kW und Jahr",
+            "demand_kw": "Anschlussleistung",
+            "price_unit": "Arbeitspreis je"
           }
         },
         "abschlag_aendern": {
@@ -229,12 +234,13 @@
             "z_factor": "Zustandszahl",
             "wastewater_price": "Abwasser je m³",
             "fixed_yearly": "Feste Beträge je Jahr (z. B. Niederschlagswasser)",
-            "demand_price": "Leistungspreis",
+            "demand_price": "Leistungspreis je kW und Jahr",
             "demand_kw": "Anschlussleistung",
             "amount": "Abschlag",
             "pay_day": "Zahltag im Monat",
             "rhythm": "Rhythmus",
-            "max_per_period": "Abschläge je Abrechnungsjahr (z. B. 11)"
+            "max_per_period": "Abschläge je Abrechnungsjahr (z. B. 11)",
+            "price_unit": "Arbeitspreis je"
           }
         }
       },
@@ -255,6 +261,137 @@
         "advance_saved": "Der Abschlag wurde gespeichert.",
         "switch_saved": "Der Anbieterwechsel wurde gespeichert.",
         "not_loaded": "Die Integration ist gerade nicht geladen. Bitte unter Einstellungen → Geräte & Dienste prüfen und neu laden."
+      }
+    },
+    "waermeerzeuger": {
+      "initiate_flow": {
+        "user": "Wärmeerzeuger hinzufügen"
+      },
+      "entry_type": "Wärmeerzeuger",
+      "step": {
+        "user": {
+          "title": "Wärmeerzeuger hinzufügen",
+          "description": "Optional: Heizung, Wärmepumpe, Split-Klima oder Kaminofen. Passend zu deinem Haushalt: {vorschlag}.",
+          "data": {
+            "kind": "Art",
+            "name": "Name"
+          },
+          "data_description": {
+            "name": "Optional, sonst der Name der Art."
+          }
+        },
+        "zuordnung": {
+          "title": "Energie",
+          "description": "Woher bekommt der Erzeuger seine Energie? Ein Split-Klima hängt meist am Haushaltsstrom.",
+          "data": {
+            "source": "Energie aus"
+          }
+        },
+        "leistung": {
+          "title": "Leistung",
+          "description": "Leistungsbereich im Heizbetrieb laut Typschild oder Datenblatt.",
+          "data": {
+            "nominal_kw": "Nennleistung Heizbetrieb",
+            "min_kw": "Kleinste Modulationsleistung",
+            "power_basis": "Die Angabe ist die …",
+            "efficiency": "Wirkungsgrad",
+            "cop": "COP/SCOP (Jahresarbeitszahl)",
+            "central_dhw": "Macht zentrales Warmwasser",
+            "max_dhw_kw": "Maximalleistung Warmwasser"
+          },
+          "data_description": {
+            "nominal_kw": "Steht auf dem Typschild oder im Datenblatt. Werte für den Heizbetrieb verwenden, z. B. 16 bei „5–16 kW“.",
+            "min_kw": "Optional, z. B. 5 bei „5–16 kW“.",
+            "efficiency": "Annahme, bis Messwerte da sind. Gastherme bezogen auf den Heizwert (≈ 0,9), Kaminofen ≈ 0,75.",
+            "cop": "Annahme, bis ein Wärmemengenzähler da ist.",
+            "max_dhw_kw": "Optional: Spitzen beim Warmwasser gelten dann nicht als Fehler."
+          }
+        },
+        "entitaeten": {
+          "title": "Messwerte (optional)",
+          "description": "Je mehr gemessen wird, desto weniger Annahmen. Alles ist optional.",
+          "data": {
+            "energy": "Eingesetzte Energie (kWh, z. B. Steckdose oder Zähler der Wärmepumpe)",
+            "power": "Leistung",
+            "heat": "Erzeugte Wärme (Wärmemengenzähler)",
+            "state": "Betriebszustand (an/aus)",
+            "room": "Raumtemperatur am Aufstellort",
+            "modulation": "Modulation (%)"
+          },
+          "data_description": {
+            "state": "Z. B. ein Binärsensor „läuft“. Daraus kommen die Betriebsstunden.",
+            "room": "Beim Kaminofen ohne Betriebszustand: Erkennung über den Temperaturanstieg."
+          }
+        },
+        "ofen": {
+          "title": "Kaminofen",
+          "description": "Die Entlastung der Heizung wird gelernt, sobald es je 10 Tage mit und ohne Ofen bei ähnlichem Wetter gibt; bis dahin gilt eine Annahme aus der Nennleistung.",
+          "data": {
+            "stove_detection": "Ofenbetrieb erkennen über",
+            "stove_threshold_k": "Anstieg in 30 Minuten",
+            "effective_share": "Wirksamer Anteil",
+            "wood_price": "Holzpreis",
+            "wood_price_unit": "Preis je",
+            "kg_per_rm": "Gewicht je Raummeter"
+          },
+          "data_description": {
+            "stove_threshold_k": "Nur in der Heizperiode. Üblich 1,5 K.",
+            "effective_share": "Welcher Teil der Ofenwärme die Heizung wirklich entlastet (Annahme, z. B. 0,6), bis es genug Vergleichstage gibt.",
+            "wood_price": "Optional, für die geschätzten Holzkosten.",
+            "kg_per_rm": "Annahme: Buche/Hartholz ca. 400 kg je Raummeter."
+          }
+        },
+        "zusammenfassung": {
+          "title": "Zusammenfassung",
+          "description": "{annahmen}\n\nMit „OK“ wird der Wärmeerzeuger angelegt."
+        },
+        "reconfigure": {
+          "title": "Wärmeerzeuger ändern",
+          "data": {
+            "name": "Name",
+            "nominal_kw": "Nennleistung Heizbetrieb",
+            "min_kw": "Kleinste Modulationsleistung",
+            "power_basis": "Die Angabe ist die …",
+            "efficiency": "Wirkungsgrad",
+            "cop": "COP/SCOP (Jahresarbeitszahl)",
+            "central_dhw": "Macht zentrales Warmwasser",
+            "max_dhw_kw": "Maximalleistung Warmwasser",
+            "energy": "Eingesetzte Energie (kWh, z. B. Steckdose oder Zähler der Wärmepumpe)",
+            "power": "Leistung",
+            "heat": "Erzeugte Wärme (Wärmemengenzähler)",
+            "state": "Betriebszustand (an/aus)",
+            "room": "Raumtemperatur am Aufstellort",
+            "modulation": "Modulation (%)",
+            "stove_detection": "Ofenbetrieb erkennen über",
+            "stove_threshold_k": "Anstieg in 30 Minuten",
+            "effective_share": "Wirksamer Anteil",
+            "wood_price": "Holzpreis",
+            "wood_price_unit": "Preis je",
+            "kg_per_rm": "Gewicht je Raummeter"
+          },
+          "data_description": {
+            "nominal_kw": "Steht auf dem Typschild oder im Datenblatt. Werte für den Heizbetrieb verwenden, z. B. 16 bei „5–16 kW“.",
+            "min_kw": "Optional, z. B. 5 bei „5–16 kW“.",
+            "efficiency": "Annahme, bis Messwerte da sind. Gastherme bezogen auf den Heizwert (≈ 0,9), Kaminofen ≈ 0,75.",
+            "cop": "Annahme, bis ein Wärmemengenzähler da ist.",
+            "max_dhw_kw": "Optional: Spitzen beim Warmwasser gelten dann nicht als Fehler.",
+            "state": "Z. B. ein Binärsensor „läuft“. Daraus kommen die Betriebsstunden.",
+            "room": "Beim Kaminofen ohne Betriebszustand: Erkennung über den Temperaturanstieg.",
+            "stove_threshold_k": "Nur in der Heizperiode. Üblich 1,5 K.",
+            "effective_share": "Welcher Teil der Ofenwärme die Heizung wirklich entlastet (Annahme, z. B. 0,6), bis es genug Vergleichstage gibt.",
+            "wood_price": "Optional, für die geschätzten Holzkosten.",
+            "kg_per_rm": "Annahme: Buche/Hartholz ca. 400 kg je Raummeter."
+          }
+        }
+      },
+      "error": {
+        "min_above_nominal": "Die kleinste Leistung ist größer als die Nennleistung.",
+        "state_entity_missing": "Dafür fehlt die Entität „Betriebszustand“ im Schritt davor.",
+        "room_entity_missing": "Dafür fehlt die Entität „Raumtemperatur am Aufstellort“.",
+        "stove_entity_required": "Für den Kaminofen wird der Betriebszustand oder die Raumtemperatur am Aufstellort gebraucht, sonst lassen sich keine Ofenstunden erkennen."
+      },
+      "abort": {
+        "reconfigure_successful": "Der Wärmeerzeuger wurde geändert."
       }
     }
   },
@@ -348,6 +485,40 @@
         "eigentuemer": "Eigentümer",
         "mieter": "Mieter"
       }
+    },
+    "generator_kind": {
+      "options": {
+        "gas_boiler": "Gastherme",
+        "air_air_hp": "Split-Klima / Luft-Luft-Wärmepumpe",
+        "water_hp": "Wärmepumpe (Wasser)",
+        "district_heating": "Fernwärme",
+        "fireplace": "Kaminofen",
+        "electric": "Elektroheizung"
+      }
+    },
+    "power_basis": {
+      "options": {
+        "output": "Nennwärmeleistung (Wärmeabgabe)",
+        "input": "Nennwärmebelastung (Gaseinsatz, Heizwert)"
+      }
+    },
+    "stove_detection": {
+      "options": {
+        "entity": "Betriebszustand-Entität",
+        "room": "Temperaturanstieg im Raum"
+      }
+    },
+    "wood_price_unit": {
+      "options": {
+        "kg": "kg",
+        "rm": "Raummeter"
+      }
+    },
+    "price_unit": {
+      "options": {
+        "kwh": "kWh",
+        "mwh": "MWh"
+      }
     }
   },
   "entity": {
@@ -414,6 +585,30 @@
       },
       "saldo_gesamt": {
         "name": "Saldo gesamt"
+      },
+      "kennwert_temperaturbereinigt": {
+        "name": "Kennwert temperaturbereinigt"
+      },
+      "energie_eingang": {
+        "name": "Eingesetzte Energie"
+      },
+      "waerme": {
+        "name": "Wärme"
+      },
+      "entlastung": {
+        "name": "Entlastung"
+      },
+      "betriebsstunden": {
+        "name": "Betriebsstunden"
+      },
+      "betriebstage": {
+        "name": "Betriebstage"
+      },
+      "holz_geschaetzt": {
+        "name": "Holz (geschätzt)"
+      },
+      "holzkosten_geschaetzt": {
+        "name": "Holzkosten (geschätzt)"
       }
     }
   },

@@ -48,6 +48,12 @@ JOBS = [
     ('overview.html', 'integration-hell', 'scene=integration&theme=hell', 1100, CARD),
     ('analyse.html', 'integration-analyse', 'scene=integration', 1100, CARD),
     ('editor.html', 'integration-editor', 'scene=integ_neu', 600, EDIT),
+    # Wärmeerzeuger und Diagramme (0.8)
+    ('analyse.html', 'heizung-analyse', 'scene=heizung', 1100, CARD),
+    ('analyse.html', 'heizung-analyse-hell', 'scene=heizung&theme=hell', 1100, CARD),
+    ('analyse.html', 'waermepumpe-analyse', 'scene=waermepumpe', 1100, CARD),
+    ('analyse.html', 'fernwaerme-analyse', 'scene=fernwaerme', 1100, CARD),
+    ('analyse.html', 'heizung-analyse-schmal', 'scene=heizung&narrow', 420, CARD),
 ]
 
 

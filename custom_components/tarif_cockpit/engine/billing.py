@@ -430,6 +430,7 @@ class PaymentState:
     remaining: int = 0  # noch offene Abschläge nach heute
     future_other: float = 0.0  # geplante Einmalzahlungen/Gutschriften nach heute
     known: bool = True  # False: weder Abschlagsplan noch Zahlungen bekannt (dann nie "0 € gezahlt" behaupten)
+    others: list[tuple[date, float]] = field(default_factory=list)  # Einmalzahlungen/Gutschriften mit Vorzeichen
 
     @property
     def per_period(self) -> int:
@@ -524,6 +525,7 @@ def calculate_payments(plan: AdvancePlan | None, payments: list[Payment], period
         if p.type == PaymentType.ADVANCE or p.status == PaymentStatus.CANCELLED:
             continue
         sign = -1 if p.type in (PaymentType.CREDIT, PaymentType.REFUND) else 1
+        ps.others.append((p.date, sign * p.amount))
         ps.other += sign * p.amount
         ps.period_total += sign * p.amount
         if p.date <= today and p.status == PaymentStatus.PAID:

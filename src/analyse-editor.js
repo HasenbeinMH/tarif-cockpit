@@ -94,7 +94,8 @@
   };
 
   TC.defineEditor('tarif-cockpit-analyse-card-editor', {
-    integTab: TC.integTab({ single: true, filter: (m) => m.rolle === 'main' && ['gas', 'fernwaerme', 'waerme'].includes(m.medium) }),
+    integTab: TC.integTab({ single: true, titleKey: 'an.title', filter: (m, hh) => m.rolle === 'main' && (['gas', 'fernwaerme', 'waerme'].includes(m.medium)
+      || (m.medium === 'strom' && (hh.waermeerzeuger || []).some((g) => ['water_hp', 'air_air_hp', 'electric'].includes(g.typ) && (g.zaehler_id === m.zaehler_id || g.am_haushaltsstrom)))) }),
     needsSetup: (c) => !(c.kennwert || c.consumption),
     steps,
     form,

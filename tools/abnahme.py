@@ -11,7 +11,7 @@ Vorbereitung (Beispiel, Port 8124):
     -v <leerer-ordner>:/config -v <repo>/custom_components/tarif_cockpit:/config/custom_components/tarif_cockpit:ro \
     ghcr.io/home-assistant/home-assistant:2026.11.1
 Aufruf:
-  python tools/abnahme.py <leerer-ordner> [http://127.0.0.1:8124] [alles|haushalt|zaehler|karte|dialog]
+  python tools/abnahme.py <leerer-ordner> [http://127.0.0.1:8124] [alles|haushalt|zaehler|karte|dialog|waermeerzeuger|analyse]
 """
 from __future__ import annotations
 
@@ -258,6 +258,88 @@ def step_dialog(page: Page, base: str) -> None:
     shot(page, "16-karte-nach-aenderung", "tarif-cockpit-card")
 
 
+def step_waermeerzeuger(page: Page, base: str) -> None:
+    """Kaminofen mit Betriebszustand-Entität und Split-Klima am Haushaltsstrom (0.8)."""
+    # Testhilfe: ein Schalter als "Kaminofen läuft" (Helfer über die API, wie über Einstellungen → Helfer)
+    page.evaluate(f"async () => {{ const s = await {HASS}.callWS({{type: 'input_boolean/list'}}); "
+                  f"if (!s.some((x) => x.name === 'Kaminofen läuft')) await {HASS}.callWS({{type: 'input_boolean/create', name: 'Kaminofen läuft'}}); }}")
+    page.goto(f"{base}/config/integrations/integration/tarif_cockpit")
+    page.wait_for_timeout(2500)
+    page.set_viewport_size({"width": 1280, "height": 1400})
+    page.get_by_role("button", name="Wärmeerzeuger hinzufügen").first.click()
+    page.wait_for_timeout(2000)
+    choose(page, "Art", "Kaminofen")
+    tb(page, "Name").fill("Kaminofen")
+    page.wait_for_timeout(300)
+    shot(page, "17-erzeuger-typ")
+    ok(page)
+    shot(page, "18-erzeuger-leistung")
+    ok(page)
+    pick_entity(page, "Betriebszustand", "Kaminofen läuft")
+    shot(page, "19-erzeuger-messwerte")
+    ok(page)
+    shot(page, "20-erzeuger-ofen")
+    ok(page)
+    shot(page, "21-erzeuger-zusammenfassung")
+    ok(page)
+    # Split-Klima am Haushaltsstrom: Zuordnung "Haushaltsstrom" ist vorbelegt
+    page.goto(f"{base}/config/integrations/integration/tarif_cockpit")
+    page.wait_for_timeout(2500)
+    page.get_by_role("button", name="Wärmeerzeuger hinzufügen").first.click()
+    page.wait_for_timeout(2000)
+    choose(page, "Art", "Split-Klima / Luft-Luft-Wärmepumpe")
+    tb(page, "Name").fill("Split-Klima Wohnzimmer")
+    ok(page)
+    shot(page, "22-erzeuger-zuordnung")
+    ok(page)
+    ok(page)  # Leistung: Vorschläge übernehmen
+    ok(page)  # Messwerte: keine
+    ok(page)  # Zusammenfassung
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"{base}/config/integrations/integration/tarif_cockpit")
+    page.wait_for_timeout(2500)
+    expect(page.get_by_text("Kaminofen").first).to_be_visible()
+    expect(page.get_by_text("Split-Klima Wohnzimmer").first).to_be_visible()
+    shot(page, "23-erzeuger-liste", "ha-config-integration-page")
+
+
+def step_analyse(page: Page, base: str) -> None:
+    """Auswertungskarte über den Karteneditor: Integration, Kostenverlauf (0.8)."""
+    page.goto(f"{base}/dashboard-tarife/0")
+    page.wait_for_timeout(3000)
+    page.get_by_role("button", name="Dashboard bearbeiten").click()
+    page.wait_for_timeout(1500)
+    page.get_by_role("button", name="Karte hinzufügen").first.click()
+    page.wait_for_timeout(2000)
+    page.get_by_role("tab", name="Nach Karte").click()
+    page.wait_for_timeout(1000)
+    page.get_by_role("textbox").locator("visible=true").last.fill("Tarif")
+    page.wait_for_timeout(1500)
+    click_center(page, page.get_by_text("Kennwert je Gradtag, Streudiagramm", exact=False).first)
+    page.wait_for_timeout(3500)
+    expect(page.get_by_role("button", name="Integration", exact=True)).to_be_visible()
+    shot(page, "24-analyse-editor")
+    page.get_by_role("button", name="Speichern").click()
+    page.wait_for_timeout(2000)
+    page.get_by_role("button", name="Fertig").click()
+    page.wait_for_timeout(3500)
+    card = page.locator("tarif-cockpit-analyse-card").first
+    expect(card).to_contain_text("Kosten der Periode")
+    shot(page, "25-analyse-dashboard", "tarif-cockpit-analyse-card")
+
+
+def pick_entity(page: Page, label: str, name: str) -> None:
+    """Entitätsauswahl im Dialog: Feld öffnen, Namen suchen, Treffer wählen."""
+    d = dialog(page)
+    d.get_by_role("button", name=re.compile("^" + re.escape(label) + ".*Entität auswählen")).first.click()
+    page.wait_for_timeout(1200)
+    popup = d.get_by_role("dialog", name=re.compile("^" + re.escape(label)))
+    popup.get_by_placeholder("Durchsuchen").fill(name)
+    page.wait_for_timeout(800)
+    popup.get_by_role("option", name=re.compile("^" + re.escape(name))).first.click()
+    page.wait_for_timeout(800)
+
+
 def click_center(page: Page, loc) -> None:
     """Klick auf die Mitte (Kartenwähler: eine Überlagerung fängt den Klick ab)."""
     b = loc.bounding_box()
@@ -265,10 +347,10 @@ def click_center(page: Page, loc) -> None:
 
 
 def step_alles(page: Page, base: str) -> None:
-    for name in ("haushalt", "zaehler", "karte", "dialog"):
+    for name in ("haushalt", "zaehler", "karte", "dialog", "waermeerzeuger", "analyse"):
         print("Schritt", name)
         globals()[f"step_{name}"](page, base)
-    print("Abnahme bestanden: Einrichtung ohne YAML bis zur Karte, Abschlag über den Dialog geändert.")
+    print("Abnahme bestanden: Einrichtung ohne YAML bis zur Karte, Abschlag über den Dialog, Wärmeerzeuger, Auswertungskarte.")
 
 
 def tb(page: Page, label: str):

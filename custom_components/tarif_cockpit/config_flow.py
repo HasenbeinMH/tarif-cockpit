@@ -5,6 +5,8 @@
 - Zähler (Subentry): Medium (vorgeschlagen aus der Situation), Quelle, Einheit, Vertrag mit Periodenvorschau, Preise,
   Abschläge, Startstand, Zusammenfassung mit einer ersten Prognose.
 - „Neu konfigurieren“ am Zähler: Stammdaten, Anbieter wechseln, Preis ändern, Abschlag ändern.
+- Wärmeerzeuger (Subentry, 0.8): Typ (vorgeschlagen aus der Situation), Zuordnung (eigener Zähler oder Haushaltsstrom),
+  Leistungsbereich laut Typschild, optionale Entitäten, beim Kaminofen Erkennung und Holz, Zusammenfassung der Annahmen.
 
 Startvertrag, -preis, -abschlag und -stand stehen nur einmal im Subentry (``initial_*``); beim Setup übernimmt sie der
 Store, danach gilt der Store (Entscheidung E). Änderungen danach gehen über die Laufzeitfunktionen wie die Aktionen.
@@ -26,11 +28,15 @@ from homeassistant.helpers import selector
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_HOUSEHOLD, CONF_INITIAL_CONTRACT, CONF_INITIAL_PLAN, CONF_INITIAL_PRICE, CONF_INITIAL_READING, CONF_METER, DOMAIN,
-    SUBENTRY_METER,
+    CONF_GENERATOR, CONF_HOUSEHOLD, CONF_INITIAL_CONTRACT, CONF_INITIAL_PLAN, CONF_INITIAL_PRICE, CONF_INITIAL_READING,
+    CONF_METER, DOMAIN, SUBENTRY_GENERATOR, SUBENTRY_METER,
 )
 from .engine import billing
 from .engine.model import BillingRule, Contract, Medium, PeriodSpan, PriceSegment, ReadingSource, VatMode, from_dict, new_id, to_dict
+from .engine.generators import (
+    HS_HI, KIND_DEFAULTS, ON_POWER_KINDS, default as gen_default, gas_per_hour, stove_relief_per_hour, suggested_kinds,
+)
+from .engine.model import GeneratorKind, HeatGenerator, PowerBasis
 from .engine.quality import Quality
 
 UNITS: dict[str, list[str]] = {
@@ -138,7 +144,7 @@ class TarifCockpitConfigFlow(ConfigFlow, domain=DOMAIN):
     @classmethod
     @callback
     def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
-        return {SUBENTRY_METER: MeterSubentryFlow}
+        return {SUBENTRY_METER: MeterSubentryFlow, SUBENTRY_GENERATOR: GeneratorSubentryFlow}
 
     @staticmethod
     @callback
@@ -170,9 +176,11 @@ class TarifCockpitConfigFlow(ConfigFlow, domain=DOMAIN):
                          "tolerance_pct": float(user_input["tolerance_pct"])}
             return self.async_create_entry(title=household["name"], data={CONF_HOUSEHOLD: household})
         schema = vol.Schema({vol.Required("tolerance_pct", default=5.0): _number(0, 50, 1, "%")})
+        kinds = suggested_kinds(self._hh["situation"])
         return self.async_show_form(step_id="abschluss", data_schema=schema, description_placeholders={
             "zaehler": ", ".join(_media_label(self.hass, m) for m in suggested_media(self._hh["situation"]))
             + (", " + _media_label(self.hass, "wallbox") if "wallbox" in self._hh["situation"].get("extras", []) else ""),
+            "erzeuger": ", ".join(_kind_label(self.hass, k) for k in kinds) or "–",
         })
 
 
@@ -251,7 +259,7 @@ def _price_schema(hass: Any, medium: Medium, with_date: bool = False, current: P
     if with_date:
         fields[vol.Required("valid_from")] = selector.DateSelector()
     fields.update({
-        vol.Required("work_price", default=current.work_price if current else vol.UNDEFINED): _number(0, 100, "any", f"{cur}/{per}"),
+        vol.Required("work_price", default=current.work_price if current else vol.UNDEFINED): _number(0, 10000, "any", f"{cur}/{per}"),
         vol.Required("base_price", default=current.base_price if current else 0): _number(0, 10000, "any", f"{cur}/Monat"),
         opt("metering_price"): _number(0, 1000, "any", f"{cur}/Monat"),
     })
@@ -262,6 +270,7 @@ def _price_schema(hass: Any, medium: Medium, with_date: bool = False, current: P
         fields[opt("wastewater_price")] = _number(0, 100, "any", f"{cur}/m³")
         fields[opt("fixed_yearly")] = _number(0, 10000, "any", f"{cur}/Jahr")
     if medium == Medium.FERNWAERME:
+        fields[vol.Required("price_unit", default="kwh")] = _select(["kwh", "mwh"], "price_unit")
         fields[opt("demand_price")] = _number(0, 10000, "any", f"{cur}/kW·Jahr")
         fields[opt("demand_kw")] = _number(0, 1000, "any", "kW")
     return vol.Schema(fields)
@@ -271,7 +280,11 @@ PRICE_KEYS = ("metering_price", "calorific", "z_factor", "wastewater_price", "fi
 
 
 def _price_from(user_input: dict[str, Any]) -> dict[str, float]:
-    price = {"work_price": float(user_input["work_price"]), "base_price": float(user_input["base_price"])}
+    """Formular → Preisabschnitt. Fernwärme je MWh wird auf kWh umgerechnet (gerechnet wird immer je kWh)."""
+    work = float(user_input["work_price"])
+    if user_input.get("price_unit") == "mwh":
+        work = work / 1000.0
+    price = {"work_price": work, "base_price": float(user_input["base_price"])}
     for key in PRICE_KEYS:
         if user_input.get(key) is not None:
             price[key] = float(user_input[key])
@@ -696,3 +709,280 @@ class MeterSubentryFlow(ConfigSubentryFlow):
             return "–"
         fmt = "%d.%m.%Y"
         return ", ".join(f"{s.start_date.strftime(fmt)} – {s.end_date.strftime(fmt)}{'¹' if s.is_partial else ''}" for s in specs)
+
+
+
+# ---------------------------------------------------------------- Wärmeerzeuger (0.8)
+
+KINDS = [k.value for k in GeneratorKind]
+KIND_MEDIA = {
+    GeneratorKind.GAS_BOILER: (Medium.GAS,),
+    GeneratorKind.DISTRICT_HEATING: (Medium.FERNWAERME,),
+    GeneratorKind.WATER_HP: (Medium.STROM,),
+    GeneratorKind.AIR_AIR_HP: (Medium.STROM,),
+    GeneratorKind.ELECTRIC: (Medium.STROM,),
+    GeneratorKind.FIREPLACE: (),
+}
+DHW_KINDS = (GeneratorKind.GAS_BOILER, GeneratorKind.WATER_HP, GeneratorKind.DISTRICT_HEATING, GeneratorKind.ELECTRIC)
+HOUSEHOLD_POWER = "haushaltsstrom"
+NO_METER = "kein_zaehler"
+
+
+def _kind_label(hass: Any, kind: GeneratorKind | str) -> str:
+    de = str(hass.config.language or "de").startswith("de")
+    names = {
+        "gas_boiler": ("Gastherme", "Gas boiler"), "air_air_hp": ("Split-Klima / Luft-Luft-Wärmepumpe", "Split air conditioner / air-to-air heat pump"),
+        "water_hp": ("Wärmepumpe", "Heat pump"), "district_heating": ("Fernwärme", "District heating"),
+        "fireplace": ("Kaminofen", "Wood stove"), "electric": ("Elektroheizung", "Electric heating"),
+    }
+    k = kind.value if isinstance(kind, GeneratorKind) else kind
+    return names.get(k, (k, k))[0 if de else 1]
+
+
+def _gen_number(gen: dict[str, Any], key: str, kind: GeneratorKind) -> Any:
+    v = gen.get(key)
+    return v if v is not None else KIND_DEFAULTS.get(kind, {}).get(key, vol.UNDEFINED)
+
+
+class GeneratorSubentryFlow(ConfigSubentryFlow):
+    """Wärmeerzeuger: Typ → Zuordnung → Leistung → Entitäten → [Kaminofen] → Zusammenfassung; „Neu konfigurieren“."""
+
+    def __init__(self) -> None:
+        self._gen: dict[str, Any] = {}
+
+    def _situation(self) -> dict[str, Any]:
+        return dict(self._get_entry().data.get(CONF_HOUSEHOLD, {}).get("situation", {}))
+
+    def _kind(self) -> GeneratorKind:
+        return GeneratorKind(self._gen["kind"])
+
+    def _existing_kinds(self) -> list[str]:
+        return [s.data.get(CONF_GENERATOR, {}).get("kind") for s in self._get_entry().subentries.values()
+                if s.subentry_type == SUBENTRY_GENERATOR]
+
+    def _meters_for(self, kind: GeneratorKind) -> list[tuple[str, str]]:
+        media = KIND_MEDIA.get(kind, ())
+        return [(sid, s.title) for sid, s in self._get_entry().subentries.items()
+                if s.subentry_type == SUBENTRY_METER and s.data.get(CONF_METER, {}).get("role", "main") == "main"
+                and s.data.get(CONF_METER, {}).get("medium") in media]
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        if user_input is not None:
+            self._gen = {"kind": user_input["kind"], "name": (user_input.get("name") or "").strip() or _kind_label(self.hass, user_input["kind"])}
+            if self._meters_for(self._kind()) or self._kind() in ON_POWER_KINDS:
+                return await self.async_step_zuordnung()
+            return await self.async_step_leistung()
+        have = self._existing_kinds()
+        open_kinds = [k.value for k in suggested_kinds(self._situation()) if k.value not in have]
+        default = open_kinds[0] if open_kinds else GeneratorKind.GAS_BOILER.value
+        schema = vol.Schema({
+            vol.Required("kind", default=default): _select(KINDS, "generator_kind"),
+            vol.Optional("name"): str,
+        })
+        return self.async_show_form(step_id="user", data_schema=schema, description_placeholders={
+            "vorschlag": ", ".join(_kind_label(self.hass, k) for k in open_kinds) or "–"})
+
+    async def async_step_zuordnung(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Woher kommt die Energie: eigener Zähler oder Haushaltsstrom (Split-Klima am Hauszähler)?"""
+        kind = self._kind()
+        if user_input is not None:
+            src = user_input["source"]
+            self._gen["on_household_power"] = src == HOUSEHOLD_POWER
+            self._gen["meter_id"] = src if src not in (HOUSEHOLD_POWER, NO_METER) else None
+            return await self.async_step_leistung()
+        options = [selector.SelectOptionDict(value=sid, label=title) for sid, title in self._meters_for(kind)]
+        if kind in ON_POWER_KINDS:
+            options.append(selector.SelectOptionDict(value=HOUSEHOLD_POWER, label="Haushaltsstrom" if self._de() else "Household electricity"))
+        options.append(selector.SelectOptionDict(value=NO_METER, label="Ohne Zähler" if self._de() else "No meter"))
+        default = HOUSEHOLD_POWER if kind in ON_POWER_KINDS else options[0]["value"]
+        schema = vol.Schema({vol.Required("source", default=default): selector.SelectSelector(
+            selector.SelectSelectorConfig(options=options, mode=selector.SelectSelectorMode.LIST))})
+        return self.async_show_form(step_id="zuordnung", data_schema=schema)
+
+    def _de(self) -> bool:
+        return str(self.hass.config.language or "de").startswith("de")
+
+    def _leistung_schema(self, g: dict[str, Any]) -> vol.Schema:
+        kind = GeneratorKind(g["kind"])
+        fields: dict[Any, Any] = {
+            vol.Required("nominal_kw", default=_gen_number(g, "nominal_kw", kind)): _number(0.1, 100, "any", "kW"),
+            vol.Optional("min_kw", description={"suggested_value": g.get("min_kw")}): _number(0, 100, "any", "kW"),
+        }
+        if kind == GeneratorKind.GAS_BOILER:
+            fields[vol.Required("power_basis", default=g.get("power_basis", PowerBasis.OUTPUT.value))] = _select(
+                [b.value for b in PowerBasis], "power_basis")
+        if kind in (GeneratorKind.AIR_AIR_HP, GeneratorKind.WATER_HP):
+            fields[vol.Required("cop", default=_gen_number(g, "cop", kind))] = _number(1, 8, "any")
+        else:
+            fields[vol.Required("efficiency", default=_gen_number(g, "efficiency", kind))] = _number(0.3, 1.1, "any")
+        if kind in DHW_KINDS:
+            sit_hw = self._situation().get("hot_water")
+            dhw_default = g.get("central_dhw", (sit_hw == "heizung" and kind in (GeneratorKind.GAS_BOILER, GeneratorKind.DISTRICT_HEATING))
+                                or (sit_hw == "waermepumpe" and kind == GeneratorKind.WATER_HP))
+            fields[vol.Required("central_dhw", default=dhw_default)] = selector.BooleanSelector()
+            fields[vol.Optional("max_dhw_kw", description={"suggested_value": g.get("max_dhw_kw")})] = _number(0, 100, "any", "kW")
+        return vol.Schema(fields)
+
+    def _leistung_from(self, user_input: dict[str, Any]) -> dict[str, Any]:
+        out: dict[str, Any] = {"nominal_kw": float(user_input["nominal_kw"])}
+        for key in ("min_kw", "cop", "efficiency", "max_dhw_kw"):
+            out[key] = float(user_input[key]) if user_input.get(key) is not None else None
+        if "power_basis" in user_input:
+            out["power_basis"] = user_input["power_basis"]
+        out["central_dhw"] = bool(user_input.get("central_dhw", False))
+        return out
+
+    async def async_step_leistung(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Leistungsbereich im Heizbetrieb laut Typschild/Datenblatt."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if user_input.get("min_kw") is not None and float(user_input["min_kw"]) > float(user_input["nominal_kw"]):
+                errors["min_kw"] = "min_above_nominal"
+            else:
+                self._gen.update(self._leistung_from(user_input))
+                return await self.async_step_entitaeten()
+        return self.async_show_form(step_id="leistung", data_schema=self._leistung_schema(self._gen), errors=errors)
+
+    def _entity_schema(self, g: dict[str, Any]) -> vol.Schema:
+        ent = g.get("entities", {})
+
+        def opt(key: str, cfg: selector.EntitySelectorConfig) -> tuple[Any, Any]:
+            k = vol.Optional(key, description={"suggested_value": ent.get(key)}) if ent.get(key) else vol.Optional(key)
+            return k, selector.EntitySelector(cfg)
+
+        fields = dict([
+            opt("energy", selector.EntitySelectorConfig(domain="sensor", device_class="energy")),
+            opt("power", selector.EntitySelectorConfig(domain="sensor", device_class="power")),
+            opt("heat", selector.EntitySelectorConfig(domain="sensor", device_class="energy")),
+            opt("state", selector.EntitySelectorConfig(domain=["binary_sensor", "switch", "input_boolean", "sensor", "climate"])),
+            opt("room", selector.EntitySelectorConfig(domain="sensor", device_class="temperature")),
+        ])
+        if GeneratorKind(g["kind"]) not in (GeneratorKind.FIREPLACE,):
+            fields.update(dict([opt("modulation", selector.EntitySelectorConfig(domain="sensor"))]))
+        return vol.Schema(fields)
+
+    async def async_step_entitaeten(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Optionale Entitäten: eingesetzte Energie, Leistung, erzeugte Wärme, Betriebszustand, Raumtemperatur."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            ents = {k: v for k, v in user_input.items() if v}
+            if self._kind() == GeneratorKind.FIREPLACE and not (ents.get("state") or ents.get("room")):
+                errors["base"] = "stove_entity_required"
+                self._gen["entities"] = ents
+            else:
+                self._gen["entities"] = ents
+                if self._kind() == GeneratorKind.FIREPLACE:
+                    return await self.async_step_ofen()
+                return await self.async_step_zusammenfassung()
+        return self.async_show_form(step_id="entitaeten", data_schema=self._entity_schema(self._gen), errors=errors)
+
+    def _ofen_schema(self, g: dict[str, Any]) -> vol.Schema:
+        cur = self.hass.config.currency
+        has_state = bool(g.get("entities", {}).get("state"))
+        return vol.Schema({
+            vol.Required("stove_detection", default=g.get("stove_detection", "entity" if has_state else "room")): _select(
+                ["entity", "room"], "stove_detection"),
+            vol.Required("stove_threshold_k", default=g.get("stove_threshold_k", 1.5)): _number(0.5, 5, 0.1, "K"),
+            vol.Required("effective_share", default=_gen_number(g, "effective_share", GeneratorKind.FIREPLACE)): _number(0.05, 1, 0.05),
+            vol.Optional("wood_price", description={"suggested_value": g.get("wood_price")}): _number(0, 10000, "any", cur),
+            vol.Required("wood_price_unit", default=g.get("wood_price_unit", "rm")): _select(["kg", "rm"], "wood_price_unit"),
+            vol.Required("kg_per_rm", default=g.get("kg_per_rm", 400.0)): _number(100, 800, 1, "kg"),
+        })
+
+    async def async_step_ofen(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Kaminofen: Erkennung (Betriebszustand-Entität oder Raumtemperatur), wirksamer Anteil, Holzpreis."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            ent = self._gen.get("entities", {})
+            if user_input["stove_detection"] == "entity" and not ent.get("state"):
+                errors["stove_detection"] = "state_entity_missing"
+            elif user_input["stove_detection"] == "room" and not ent.get("room"):
+                errors["stove_detection"] = "room_entity_missing"
+            else:
+                self._gen.update({
+                    "stove_detection": user_input["stove_detection"], "stove_threshold_k": float(user_input["stove_threshold_k"]),
+                    "effective_share": float(user_input["effective_share"]),
+                    "wood_price": float(user_input["wood_price"]) if user_input.get("wood_price") is not None else None,
+                    "wood_price_unit": user_input["wood_price_unit"], "kg_per_rm": float(user_input["kg_per_rm"]),
+                })
+                return await self.async_step_zusammenfassung()
+        return self.async_show_form(step_id="ofen", data_schema=self._ofen_schema(self._gen), errors=errors)
+
+    def _summary(self, g: dict[str, Any]) -> str:
+        """Annahmen in Worten (Systemsprache)."""
+        de = self._de()
+        gen, _ = from_dict(HeatGenerator, {**g, "generator_id": "probe"})
+        if gen is None:
+            return "–"
+        lines = []
+
+        def num(v: float, n: int = 2) -> str:
+            txt = f"{v:,.{n}f}"
+            return txt.replace(",", "X").replace(".", ",").replace("X", ".") if de else txt
+
+        if gen.kind == GeneratorKind.GAS_BOILER:
+            per_h = gas_per_hour(gen)
+            if per_h:
+                basis = ("Nennwärmebelastung × Hs/Hi" if gen.power_basis == PowerBasis.INPUT else "Nennwärmeleistung ÷ Wirkungsgrad × Hs/Hi") if de \
+                    else ("rated heat input × Hs/Hi" if gen.power_basis == PowerBasis.INPUT else "rated output ÷ efficiency × Hs/Hi")
+                lines.append((f"Gaseinsatz bei Volllast: {num(per_h, 1)} kWh je Stunde ({basis}, Hs/Hi = {num(HS_HI)}, Annahme)") if de
+                             else f"Gas input at full load: {num(per_h, 1)} kWh per hour ({basis}, Hs/Hi = {num(HS_HI)}, assumption)")
+        if gen.kind in (GeneratorKind.AIR_AIR_HP, GeneratorKind.WATER_HP):
+            cop = gen_default(gen, "cop") or 0
+            lines.append((f"Wärme = Strom × {num(cop, 1)} (COP, Annahme bis ein Wärmemengenzähler da ist). Die Entlastung der Heizung "
+                          "wird erst aus deinen Daten gelernt (Vergleichstage).") if de
+                         else f"Heat = electricity × {num(cop, 1)} (COP, assumption until a heat meter exists). The relief of the heating "
+                              "is learned from your data only (comparison days).")
+        if gen.kind == GeneratorKind.FIREPLACE:
+            relief = stove_relief_per_hour(gen, Medium.GAS) or 0
+            lines.append((f"Vor genug Vergleichstagen (je 10 mit und ohne Ofen): Entlastung {num(relief, 1)} kWh Gas je Ofenstunde "
+                          "(Nennleistung × wirksamer Anteil ÷ 0,9 × Hs/Hi, Annahme). Holz: eingesetzte Energie ÷ 4,2 kWh/kg (Schätzung).") if de
+                         else f"Until there are enough comparison days (10 with and without stove): relief {num(relief, 1)} kWh gas per stove "
+                              "hour (rated output × effective share ÷ 0.9 × Hs/Hi, assumption). Wood: energy input ÷ 4.2 kWh/kg (estimate).")
+        if gen.meter_id and gen.kind in ON_POWER_KINDS:
+            title = next((s.title for sid, s in self._get_entry().subentries.items() if sid == gen.meter_id), gen.meter_id)
+            lines.append(f"Der Zähler „{title}“ gilt komplett als Heizstrom (keine Grundlast)." if de
+                         else f"The meter “{title}” counts completely as heating electricity (no base load).")
+        if not g.get("entities"):
+            lines.append("Ohne Entitäten zählt nur, was ein zugeordneter Zähler misst." if de else "Without entities only an assigned meter is used.")
+        return "\n\n".join(lines) or "–"
+
+    async def async_step_zusammenfassung(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        if user_input is not None:
+            data = {k: v for k, v in self._gen.items() if k != "name"}
+            return self.async_create_entry(title=self._gen["name"], data={CONF_GENERATOR: {**data, "name": self._gen["name"]}})
+        return self.async_show_form(step_id="zusammenfassung", data_schema=vol.Schema({}),
+                                    description_placeholders={"annahmen": self._summary(self._gen)})
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Leistung, Entitäten und (Kaminofen) Erkennung/Holz in einem Formular ändern."""
+        entry = self._get_entry()
+        sub = self._get_reconfigure_subentry()
+        g = dict(sub.data.get(CONF_GENERATOR, {}))
+        kind = GeneratorKind(g["kind"])
+        errors: dict[str, str] = {}
+        schema = vol.Schema({vol.Required("name", default=g.get("name") or sub.title): str}).extend(
+            self._leistung_schema(g).schema).extend(self._entity_schema(g).schema)
+        if kind == GeneratorKind.FIREPLACE:
+            schema = schema.extend(self._ofen_schema(g).schema)
+        if user_input is not None:
+            ents = {k: user_input[k] for k in ("energy", "power", "heat", "state", "room", "modulation") if user_input.get(k)}
+            if user_input.get("min_kw") is not None and float(user_input["min_kw"]) > float(user_input["nominal_kw"]):
+                errors["min_kw"] = "min_above_nominal"
+            elif kind == GeneratorKind.FIREPLACE and user_input.get("stove_detection") == "entity" and not ents.get("state"):
+                errors["stove_detection"] = "state_entity_missing"
+            elif kind == GeneratorKind.FIREPLACE and user_input.get("stove_detection") == "room" and not ents.get("room"):
+                errors["stove_detection"] = "room_entity_missing"
+            else:
+                g.update(self._leistung_from(user_input))
+                g["entities"] = ents
+                g["name"] = user_input["name"]
+                if kind == GeneratorKind.FIREPLACE:
+                    g.update({
+                        "stove_detection": user_input["stove_detection"], "stove_threshold_k": float(user_input["stove_threshold_k"]),
+                        "effective_share": float(user_input["effective_share"]),
+                        "wood_price": float(user_input["wood_price"]) if user_input.get("wood_price") is not None else None,
+                        "wood_price_unit": user_input["wood_price_unit"], "kg_per_rm": float(user_input["kg_per_rm"]),
+                    })
+                return self.async_update_and_abort(entry, sub, title=user_input["name"], data={CONF_GENERATOR: g})
+        return self.async_show_form(step_id="reconfigure", data_schema=schema, errors=errors)

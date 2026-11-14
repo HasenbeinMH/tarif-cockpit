@@ -78,3 +78,28 @@ Die Karte schlägt beim Hinzufügen passende Sensoren vor. Findet sie keine, zei
 | Schmal | Englisch |
 |---|---|
 | ![Schmal](img/overview-schmal.png) | ![Englisch](img/overview-en.png) |
+
+
+## Heizung: Gas mit Kaminofen und Split-Klima (0.8)
+
+Auswertungskarte im Integrations-Modus. Rot sind Ofentage, türkis Klimatage; sie liegen unter der Geraden, weil Ofen und Klima die Gasheizung entlasten. Die Gerade ist der Gasbedarf ohne Ofen. Darunter der Kostenverlauf der Periode gegen die Abschlags-Treppe und die Wärmeerzeuger mit Eingang, Wärme und Entlastung.
+
+![Gas mit Kaminofen und Split-Klima](img/heizung-analyse.png)
+
+## Wärmepumpe am eigenen Zähler (0.8)
+
+Ohne Gaszähler nimmt die Auswertungskarte den Stromzähler der Wärmepumpe: Kennwert in kWh Strom je Gradtag, Streudiagramm, Kostenverlauf. Eine Entlastung gibt es hier nicht, weil keine andere Heizung entlastet wird.
+
+![Wärmepumpe](img/waermepumpe-analyse.png)
+
+## Fernwärme in MWh (0.8)
+
+Fernwärme läuft durch dieselbe Wärmeprognose wie Gas. Der Arbeitspreis kann je MWh eingetragen werden; dazu Grund-, Mess- und Leistungspreis.
+
+![Fernwärme](img/fernwaerme-analyse.png)
+
+## Auswertung hell und schmal (0.8)
+
+| hell | schmal |
+|---|---|
+| ![hell](img/heizung-analyse-hell.png) | ![schmal](img/heizung-analyse-schmal.png) |

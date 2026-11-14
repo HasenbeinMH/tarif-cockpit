@@ -21,6 +21,7 @@ const ORDER = [
   'common.js',
   'i18n.js',
   'chart.js',
+  'charts2.js',
   'base-card.js',
   'integration.js',
   'wizard.js',

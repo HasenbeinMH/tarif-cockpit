@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.8.0 – 2026-11-14
+
+**Wärmeerzeuger und erweiterte Prognose.** Abnahme: Szenario-Tests Heizung (Gas mit Kaminofen, Wärmepumpe am eigenen Zähler, Split-Klima am Hausstrom, Fernwärme in MWh, Warmwasser per Durchlauferhitzer) grün. Anleitung: [docs/EINRICHTUNG.md](docs/EINRICHTUNG.md#5-wärmeerzeuger-optional-ab-08), Formeln: [docs/RECHNUNG.md](docs/RECHNUNG.md).
+
+### Neu
+- **Wärmeerzeuger** als zweiter Untereintrag („Wärmeerzeuger hinzufügen“): Gastherme, Split-Klima/Luft-Luft-Wärmepumpe, Wärmepumpe, Fernwärme, Kaminofen, Elektroheizung. Vorschläge aus den Antworten zum Haushalt, Zuordnung zu einem eigenen Zähler oder zum Haushaltsstrom, Leistungsbereich laut Typschild (Nennwärmeleistung oder -belastung, Hs/Hi), Wirkungsgrad bzw. COP, „macht zentrales Warmwasser“, optionale Entitäten (Energie, Leistung, Wärme, Betriebszustand, Raumtemperatur), Zusammenfassung der Annahmen, „Neu konfigurieren“.
+- **Eingang, Wärme und Entlastung strikt getrennt** (Entscheidung I), je Erzeuger als Tageswerte gespeichert. Sensoren je Erzeuger: eingesetzte Energie, Wärme, Entlastung, Betriebsstunden, Betriebstage; Kaminofen zusätzlich Holz und Holzkosten (Schätzung).
+- **Kaminofen:** Betrieb aus einer Betriebszustand-Entität oder aus dem Temperaturanstieg im Raum (≥ 1,5 K in 30 min, Heizperiode). Eigener Ofen-Effekt erst ab je 10 Vergleichstagen mit und ohne Ofen bei ähnlichen Gradtagen (Entscheidung C), vorher Annahme aus der Nennleistung. Der Ofen entlastet auch die Restprognose.
+- **Split-Klima und Wärmepumpe am Haushaltsstrom:** witterungsabhängiger Anteil vor der Strom-Grundlast abgezogen und über die Gradtage fortgeschrieben (mit eigener Messung über diese). Entlastung der Gasheizung nur aus Vergleichstagen gelernt, nie aus dem COP.
+- **Allgemeine Regression** mit n Regressoren; Warmwasser-Term nur, wenn Warmwasser über die Heizung läuft.
+- **Temperaturbereinigter Kennwert** (Gradtage aus der gemessenen Innentemperatur), gelernter Mehrverbrauch je Kelvin (sonst 6 %/K als Annahme) und Aufteilung gegenüber dem Vorjahr bei ausreichender Datenlage.
+- **Fernwärme komplett:** Arbeitspreis je kWh oder MWh, Grund-, Mess- und Leistungspreis.
+- **Auswertungskarte:** Streudiagramm Verbrauch über Gradtage mit Regressionsgerade und Qualität (Ofen- und Klimatage farbig), kumulierter Kostenverlauf der Periode (Ist, Prognose, Abschlags-Treppe), Kacheln je Wärmeerzeuger, temperaturbereinigter Kennwert; für Haushalte ohne Gas auch für den Stromzähler einer Wärmepumpe. Neuer WebSocket-Befehl `tarif_cockpit/reihen`.
+- **Fehlende Ofenstunden sind nicht 0:** Heiztage ohne bekannte Ofenstunden (z. B. vor der Einrichtung) verfälschen den Kennwert nicht.
+- Testseiten-Szenarien `heizung`, `waermepumpe`, `fernwaerme`; Abnahme-Durchlauf um Wärmeerzeuger und Auswertungskarte erweitert.
+
+### Geändert
+- Warmwasser per Durchlauferhitzer oder Wärmepumpe (Antwort beim Haushalt): keine Warmwasser-Grundlast mehr in der Gasregression.
+- Einmalzahlungen und Gutschriften stehen in der Abschlags-Treppe am Zahlungsdatum.
+- Kein neuer Store-Stand nötig: Die neuen Felder haben Standardwerte, alte Daten laden unverändert (Plan sah Store 1.4 vor; nicht erforderlich).
+- Arbeitspreis bis 10.000 je Einheit (Preise je MWh).
+- Beschreibung der Auswertungskarte im Kartenwähler.
+
 ## 0.7.0 – 2026-11-13
 
 Die Integration ist **bedienbar**: Einrichtung in einer frischen Home-Assistant-Instanz komplett in der Oberfläche, ohne YAML, von den Fragen zum Haushalt bis zur Karte im Dashboard. Schritt für Schritt mit Bildern: [docs/EINRICHTUNG.md](docs/EINRICHTUNG.md). Umstieg: [docs/MIGRATION.md](docs/MIGRATION.md).

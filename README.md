@@ -5,7 +5,9 @@ Eine Integration für Home Assistant, die Zähler, Verträge, Abrechnungsperiode
 
 ![Tarifübersicht](docs/img/integration-uebersicht.png)
 
-> **Stand 0.7:** Einrichtung komplett in der Oberfläche, ohne YAML: ein paar Fragen zum Haushalt, Zähler mit Vertrag, Preisen und Abschlägen, die Karte im Editor wählen, fertig. Die Karte zeigt die Werte der Integration (Urteil, Saldo, Prognose mit Qualität, Abschlagsstufen, empfohlener Abschlag), ein Tipp auf den Abschlag ändert ihn. Schritt für Schritt mit Bildern: [docs/EINRICHTUNG.md](docs/EINRICHTUNG.md). Umstieg: [docs/MIGRATION.md](docs/MIGRATION.md).
+> **Stand 0.8:** Wärmeerzeuger (Gastherme, Wärmepumpe, Split-Klima, Fernwärme, Kaminofen) mit getrennter eingesetzter Energie, Wärme und Entlastung; Kaminofen und Split-Klima entlasten die Gasprognose, sobald es genug Vergleichstage gibt; Heizen am Haushaltsstrom wird vor der Strom-Grundlast abgezogen; temperaturbereinigter Kennwert; Auswertungskarte mit Streudiagramm und Kostenverlauf. Details: [CHANGELOG.md](CHANGELOG.md).
+>
+> **Seit 0.7:** Einrichtung komplett in der Oberfläche, ohne YAML: ein paar Fragen zum Haushalt, Zähler mit Vertrag, Preisen und Abschlägen, die Karte im Editor wählen, fertig. Die Karte zeigt die Werte der Integration (Urteil, Saldo, Prognose mit Qualität, Abschlagsstufen, empfohlener Abschlag), ein Tipp auf den Abschlag ändert ihn. Schritt für Schritt mit Bildern: [docs/EINRICHTUNG.md](docs/EINRICHTUNG.md). Umstieg: [docs/MIGRATION.md](docs/MIGRATION.md).
 
 ## Was du bekommst
 
@@ -13,9 +15,10 @@ Eine Integration für Home Assistant, die Zähler, Verträge, Abrechnungsperiode
 |---|---|
 | Integration `tarif_cockpit` | Haushalt mit Zählern (Strom, Gas, Wasser, Fernwärme), Vertragskette je Zähler, **Abrechnungsperioden** nach der Regel deines Versorgers (Vertragsjahr, Kalenderjahr mit Rumpfjahr, fester Stichtag, von Hand), Anbieterwechsel mit Schlussperiode, Ablesungen mit Qualität, Tageswerte. **Rechnet** Kosten (Preise mit Gültigkeit, brutto/netto, Abwasser), Abschläge und Zahlungen, die Prognose (Strom und Wasser über das Vorjahr, Gas und Fernwärme über einen gelernten Kennwert je Gradtag, Wallbox getrennt) und das Ergebnis mit Qualitätsangabe. Daten liegen in einem eigenen Speicher und überstehen Neustarts und Updates. |
 | Karte `custom:tarif-cockpit-card` | Je Zähler Urteil, Saldo und vier Balken: Kosten bisher, Abschläge bisher (grün), Prognose und Abschläge der Periode, Abschlagsstufen, empfohlener Abschlag, Prognose-Qualität, Anbieterwechsel; Gesamturteil. Abschlag per Tipp ändern. |
-| Karte `custom:tarif-cockpit-analyse-card` | Gas und Fernwärme: gelernter Kennwert je Gradtag, Warmwasser-Grundlast, Qualität, Verlauf aus der Langzeitstatistik. |
+| Wärmeerzeuger (optional) | Gastherme, Wärmepumpe, Split-Klima, Fernwärme, Kaminofen, Elektroheizung: eingesetzte Energie, Wärme, Entlastung, Betriebsstunden; Kaminofen mit Holz und Holzkosten (geschätzt). |
+| Karte `custom:tarif-cockpit-analyse-card` | Heizung: gelernter Kennwert je Gradtag, Warmwasser-Grundlast, temperaturbereinigter Kennwert, Streudiagramm Verbrauch über Gradtage, Kostenverlauf gegen die Abschläge, Wärmeerzeuger. |
 
-![Auswertung](docs/img/integration-analyse.png)
+![Auswertung](docs/img/heizung-analyse.png)
 
 ## Installation
 
@@ -50,11 +53,21 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 | Abschlag empfohlen | ab dem nächsten Zahltag, damit die Periode ausgeglichen endet; Attribut `vorlaeufig` je nach Prognose-Qualität |
 | Prognose-Qualität | `annahme`, `unzureichend`, `vorlaeufig`, `gut`, `sehr_gut` (Diagnose) |
 | Kennwert, Warmwasser-Grundlast | nur Gas und Fernwärme: gelernter Kennwert (kWh je Gradtag) mit R², Anzahl Tage, Temperaturspanne |
+| Kennwert temperaturbereinigt | Gas/Fernwärme: Kennwert mit Gradtagen aus der gemessenen Innentemperatur; Attribute `prozent_je_kelvin` (gelernt oder 6 %/K als Annahme), `vorjahr` (Aufteilung Raumtemperatur/Mehrverbrauch) |
 | Saldo gesamt | am Gerät „Haushalt“: Summe über alle Zähler; leer, solange ein Zähler noch keinen Saldo hat (Attribut `ohne_prognose`) |
 | Periodenende | Ende der laufenden Abrechnungsperiode. Attribute: `beginn`, `rumpfjahr`, `schlussperiode`, `status`, `regel`, `stichtag`, `lieferant`, `tarif`, `tage_bis_ende` |
 | Letzte Ablesung | Zeitpunkt der letzten gültigen Ablesung. Attribute: `stand`, `qualitaet`, `quelle`, `ablesung_id` |
 | Zählerstand (abgelesen) | Letzter gültiger abgelesener Stand |
 | Tageswerte vollständig | Diagnose: Anteil verwendbarer Tageswerte der letzten 30 Tage |
+
+**Sensoren je Wärmeerzeuger** (eigenes Gerät, Werte der laufenden Periode bis gestern)
+| Sensor | Inhalt |
+|---|---|
+| Eingesetzte Energie | Gas, Strom oder Holz in kWh; Attribut `messqualitaet` (real, estimated, assumption) |
+| Wärme | gemessen (Wärmemengenzähler) oder geschätzt (Attribut `geschaetzt`) |
+| Entlastung | kWh, die der Gas-/Fernwärmezähler dadurch weniger braucht; leer, bis sie gelernt ist (Kaminofen vorher als Annahme, Attribut `qualitaet`) |
+| Betriebsstunden, Betriebstage | aus der Betriebszustand-Entität bzw. beim Kaminofen aus dem Temperaturanstieg; ein Tag zählt ab 1 h |
+| Holz (geschätzt), Holzkosten (geschätzt) | nur Kaminofen |
 
 **Aktionen** (Entwicklerwerkzeuge → Aktionen, oder in Automationen). Alle Aktionen ändern Daten und dürfen deshalb nur von Administratoren aufgerufen werden; Automationen und Skripte sind davon nicht betroffen.
 | Aktion | Wozu |
@@ -118,7 +131,7 @@ Die Karte rechnet nichts selbst. Sie holt über die Integration, welche Sensoren
 |---|---|
 | ![Lernt](docs/img/integration-lernt.png) | ![Dialog](docs/img/abnahme-15-abschlag-dialog.png) |
 
-Die Auswertungskarte geht genauso (`type: custom:tarif-cockpit-analyse-card`, `integration: true`, optional `zaehler: [Gerät des Gas- oder Fernwärmezählers]`): gelernter Kennwert, Warmwasser-Grundlast, Qualität mit Anzahl Tage und R², Verlauf des Kennwerts.
+Die Auswertungskarte geht genauso (`type: custom:tarif-cockpit-analyse-card`, `integration: true`, optional `zaehler: [Gerät des Gas- oder Fernwärmezählers]`; ohne diese der Stromzähler einer Wärmepumpe): gelernter Kennwert, Warmwasser-Grundlast (nur wenn Warmwasser über die Heizung läuft), temperaturbereinigter Kennwert, Qualität mit Anzahl Tage und R², Verlauf des Kennwerts, **Streudiagramm** Verbrauch über Gradtage mit Regressionsgerade (Ofen- und Klimatage farbig), **Kostenverlauf** der Periode (Ist, Prognose, Abschlags-Treppe) und je Wärmeerzeuger Eingang, Wärme, Entlastung. `diagramme: false` bzw. `erzeuger: false` blenden Diagramme bzw. Erzeuger aus. Beispiele: [docs/BEISPIELE.md](docs/BEISPIELE.md).
 
 ### Sensor-Modus (ohne Integration)
 

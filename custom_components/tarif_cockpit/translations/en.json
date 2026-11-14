@@ -31,7 +31,7 @@
       },
       "abschluss": {
         "title": "Almost done",
-        "description": "Afterwards add your meters via “Add meter” on the “Tarif-Cockpit” entry. Matching your answers: {zaehler}.",
+        "description": "Afterwards add your meters via “Add meter” on the “Tarif-Cockpit” entry. Matching your answers: {zaehler}.\n\nOptional via “Add heat generator”: {erzeuger}.",
         "data": {
           "tolerance_pct": "Tolerance for “on track”"
         },
@@ -104,8 +104,12 @@
             "z_factor": "Conversion factor (Z)",
             "wastewater_price": "Wastewater per m³",
             "fixed_yearly": "Fixed amounts per year (e.g. rainwater)",
-            "demand_price": "Demand charge",
-            "demand_kw": "Connected load"
+            "demand_price": "Demand charge per kW and year",
+            "demand_kw": "Connected load",
+            "price_unit": "Unit price per"
+          },
+          "data_description": {
+            "price_unit": "District heating is often billed per MWh; internally it is calculated per kWh."
           }
         },
         "abschlag": {
@@ -179,8 +183,9 @@
             "z_factor": "Conversion factor (Z)",
             "wastewater_price": "Wastewater per m³",
             "fixed_yearly": "Fixed amounts per year (e.g. rainwater)",
-            "demand_price": "Demand charge",
-            "demand_kw": "Connected load"
+            "demand_price": "Demand charge per kW and year",
+            "demand_kw": "Connected load",
+            "price_unit": "Unit price per"
           }
         },
         "abschlag_aendern": {
@@ -229,12 +234,13 @@
             "z_factor": "Conversion factor (Z)",
             "wastewater_price": "Wastewater per m³",
             "fixed_yearly": "Fixed amounts per year (e.g. rainwater)",
-            "demand_price": "Demand charge",
+            "demand_price": "Demand charge per kW and year",
             "demand_kw": "Connected load",
             "amount": "Advance payment",
             "pay_day": "Day of month",
             "rhythm": "Interval",
-            "max_per_period": "Payments per billing year (e.g. 11)"
+            "max_per_period": "Payments per billing year (e.g. 11)",
+            "price_unit": "Unit price per"
           }
         }
       },
@@ -255,6 +261,137 @@
         "advance_saved": "The advance payment was saved.",
         "switch_saved": "The supplier change was saved.",
         "not_loaded": "The integration is not loaded right now. Please check and reload it under Settings → Devices & services."
+      }
+    },
+    "waermeerzeuger": {
+      "initiate_flow": {
+        "user": "Add heat generator"
+      },
+      "entry_type": "Heat generator",
+      "step": {
+        "user": {
+          "title": "Add heat generator",
+          "description": "Optional: boiler, heat pump, split air conditioner or wood stove. Matching your household: {vorschlag}.",
+          "data": {
+            "kind": "Type",
+            "name": "Name"
+          },
+          "data_description": {
+            "name": "Optional, otherwise the name of the type."
+          }
+        },
+        "zuordnung": {
+          "title": "Energy",
+          "description": "Where does the generator get its energy from? A split air conditioner usually runs on household electricity.",
+          "data": {
+            "source": "Energy from"
+          }
+        },
+        "leistung": {
+          "title": "Power",
+          "description": "Power range for heating according to the rating plate or data sheet.",
+          "data": {
+            "nominal_kw": "Rated power (heating)",
+            "min_kw": "Minimum modulation power",
+            "power_basis": "The rating is the …",
+            "efficiency": "Efficiency",
+            "cop": "COP/SCOP (seasonal)",
+            "central_dhw": "Produces central hot water",
+            "max_dhw_kw": "Maximum power hot water"
+          },
+          "data_description": {
+            "nominal_kw": "On the rating plate or data sheet. Use the values for heating, e.g. 16 for “5–16 kW”.",
+            "min_kw": "Optional, e.g. 5 for “5–16 kW”.",
+            "efficiency": "Assumption until measurements exist. Gas boiler based on net calorific value (≈ 0.9), wood stove ≈ 0.75.",
+            "cop": "Assumption until a heat meter exists.",
+            "max_dhw_kw": "Optional: hot water peaks are then not flagged."
+          }
+        },
+        "entitaeten": {
+          "title": "Measurements (optional)",
+          "description": "The more is measured, the fewer assumptions. Everything is optional.",
+          "data": {
+            "energy": "Energy input (kWh, e.g. smart plug or heat pump meter)",
+            "power": "Power",
+            "heat": "Heat produced (heat meter)",
+            "state": "Operating state (on/off)",
+            "room": "Room temperature where installed",
+            "modulation": "Modulation (%)"
+          },
+          "data_description": {
+            "state": "E.g. a binary sensor “running”. Operating hours come from it.",
+            "room": "For a wood stove without operating state: detection by the temperature rise."
+          }
+        },
+        "ofen": {
+          "title": "Wood stove",
+          "description": "The relief of the heating is learned once there are 10 days with and without the stove at similar weather; until then an assumption from the rated power applies.",
+          "data": {
+            "stove_detection": "Detect stove operation by",
+            "stove_threshold_k": "Rise within 30 minutes",
+            "effective_share": "Effective share",
+            "wood_price": "Wood price",
+            "wood_price_unit": "Price per",
+            "kg_per_rm": "Weight per stacked cubic metre"
+          },
+          "data_description": {
+            "stove_threshold_k": "Only in the heating season. Usually 1.5 K.",
+            "effective_share": "Which part of the stove heat really relieves the heating (assumption, e.g. 0.6) until there are enough comparison days.",
+            "wood_price": "Optional, for the estimated wood costs.",
+            "kg_per_rm": "Assumption: beech/hardwood about 400 kg per stacked cubic metre."
+          }
+        },
+        "zusammenfassung": {
+          "title": "Summary",
+          "description": "{annahmen}\n\n“OK” creates the heat generator."
+        },
+        "reconfigure": {
+          "title": "Change heat generator",
+          "data": {
+            "name": "Name",
+            "nominal_kw": "Rated power (heating)",
+            "min_kw": "Minimum modulation power",
+            "power_basis": "The rating is the …",
+            "efficiency": "Efficiency",
+            "cop": "COP/SCOP (seasonal)",
+            "central_dhw": "Produces central hot water",
+            "max_dhw_kw": "Maximum power hot water",
+            "energy": "Energy input (kWh, e.g. smart plug or heat pump meter)",
+            "power": "Power",
+            "heat": "Heat produced (heat meter)",
+            "state": "Operating state (on/off)",
+            "room": "Room temperature where installed",
+            "modulation": "Modulation (%)",
+            "stove_detection": "Detect stove operation by",
+            "stove_threshold_k": "Rise within 30 minutes",
+            "effective_share": "Effective share",
+            "wood_price": "Wood price",
+            "wood_price_unit": "Price per",
+            "kg_per_rm": "Weight per stacked cubic metre"
+          },
+          "data_description": {
+            "nominal_kw": "On the rating plate or data sheet. Use the values for heating, e.g. 16 for “5–16 kW”.",
+            "min_kw": "Optional, e.g. 5 for “5–16 kW”.",
+            "efficiency": "Assumption until measurements exist. Gas boiler based on net calorific value (≈ 0.9), wood stove ≈ 0.75.",
+            "cop": "Assumption until a heat meter exists.",
+            "max_dhw_kw": "Optional: hot water peaks are then not flagged.",
+            "state": "E.g. a binary sensor “running”. Operating hours come from it.",
+            "room": "For a wood stove without operating state: detection by the temperature rise.",
+            "stove_threshold_k": "Only in the heating season. Usually 1.5 K.",
+            "effective_share": "Which part of the stove heat really relieves the heating (assumption, e.g. 0.6) until there are enough comparison days.",
+            "wood_price": "Optional, for the estimated wood costs.",
+            "kg_per_rm": "Assumption: beech/hardwood about 400 kg per stacked cubic metre."
+          }
+        }
+      },
+      "error": {
+        "min_above_nominal": "The minimum power is above the rated power.",
+        "state_entity_missing": "The “operating state” entity is missing in the previous step.",
+        "room_entity_missing": "The “room temperature where installed” entity is missing.",
+        "stove_entity_required": "The wood stove needs the operating state or the room temperature where installed, otherwise no stove hours can be detected."
+      },
+      "abort": {
+        "reconfigure_successful": "The heat generator was changed."
       }
     }
   },
@@ -348,6 +485,40 @@
         "eigentuemer": "Owner",
         "mieter": "Tenant"
       }
+    },
+    "generator_kind": {
+      "options": {
+        "gas_boiler": "Gas boiler",
+        "air_air_hp": "Split air conditioner / air-to-air heat pump",
+        "water_hp": "Heat pump (hydronic)",
+        "district_heating": "District heating",
+        "fireplace": "Wood stove",
+        "electric": "Electric heating"
+      }
+    },
+    "power_basis": {
+      "options": {
+        "output": "Rated heat output",
+        "input": "Rated heat input (gas, net calorific value)"
+      }
+    },
+    "stove_detection": {
+      "options": {
+        "entity": "Operating state entity",
+        "room": "Room temperature rise"
+      }
+    },
+    "wood_price_unit": {
+      "options": {
+        "kg": "kg",
+        "rm": "Stacked cubic metre"
+      }
+    },
+    "price_unit": {
+      "options": {
+        "kwh": "kWh",
+        "mwh": "MWh"
+      }
     }
   },
   "entity": {
@@ -414,6 +585,30 @@
       },
       "saldo_gesamt": {
         "name": "Total balance"
+      },
+      "kennwert_temperaturbereinigt": {
+        "name": "Heat coefficient (indoor-adjusted)"
+      },
+      "energie_eingang": {
+        "name": "Energy input"
+      },
+      "waerme": {
+        "name": "Heat"
+      },
+      "entlastung": {
+        "name": "Relief"
+      },
+      "betriebsstunden": {
+        "name": "Operating hours"
+      },
+      "betriebstage": {
+        "name": "Operating days"
+      },
+      "holz_geschaetzt": {
+        "name": "Wood (estimated)"
+      },
+      "holzkosten_geschaetzt": {
+        "name": "Wood costs (estimated)"
       }
     }
   },

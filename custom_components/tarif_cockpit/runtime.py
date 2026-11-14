@@ -20,8 +20,8 @@ from homeassistant.util import dt as dt_util
 from .const import signal_updated
 from .engine import billing
 from .engine.model import (
-    AdvancePlan, AdvanceStep, BillingPeriod, Contract, DailyConsumption, Dataset, Household, Invoice, Meter, Payment,
-    PaymentStatus, PaymentType, PeriodStatus, PriceSegment, Reading, ReadingSource, new_id,
+    AdvancePlan, AdvanceStep, BillingPeriod, Contract, DailyConsumption, Dataset, GeneratorDaily, HeatGenerator, Household,
+    Invoice, Meter, Payment, PaymentStatus, PaymentType, PeriodStatus, PriceSegment, Reading, ReadingSource, new_id,
 )
 from .engine.quality import Quality, usable
 from .store import TarifStore
@@ -37,6 +37,7 @@ class TarifRuntime:
     data: Dataset
     household: Household
     meters: dict[str, Meter]  # meter_id (= subentry_id) → Zähler
+    generators: dict[str, HeatGenerator] = field(default_factory=dict)  # generator_id (= subentry_id) → Wärmeerzeuger
     subentry_ids: frozenset[str] = frozenset()
     unsubs: list[Any] = field(default_factory=list)
     aggregator: Any = None  # aggregation.Aggregator, gesetzt beim Setup
@@ -60,6 +61,34 @@ class TarifRuntime:
 
     def daily(self, meter_id: str) -> dict[date, DailyConsumption]:
         return {d.date: d for d in self.data.daily if d.meter_id == meter_id}
+
+    def generator_daily(self, generator_id: str) -> dict[date, GeneratorDaily]:
+        return {g.date: g for g in self.data.generator_daily if g.generator_id == generator_id}
+
+    def put_generator_daily(self, values: list[GeneratorDaily]) -> int:
+        """Erzeuger-Tageswerte einsetzen bzw. ersetzen; ein Wert wird nie durch einen leeren ersetzt."""
+        index = {(g.generator_id, g.date): i for i, g in enumerate(self.data.generator_daily)}
+        changed = 0
+        for v in values:
+            key = (v.generator_id, v.date)
+            empty = v.energy_input is None and v.thermal_output is None and v.hours is None
+            if key in index:
+                cur = self.data.generator_daily[index[key]]
+                if empty and not (cur.energy_input is None and cur.thermal_output is None and cur.hours is None):
+                    continue
+                # feldweise: ein fehlender neuer Wert (z. B. Stunden außerhalb der Recorder-Haltezeit) behält den alten
+                merged = replace(v, **{f: getattr(cur, f) for f in ("energy_input", "thermal_output", "estimated_thermal_output", "hours")
+                                       if getattr(v, f) is None and getattr(cur, f) is not None})
+                if merged.energy_input is not None and v.energy_input is None:
+                    merged = replace(merged, measurement_quality=cur.measurement_quality)
+                if cur != merged:
+                    self.data.generator_daily[index[key]] = merged
+                    changed += 1
+            else:
+                index[key] = len(self.data.generator_daily)
+                self.data.generator_daily.append(v)
+                changed += 1
+        return changed
 
     def actual_ends(self, meter_id: str) -> dict[str, dict[date, date]]:
         """Abweichende tatsächliche Periodenenden (Ablesetermin) aus den gespeicherten Perioden des Zählers."""

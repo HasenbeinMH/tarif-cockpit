@@ -1,4 +1,4 @@
-/*! tarif-cockpit v0.7.0 - MIT License - https://github.com/HasenbeinMH/tarif-cockpit
+/*! tarif-cockpit v0.8.0 - MIT License - https://github.com/HasenbeinMH/tarif-cockpit
     Editor-Baukasten und Assistent nach energy-cockpit, MIT License, Copyright (c) 2026 Musicmaker3112
     Diese Datei wird gebaut: Quellen in src/, Aufruf node tools/build.mjs */
 /* ---- common.js ---- */
@@ -7,7 +7,7 @@
 window.TarifCockpit = window.TarifCockpit || {};
 (() => {
   const TC = window.TarifCockpit;
-  TC.VERSION = '0.7.0';
+  TC.VERSION = '0.8.0';
 
   // Farbschemen wie bei energy-cockpit
   TC.THEMES = {
@@ -216,7 +216,7 @@ svg.ch{display:block;width:100%;height:auto}
       'pick.overview.name': 'Tarif-Cockpit',
       'pick.overview.desc': 'Kosten, Abschläge und Prognose für Strom, Gas und Wasser: passt, Nachzahlung oder Rückzahlung auf einen Blick',
       'pick.analyse.name': 'Tarif-Cockpit Auswertung',
-      'pick.analyse.desc': 'Gas witterungsbereinigt: Kennwert je Gradtag, Vergleich mit der Vorperiode und Verlauf',
+      'pick.analyse.desc': 'Heizung: Kennwert je Gradtag, Streudiagramm, Kostenverlauf gegen die Abschläge, Wärmeerzeuger',
       'warn.analysis': 'Der Block "analysis" in tarif-cockpit-card ist veraltet. Bitte die Karte "custom:tarif-cockpit-analyse-card" verwenden (docs/MIGRATION.md).',
       // Editor und Assistent
       'ed.tab_wiz': 'Assistent', 'ed.tab_form': 'Alle Felder', 'ed.tab_integ': 'Integration', 'ed.loading': 'Formular wird geladen …',
@@ -257,7 +257,7 @@ svg.ch{display:block;width:100%;height:auto}
       'pick.overview.name': 'Tarif-Cockpit',
       'pick.overview.desc': 'Costs, advance payments and annual forecast for electricity, gas and water: on track, back payment or refund at a glance',
       'pick.analyse.name': 'Tarif-Cockpit analysis',
-      'pick.analyse.desc': 'Weather-adjusted gas: coefficient per degree day, comparison with the previous period and history',
+      'pick.analyse.desc': 'Heating: coefficient per degree day, scatter plot, cost curve against advances, heat generators',
       'warn.analysis': 'The "analysis" block in tarif-cockpit-card is deprecated. Please use the card "custom:tarif-cockpit-analyse-card" (docs/MIGRATION.md).',
       'ed.tab_wiz': 'Wizard', 'ed.tab_form': 'All fields', 'ed.tab_integ': 'Integration', 'ed.loading': 'Loading form …',
       'ei.text': 'The card shows the values of the Tarif-Cockpit integration. Choose the meters; everything else (contracts, prices, advances) is set in the integration.',
@@ -441,6 +441,122 @@ svg.ch{display:block;width:100%;height:auto}
 })();
 
 
+/* ---- charts2.js ---- */
+/* Diagramme der Auswertungskarte (0.8): Streudiagramm Verbrauch über Gradtage, kumulierter Kostenverlauf.
+   Die Daten kommen fertig gerechnet aus der Integration (WebSocket tarif_cockpit/reihen); hier wird nur gezeichnet (Regel 2). */
+(() => {
+  const TC = window.TarifCockpit;
+
+  // "schöne" Achsenschritte
+  const niceMax = (v) => {
+    if (!(v > 0)) return 1;
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    const f = v / p;
+    return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+  };
+
+  // Streudiagramm: x = Gradtage je Tag, y = Verbrauch je Tag; Ofen-/Klimatage farbig; Gerade y = WW + Kennwert × x
+  TC.svgScatter = (sc) => {
+    const nf = TC.nf;
+    const W = 720, H = 230, L = 44, R = 12, T = 10, B = 34;
+    const pts = (sc && sc.punkte) || [];
+    const xmax = niceMax(Math.max(1, ...pts.map((p) => p.x), sc && sc.gerade ? sc.gerade.x1 : 0));
+    const ymax = niceMax(Math.max(1, ...pts.map((p) => p.y), sc && sc.gerade ? sc.gerade.y1 : 0) * 1.05);
+    const iw = W - L - R, ih = H - T - B;
+    const X = (v) => L + (v / xmax) * iw;
+    const Y = (v) => T + ih - (v / ymax) * ih;
+    let s = `<svg class="ch sc" viewBox="0 0 ${W} ${H}" role="img">`;
+    for (let g = 0; g <= 4; g++) {
+      const y = T + (ih * g) / 4;
+      s += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/>`;
+      s += `<text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${nf(ymax * (1 - g / 4), 0)}</text>`;
+      const x = L + (iw * g) / 4;
+      s += `<text class="ax" x="${x}" y="${H - 18}" text-anchor="middle">${nf((xmax * g) / 4, 0)}</text>`;
+    }
+    s += `<text class="ax" x="${L + iw / 2}" y="${H - 3}" text-anchor="middle">${TC.T('ch.x_dd')}</text>`;
+    pts.forEach((p) => {
+      const cls = p.ofen ? 'pt of' : p.klima ? 'pt kl' : 'pt';
+      s += `<circle class="${cls}" cx="${X(p.x).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="${p.ofen || p.klima ? 3.4 : 2.6}"/>`;
+    });
+    if (sc && sc.gerade) {
+      const g = sc.gerade;
+      s += `<line class="rl" x1="${X(g.x0).toFixed(1)}" y1="${Y(g.y0).toFixed(1)}" x2="${X(g.x1).toFixed(1)}" y2="${Y(g.y1).toFixed(1)}"/>`;
+    }
+    return s + '</svg>';
+  };
+
+  const day = (iso) => new Date(iso + 'T00:00:00').getTime();
+
+  // Kostenverlauf: Ist (durchgezogen), Prognose (gestrichelt), Abschlags-Treppe (grün), Linie "heute"
+  TC.svgCumul = (k) => {
+    const nf = TC.nf;
+    const W = 720, H = 200, L = 52, R = 12, T = 10, B = 24;
+    const t0 = day(k.beginn), t1 = day(k.ende) + 864e5;
+    const all = [...k.ist, ...k.prognose, ...k.abschlaege].map((p) => p[1]);
+    const ymax = niceMax(Math.max(1, ...all) * 1.05);
+    const iw = W - L - R, ih = H - T - B;
+    const X = (iso) => L + ((day(iso) - t0) / (t1 - t0)) * iw;
+    const Y = (v) => T + ih - (v / ymax) * ih;
+    let s = `<svg class="ch cu" viewBox="0 0 ${W} ${H}" role="img">`;
+    for (let g = 0; g <= 4; g++) {
+      const y = T + (ih * g) / 4;
+      s += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/>`;
+      s += `<text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${nf(ymax * (1 - g / 4), 0)}</text>`;
+    }
+    // Monatsmarken
+    const d = new Date(k.beginn + 'T00:00:00');
+    d.setDate(1);
+    for (let i = 0; i < 40; i++) {
+      const m = new Date(d.getFullYear(), d.getMonth() + i, 1);
+      const iso = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}-01`;
+      if (day(iso) < t0) continue;
+      if (day(iso) > t1) break;
+      const mid = new Date(m.getFullYear(), m.getMonth(), 15);
+      const midIso = `${mid.getFullYear()}-${String(mid.getMonth() + 1).padStart(2, '0')}-15`;
+      s += `<line class="gl" x1="${X(iso)}" x2="${X(iso)}" y1="${T + ih}" y2="${T + ih + 4}"/>`;
+      if (day(midIso) <= t1) s += `<text class="ax" x="${X(midIso)}" y="${H - 8}" text-anchor="middle">${m.toLocaleDateString(TC.loc, { month: 'short' })}</text>`;
+    }
+    const path = (pts) => pts.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1)).join(' ');
+    if (k.abschlaege.length) {
+      let dpath = '', last = 0;
+      k.abschlaege.forEach((p, i) => {
+        const x = X(p[0]).toFixed(1);
+        dpath += i === 0 ? `M${x} ${Y(p[1]).toFixed(1)}` : ` H${x} V${Y(p[1]).toFixed(1)}`;
+        last = p[1];
+      });
+      dpath += ` H${(L + iw).toFixed(1)}`;
+      s += `<path class="st" d="${dpath}"/>`;
+      void last;
+    }
+    if (k.ist.length) s += `<path class="ist" d="${path(k.ist)}"/>`;
+    if (k.prognose.length) s += `<path class="fc" d="${path(k.prognose)}"/>`;
+    if (k.heute) s += `<line class="today" x1="${X(k.heute)}" x2="${X(k.heute)}" y1="${T}" y2="${T + ih}"/>`;
+    return s + '</svg>';
+  };
+
+  TC.CHART2_CSS = `
+.ch .pt{fill:rgb(var(--c));opacity:.55}
+.ch .pt.of{fill:#f87171;opacity:.85}
+.ch .pt.kl{fill:#22d3ee;opacity:.85}
+.ch .rl{stroke:var(--txt);stroke-width:2;stroke-dasharray:6 4;opacity:.8}
+.ch .ist{fill:none;stroke:rgb(var(--c));stroke-width:2.4;stroke-linejoin:round}
+.ch .fc{fill:none;stroke:rgb(var(--c));stroke-width:2.4;stroke-dasharray:7 5;opacity:.75}
+.ch .st{fill:none;stroke:rgb(var(--adv,52,211,153));stroke-width:2}
+.ch .today{stroke:rgb(var(--mut));stroke-width:1;stroke-dasharray:2 3}
+.leg i.of{background:#f87171}.leg i.kl{background:#22d3ee}
+.leg i.ist{background:rgb(var(--c))}.leg i.fc{background:repeating-linear-gradient(90deg,rgb(var(--c)) 0 4px,transparent 4px 7px)}
+.leg i.st{background:rgb(var(--adv,52,211,153))}
+.gens{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:14px}
+.gen{padding:12px 14px;border-radius:15px;background:rgba(var(--ov),.028);border:1px solid rgba(var(--ov),.04)}
+.gen .gh{display:flex;justify-content:space-between;align-items:baseline;font-weight:650;font-size:.85rem}
+.gen .gh small{color:rgb(var(--mut));font-weight:500;font-size:.68rem}
+.gen dl{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin:8px 0 0;font-size:.74rem}
+.gen dt{color:rgb(var(--mut))}.gen dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+.gen dd small{color:rgb(var(--mut));font-size:.66rem}
+`;
+})();
+
+
 /* ---- base-card.js ---- */
 /* Gemeinsame Grundlage beider Karten: Shadow-DOM, Farbschema, schmale Darstellung, Tipp auf Entitäten öffnet den Dialog. */
 (() => {
@@ -461,7 +577,7 @@ svg.ch{display:block;width:100%;height:auto}
     _afterHass() {}
 
     _build() {
-      this.shadowRoot.innerHTML = `<style>${TC.CSS}${TC.integ ? TC.integ.CSS : ''}</style><ha-card><div class="wrap" id="w"></div></ha-card>`;
+      this.shadowRoot.innerHTML = `<style>${TC.CSS}${TC.integ ? TC.integ.CSS : ''}${TC.CHART2_CSS || ''}</style><ha-card><div class="wrap" id="w"></div></ha-card>`;
       this._w = this.shadowRoot.getElementById('w');
       // Tipp auf ein Element mit data-entity öffnet den Dialog der Entität (z. B. Datums-Helfer des Zeitraums)
       this._w.addEventListener('click', (e) => {
@@ -535,7 +651,16 @@ svg.ch{display:block;width:100%;height:auto}
     'dlg.cancel': 'Abbrechen', 'dlg.save': 'Speichern', 'dlg.saved': 'Gespeichert.',
     'dlg.invalid': 'Bitte einen Betrag (0 oder mehr) und ein Datum eingeben.',
     'in.no_heat': '<b>Kein Wärmezähler.</b> Die Auswertung braucht einen Gas- oder Fernwärmezähler in der Integration.',
-    'in.learning': 'Wird gelernt', 'in.kw_learned': 'gelernt aus den Tageswerten', 'in.ww': 'WW-Grundlast', 'in.days': 'Tage im Modell', 'in.r2': 'Bestimmtheit R²',
+    'in.learning': 'Wird gelernt', 'in.kw_learned': 'gelernt aus den Tageswerten',
+    'in.kw_indoor': 'Kennwert temperaturbereinigt', 'in.pct_k': '{p} % je Kelvin Raumtemperatur',
+    'in.split': 'Gegenüber dem Vorjahr {g}: davon {r} durch die Raumtemperatur ({k}), {v} Mehr-/Minderverbrauch.',
+    'ch.scatter': 'Verbrauch je Tag über Gradtage', 'ch.x_dd': 'Gradtage je Tag (Kd)', 'ch.days': 'Tage', 'ch.periods': 'Ableseperioden (Mittel je Tag)',
+    'ch.stove_days': 'Ofentage', 'ch.hp_days': 'Klimatage', 'ch.line': 'Gerade: {ww} + {k} × Gradtage',
+    'ch.cost': 'Kosten der Periode', 'ch.ist': 'Kosten bisher', 'ch.fc': 'Prognose', 'ch.adv': 'Abschläge',
+    'g.input': 'Eingesetzt', 'g.heat': 'Wärme', 'g.heat_est': 'Wärme (geschätzt)', 'g.avoided': 'Entlastung', 'g.not_learned': 'noch nicht gelernt',
+    'g.hours': 'Betrieb', 'g.wood': 'Holz (geschätzt)', 'g.title': 'Wärmeerzeuger in dieser Periode',
+    'g.kind.gas_boiler': 'Gastherme', 'g.kind.air_air_hp': 'Split-Klima', 'g.kind.water_hp': 'Wärmepumpe', 'g.kind.district_heating': 'Fernwärme',
+    'g.kind.fireplace': 'Kaminofen', 'g.kind.electric': 'Elektroheizung', 'in.ww': 'WW-Grundlast', 'in.days': 'Tage im Modell', 'in.r2': 'Bestimmtheit R²',
     'in.an_pending': 'Der Kennwert erscheint, sobald die Integration genug Tage mit unterschiedlicher Außentemperatur gesehen hat.',
   });
   TC.addStrings('en', {
@@ -556,7 +681,16 @@ svg.ch{display:block;width:100%;height:auto}
     'dlg.cancel': 'Cancel', 'dlg.save': 'Save', 'dlg.saved': 'Saved.',
     'dlg.invalid': 'Please enter an amount (0 or more) and a date.',
     'in.no_heat': '<b>No heat meter.</b> The analysis needs a gas or district heating meter in the integration.',
-    'in.learning': 'Being learned', 'in.kw_learned': 'learned from daily values', 'in.ww': 'Hot water baseload', 'in.days': 'Days in the model', 'in.r2': 'Coefficient of determination R²',
+    'in.learning': 'Being learned', 'in.kw_learned': 'learned from daily values',
+    'in.kw_indoor': 'Heat coefficient (indoor-adjusted)', 'in.pct_k': '{p} % per kelvin room temperature',
+    'in.split': 'Compared with last year {g}: of which {r} due to room temperature ({k}), {v} more/less consumption.',
+    'ch.scatter': 'Consumption per day over degree days', 'ch.x_dd': 'Degree days per day (Kd)', 'ch.days': 'Days', 'ch.periods': 'Reading periods (mean per day)',
+    'ch.stove_days': 'Stove days', 'ch.hp_days': 'Air-con days', 'ch.line': 'Line: {ww} + {k} × degree days',
+    'ch.cost': 'Costs of the period', 'ch.ist': 'Costs so far', 'ch.fc': 'Forecast', 'ch.adv': 'Advances',
+    'g.input': 'Input', 'g.heat': 'Heat', 'g.heat_est': 'Heat (estimated)', 'g.avoided': 'Relief', 'g.not_learned': 'not learned yet',
+    'g.hours': 'Operation', 'g.wood': 'Wood (estimated)', 'g.title': 'Heat generators in this period',
+    'g.kind.gas_boiler': 'Gas boiler', 'g.kind.air_air_hp': 'Split air-con', 'g.kind.water_hp': 'Heat pump', 'g.kind.district_heating': 'District heating',
+    'g.kind.fireplace': 'Wood stove', 'g.kind.electric': 'Electric heating', 'in.ww': 'Hot water baseload', 'in.days': 'Days in the model', 'in.r2': 'Coefficient of determination R²',
     'in.an_pending': 'The coefficient appears once the integration has seen enough days with different outdoor temperatures.',
   });
 
@@ -716,7 +850,14 @@ svg.ch{display:block;width:100%;height:auto}
     const hh = card._meta && card._meta.haushalte && card._meta.haushalte[0];
     if (!hh) return null;
     const want = Array.isArray(card._c.zaehler) && card._c.zaehler.length ? card._c.zaehler : null;
-    return hh.zaehler.find((m) => (want ? want.includes(m.device_id) || want.includes(m.zaehler_id) : m.rolle === 'main' && HEAT.includes(m.medium))) || null;
+    if (want) return hh.zaehler.find((m) => want.includes(m.device_id) || want.includes(m.zaehler_id)) || null;
+    const heat = hh.zaehler.find((m) => m.rolle === 'main' && HEAT.includes(m.medium));
+    if (heat) return heat;
+    // ohne Gas/Fernwärme: Stromzähler mit Wärmepumpe/Split-Klima (eigener Zähler zuerst, sonst Haushaltsstrom)
+    const gens = (hh.waermeerzeuger || []).filter((g) => ['water_hp', 'air_air_hp', 'electric'].includes(g.typ));
+    const own = gens.map((g) => g.zaehler_id).filter(Boolean);
+    return hh.zaehler.find((m) => own.includes(m.zaehler_id))
+      || (gens.some((g) => g.am_haushaltsstrom) ? hh.zaehler.find((m) => m.rolle === 'main' && m.medium === 'strom') : null) || null;
   };
 
   // Felder der Sensor-Karte aus den Sensoren der Integration (Verlauf und Darstellung wie bisher)
@@ -725,11 +866,19 @@ svg.ch{display:block;width:100%;height:auto}
     if (!m) return null;
     const s = m.sensoren || {};
     const c = card._c;
+    // Warmwasser-Kachel nur, wenn Warmwasser über diese Heizung läuft
+    const wwOn = m.ww_heizung !== false; // entscheidet die Integration (Regel 2)
+    const extras = [];
+    if (s.ww_grundlast && wwOn) extras.push({ name: TC.T('in.ww'), entity: s.ww_grundlast, unit: 'kWh/d', decimals: 1 });
+    if (s.kennwert_temperaturbereinigt && TC.num(card._h, s.kennwert_temperaturbereinigt) !== null) {
+      extras.push({ name: TC.T('in.kw_indoor'), entity: s.kennwert_temperaturbereinigt, unit: 'kWh/Kd', decimals: 2 });
+    }
     return {
       kennwert: s.kennwert,
-      color: (c.colors || {})[m.medium] || c.color,
+      // Farbe des Mediums (Hex aus colors/color, sonst die Standardfarbe als #rrggbb)
+      color: (c.colors || {})[m.medium] || c.color || '#' + (TC.MEDIA[m.medium] || TC.MEDIA.gas).color.split(',').map((x) => Number(x).toString(16).padStart(2, '0')).join(''),
       months: c.months, history: c.history,
-      extras: s.ww_grundlast ? [{ name: TC.T('in.ww'), entity: s.ww_grundlast, unit: 'kWh/d', decimals: 1 }] : [],
+      extras,
       pending_text: TC.T('in.an_pending'), wait_text: TC.T('in.learning'), kw_caption: TC.T('in.kw_learned'),
     };
   };
@@ -749,17 +898,115 @@ svg.ch{display:block;width:100%;height:auto}
     const s = m.sensoren || {};
     if (Object.values(s).some((id) => !h.states[id])) I.load(card, true);
     const a = I.analyseConfig(card);
-    const qs = (st(h, s.prognose_qualitaet) || {}).state;
+    // Qualität des Kennwerts (Attribute des Kennwert-Sensors; bei Gas gleich der Prognose-Qualität)
+    const kq = attr(h, s.kennwert, 'confidence');
+    const qs = kq || (st(h, s.prognose_qualitaet) || {}).state;
     const quality = QUAL.includes(qs) ? qs : 'unzureichend';
-    const days = attr(h, s.prognose_qualitaet, 'sample_count');
-    const r2 = attr(h, s.prognose_qualitaet, 'r_squared');
+    const days = kq ? attr(h, s.kennwert, 'sample_count') : attr(h, s.prognose_qualitaet, 'sample_count');
+    const r2 = kq ? attr(h, s.kennwert, 'r_squared') : attr(h, s.prognose_qualitaet, 'r_squared');
     const facts = [t('in.quality', { q: t('q.' + quality) })];
     if (typeof days === 'number') facts.push(`${t('in.days')}: ${days}`);
     if (typeof r2 === 'number') facts.push(`${t('in.r2')}: ${TC.nf(r2, 2)}`);
     // Verlauf erst laden, wenn die Zuordnung da ist
     if (!card._histKey) TC.loadHistory(card, a);
+    I.loadSeries(card, m.zaehler_id);
+    const hints = [];
+    const pct = attr(h, s.kennwert_temperaturbereinigt, 'prozent_je_kelvin');
+    const pctQ = attr(h, s.kennwert_temperaturbereinigt, 'prozent_je_kelvin_qualitaet');
+    if (typeof pct === 'number' && pctQ && pctQ !== 'annahme') hints.push(esc(t('in.pct_k', { p: TC.nf(pct, 1) })));
+    const split = attr(h, s.kennwert_temperaturbereinigt, 'vorjahr');
+    if (split && typeof split.gesamt_pct === 'number') {
+      const sg = (v) => (v >= 0 ? '+' : '−') + TC.nf(Math.abs(v), 1) + ' %';
+      hints.push(esc(t('in.split', { g: sg(split.gesamt_pct), r: sg(split.raumtemperatur_pct), v: sg(split.verhalten_pct),
+        k: (split.innen_aenderung_k >= 0 ? '+' : '−') + TC.nf(Math.abs(split.innen_aenderung_k), 1) + ' K' })));
+    }
     return head(`<small>${esc(m.name)}</small>`) + TC.analysisHtml(a, h, card._hist, t('an.kennwert'), '')
-      + `<div class="qual">${esc(facts.join(' · '))}</div>`;
+      + `<div class="qual">${esc(facts.join(' · '))}</div>`
+      + hints.map((x) => `<div class="hint">${x}</div>`).join('')
+      + I.seriesHtml(card, m) + I.genHtml(card);
+  };
+
+  // Reihen für die Diagramme (Streudiagramm, Kostenverlauf): gedrosselt wie die Zuordnung
+  I.loadSeries = async (card, meterId) => {
+    const h = card._h;
+    if (!h || typeof h.callWS !== 'function' || card._seriesLoading || card._c.diagramme === false) return;
+    if (card._seriesAt && card._seriesKey === meterId) {
+      const age = Date.now() - card._seriesAt;
+      if (age < (card._seriesErr ? 60e3 : 600e3)) return;
+    }
+    card._seriesLoading = true;
+    card._seriesKey = meterId;
+    try {
+      card._series = await h.callWS({ type: 'tarif_cockpit/reihen', zaehler: meterId });
+      card._seriesErr = null;
+    } catch (e) {
+      card._series = null;
+      card._seriesErr = e;
+    }
+    card._seriesAt = Date.now();
+    card._seriesLoading = false;
+    card._last = null;
+    card._render();
+  };
+
+  I.seriesHtml = (card, m) => {
+    const t = TC.T;
+    const r = card._series;
+    if (!r || r.zaehler_id !== m.zaehler_id) return '';
+    const med = TC.MEDIA[m.medium] || TC.MEDIA.gas;
+    const c = TC.rgbOf((card._c.colors || {})[m.medium] || card._c.color, med.color);
+    const adv = TC.rgbOf(card._c.advance_color, TC.OK);
+    let out = '';
+    const sc = r.streuung;
+    if (sc && sc.punkte && sc.punkte.length) {
+      const leg = [`<span class="leg"><i></i>${esc(sc.je_periode ? t('ch.periods') : t('ch.days'))}</span>`];
+      if (sc.punkte.some((p) => p.ofen)) leg.push(`<span class="leg"><i class="of"></i>${esc(t('ch.stove_days'))}</span>`);
+      if (sc.punkte.some((p) => p.klima)) leg.push(`<span class="leg"><i class="kl"></i>${esc(t('ch.hp_days'))}</span>`);
+      const line = sc.kennwert !== null ? t('ch.line', { ww: TC.nf(sc.ww || 0, 1), k: TC.nf(sc.kennwert, 2) }) : '';
+      out += `<div class="panel wide" style="--c:${c};--lc:${c}"><div class="chead"><span class="lbl">${esc(t('ch.scatter'))}</span>${leg.join('')}</div>`
+        + TC.svgScatter(sc)
+        + `<div class="qual">${esc([line, t('in.quality', { q: t('q.' + sc.qualitaet) }), sc.r2 !== null ? `R² ${TC.nf(sc.r2, 2)}` : ''].filter(Boolean).join(' · '))}</div></div>`;
+    }
+    const k = r.kosten;
+    if (k && (k.ist.length || k.abschlaege.length)) {
+      const leg = `<span class="leg"><i class="ist"></i>${esc(t('ch.ist'))}</span>`
+        + (k.prognose.length ? `<span class="leg"><i class="fc"></i>${esc(t('ch.fc'))}</span>` : '')
+        + (k.abschlaege.length ? `<span class="leg"><i class="st"></i>${esc(t('ch.adv'))}</span>` : '');
+      out += `<div class="panel wide" style="--c:${c};--adv:${adv}"><div class="chead"><span class="lbl">${esc(t('ch.cost'))}</span>${leg}</div>${TC.svgCumul(k)}</div>`;
+    }
+    return out;
+  };
+
+  // Kacheln je Wärmeerzeuger: Eingang, Wärme, Entlastung (mit Qualität), Betrieb; Ofen zusätzlich Holz
+  I.genHtml = (card) => {
+    const h = card._h;
+    const t = TC.T;
+    const hh = card._meta && card._meta.haushalte && card._meta.haushalte[0];
+    const gens = (hh && hh.waermeerzeuger) || [];
+    if (!gens.length || card._c.erzeuger === false) return '';
+    const kwh = (v) => (v === null ? '—' : TC.nf(v, 0) + ' kWh');
+    // Entlastung nur, wenn es einen Wärmezähler gibt, der entlastet werden kann (Gas, Fernwärme)
+    const relievable = hh.zaehler.some((m) => m.rolle === 'main' && HEAT.includes(m.medium));
+    const items = gens.map((g) => {
+      const s = g.sensoren || {};
+      const hours = val(h, s.betriebsstunden);
+      if (g.typ === 'fireplace' && !(hours > 0)) return ''; // Ofen-Kachel nur, wenn der Ofen gelaufen ist
+      const input = val(h, s.energie_eingang), heat = val(h, s.waerme), avoided = val(h, s.entlastung);
+      const est = attr(h, s.waerme, 'geschaetzt');
+      const aq = attr(h, s.entlastung, 'qualitaet');
+      const rows = [];
+      if (input !== null) rows.push([t('g.input'), kwh(input)]);
+      if (heat !== null) rows.push([est ? t('g.heat_est') : t('g.heat'), kwh(heat)]);
+      if (relievable && ['fireplace', 'air_air_hp', 'water_hp', 'electric'].includes(g.typ)) {
+        rows.push([t('g.avoided'), avoided === null ? `<small>${esc(t('g.not_learned'))}</small>` : `${kwh(avoided)} <small>${esc(t('q.' + (aq || 'annahme')))}</small>`]);
+      }
+      if (hours !== null) rows.push([t('g.hours'), `${TC.nf(hours, 0)} h · ${TC.nf(val(h, s.betriebstage) || 0, 0)} d`]);
+      const kg = val(h, s.holz_geschaetzt), cost = val(h, s.holzkosten_geschaetzt);
+      if (kg !== null) rows.push([t('g.wood'), `${TC.nf(kg, 0)} kg${cost !== null ? ' · ' + money(cost) : ''}`]);
+      if (!rows.length) return '';
+      return `<div class="gen"><div class="gh"><span>${esc(g.name)}</span><small>${esc(t('g.kind.' + g.typ))}</small></div><dl>${rows.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${b}</dd>`).join('')}</dl></div>`;
+    }).join('');
+    return items ? `<div class="chead"><span class="lbl">${esc(t('g.title'))}</span></div><div class="gens">${items}</div>` : '';
   };
 
   // ---------------------------------------------------------------- Abschlagsdialog (Entscheidung B)
@@ -1657,7 +1904,7 @@ svg.ch{display:block;width:100%;height:auto}
     const draw = (meta) => {
       box.innerHTML = '';
       const hh = meta && meta.haushalte && meta.haushalte[0];
-      const mains = hh ? hh.zaehler.filter(pick) : [];
+      const mains = hh ? hh.zaehler.filter((m) => pick(m, hh)) : [];
       box.appendChild(el('div', 'font-weight:600;margin:8px 0 4px', t('ei.meters')));
       if (!mains.length) box.appendChild(el('div', 'opacity:.7', t('ei.none')));
       const chosen = Array.isArray(cfg.zaehler) && cfg.zaehler.length ? cfg.zaehler : single ? mains.slice(0, 1).map((m) => m.device_id) : mains.map((m) => m.device_id);
@@ -1675,7 +1922,7 @@ svg.ch{display:block;width:100%;height:auto}
       });
       box.appendChild(el('div', 'font-weight:600;margin:12px 0 4px', t('ei.title')));
       const ti = el('input', 'width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid var(--divider-color,#555);background:var(--card-background-color,#111);color:var(--primary-text-color,#fff);font:inherit');
-      ti.value = cfg.title || ''; ti.placeholder = t('card.title');
+      ti.value = cfg.title || ''; ti.placeholder = t((opts && opts.titleKey) || 'card.title');
       ti.addEventListener('change', () => { const next = Object.assign({}, api.config(), { integration: true, title: ti.value }); if (!ti.value) delete next.title; api.emit(next); });
       box.appendChild(ti);
       box.appendChild(el('div', 'font-weight:600;margin:12px 0 4px', t('ei.theme')));
@@ -1890,7 +2137,8 @@ svg.ch{display:block;width:100%;height:auto}
   };
 
   TC.defineEditor('tarif-cockpit-analyse-card-editor', {
-    integTab: TC.integTab({ single: true, filter: (m) => m.rolle === 'main' && ['gas', 'fernwaerme', 'waerme'].includes(m.medium) }),
+    integTab: TC.integTab({ single: true, titleKey: 'an.title', filter: (m, hh) => m.rolle === 'main' && (['gas', 'fernwaerme', 'waerme'].includes(m.medium)
+      || (m.medium === 'strom' && (hh.waermeerzeuger || []).some((g) => ['water_hp', 'air_air_hp', 'electric'].includes(g.typ) && (g.zaehler_id === m.zaehler_id || g.am_haushaltsstrom)))) }),
     needsSetup: (c) => !(c.kennwert || c.consumption),
     steps,
     form,

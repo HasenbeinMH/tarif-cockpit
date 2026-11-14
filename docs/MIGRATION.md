@@ -1,5 +1,13 @@
 # Migration
 
+## 0.7 → 0.8: Wärmeerzeuger (optional)
+
+Update einspielen, neu starten, Browser-Cache leeren. Es ist nichts umzustellen: Einträge, Zähler und Karten laufen unverändert weiter.
+
+Neu und optional: Beim Eintrag „Tarif-Cockpit“ → **Wärmeerzeuger hinzufügen** (Gastherme, Wärmepumpe, Split-Klima, Kaminofen …). Wer einen Kaminofen hat und dessen Betrieb schon über eine Entität erkennt (z. B. `binary_sensor.kaminofen_lauft`), wählt diese als Betriebszustand; die Integration zählt dann Ofenstunden und Ofentage selbst. Helfer und Automationen dafür werden später überflüssig; abschalten erst nach einem Parallelbetrieb. Ofenstunden gibt es ab der Einrichtung (plus die wenigen Tage, die der Recorder noch im Verlauf hat).
+
+Geändert hat sich: Hast du beim Haushalt angegeben, dass Warmwasser nicht über die Heizung läuft (Durchlauferhitzer/Boiler oder Wärmepumpe; Solarthermie zählt als unterstützend, dort bleibt es wie bisher), schätzt die Gasregression keine Warmwasser-Grundlast mehr. Der Kennwert kann sich dadurch leicht ändern.
+
 ## 0.6 → 0.7: Karte auf die Integration umstellen
 
 Update einspielen, Home Assistant neu starten, Browser-Cache leeren (Strg+F5). Der Eintrag wird automatisch auf 1.4 migriert; die Antworten zum Haushalt (Heizung, Warmwasser, PV/Speicher/Wallbox, Eigentümer/Mieter, Rhythmus) sind danach leer und lassen sich unter **Konfigurieren** am Eintrag nachtragen. Gespeicherte Zähler, Verträge, Ablesungen, Preise und Abschläge bleiben unverändert.
