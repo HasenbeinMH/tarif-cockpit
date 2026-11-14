@@ -20,6 +20,9 @@ from homeassistant.util import dt as dt_util
 
 from . import TarifConfigEntry
 from .const import DOMAIN, VERSION, signal_updated
+from .engine import billing
+
+NOTICE_HINT_DAYS = 42  # Hinweis in der Karte ab sechs Wochen vor dem letzten Kündigungstag
 from .engine.consumption import latest_reading
 from .engine.balance import MeterResult
 from .engine.generators import GeneratorResult
@@ -115,6 +118,16 @@ class PeriodEndSensor(TarifSensor):
             "tarif": contract.tariff if contract else None,
             "tage_bis_ende": (spec.end_date - today).days,
         }
+        current = billing.contract_on(self.rt.contracts(self.meter.meter_id), today)
+        if current is not None:
+            deadline, end, kind = billing.notice_deadline(current, today)
+            self._attr_extra_state_attributes.update({
+                "kuendigung_bis": deadline.isoformat() if deadline else None,
+                "tage_bis_kuendigung": (deadline - today).days if deadline else None,
+                "kuendigung_hinweis": bool(deadline and 0 <= (deadline - today).days < NOTICE_HINT_DAYS),
+                "vertragsende": end.isoformat() if end else None,
+                "kuendigung": kind,
+            })
 
 
 class LastReadingSensor(TarifSensor):
@@ -305,6 +318,12 @@ class ForecastCostSensor(ResultSensor):
     def value(self, res):
         return res.balance.forecast_cost if res.balance else None
 
+    def attributes(self, res):
+        attrs = super().attributes(res)
+        if res.balance is not None and res.balance.forecast_cost_cold is not None:
+            attrs.update(kalt=res.balance.forecast_cost_cold, warm=res.balance.forecast_cost_warm)
+        return attrs
+
 
 class SaldoSensor(ResultSensor):
     key = "saldo"
@@ -312,6 +331,12 @@ class SaldoSensor(ResultSensor):
 
     def value(self, res):
         return res.balance.saldo if res.balance else None
+
+    def attributes(self, res):
+        attrs = super().attributes(res)
+        if res.balance is not None and res.balance.saldo_cold is not None:
+            attrs.update(saldo_kalt=res.balance.saldo_cold, saldo_warm=res.balance.saldo_warm)
+        return attrs
 
 
 class VerdictSensor(ResultSensor):

@@ -95,6 +95,16 @@ add_folgevertrag:
           step: 0.1
           unit_of_measurement: "%"
           mode: box
+    mindestlaufzeit:
+      selector:
+        number:
+          min: 0
+          max: 120
+    kuendigungsfrist:
+      selector:
+        number:
+          min: 0
+          max: 104
     wechselstand:
       selector:
         number:
@@ -322,3 +332,38 @@ recalculate:
     bis:
       selector:
         date:
+
+uebernahme_v03:
+  fields:
+    zaehler:
+      required: true
+      selector:
+        device:
+          integration: tarif_cockpit
+    ab:
+      selector:
+        date:
+    abschlag:
+      selector:
+        entity:
+    zahltag:
+      selector:
+        entity:
+    arbeitspreis:
+      selector:
+        entity:
+    grundpreis:
+      selector:
+        entity:
+    startstand:
+      selector:
+        entity:
+    abrechnungsbeginn:
+      selector:
+        entity:
+    brennwert:
+      selector:
+        entity:
+    zustandszahl:
+      selector:
+        entity:

@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.0 – 2026-11-14
+
+**Stabile Version.** Abnahme: Integrationstests auf HA 2026.11 und der kleinsten unterstützten Version grün, Abnahme-Durchlauf in einer frischen Home-Assistant-Instanz einschließlich der Übernahme aus 0.3.
+
+### Neu
+- **Wettervorhersage** für die Rest-Gradtage der Wärmeprognose (`weather.get_forecasts`, nach dem Tageslauf und alle 6 Stunden), danach das **Mehrjahresmittel** (bis drei Jahre) statt nur des Vorjahres.
+- **Band kalt/mild:** Restmenge, Prognose-Kosten und Saldo, wenn der Rest wie im kältesten bzw. wärmsten Vorjahr wird (ab zwei Vorjahren). Zeile in der Tarifübersicht.
+- **Archiv** jeder beendeten Periode: vorläufig beim Periodenwechsel, endgültig mit Endablesung (±10 Tage), Rechnung oder nach 60 Tagen; danach unveränderlich. Prognose-Schnappschüsse mit Saldo und Urteil.
+- **Prognose gegen Realität** als Tabelle in der Auswertungskarte (`archiv: false` blendet sie aus), neuer WebSocket-Befehl `tarif_cockpit/archiv`.
+- **Event `tarif_cockpit_urteil_geaendert`** bei Urteilswechsel innerhalb einer Periode.
+- **Kündigungsfrist:** Mindestlaufzeit und Kündigungsfrist im Vertrag (Dialog, Anbieterwechsel, `add_folgevertrag`), neuer Menüpunkt **Vertrag ändern**, Attribute am Sensor „Periodenende“, Hinweis unter Reparaturen und Event `tarif_cockpit_kuendigungsfrist` (28 Tage vorher und am letzten Tag), Hinweis in der Karte ab sechs Wochen.
+- **Aktion `uebernahme_v03`:** Helfer der Template-Version 0.3 in einen Zähler übernehmen, mit Antwort übernommen/übersprungen. Anleitung in [docs/MIGRATION.md](docs/MIGRATION.md).
+- **Diagnose** vollständig (Perioden mit Archiv, Preise, Pläne, Zahlungen, Schnappschüsse, Ergebnisse, Erzeuger, Abgleich); Entitäts-IDs, Namen, Lieferanten und Notizen geschwärzt.
+- [docs/AUTOMATIONEN.md](docs/AUTOMATIONEN.md): Benachrichtigung bei Urteilswechsel und Kündigungsfrist, Ablesung per Telegram, Ablese-Erinnerung.
+- README mit Tabelle der unterstützten Voraussetzungen, Events, Archiv und Diagnose. Testseiten-Szenario `archiv`, Abnahme-Schritt `uebernahme`.
+
+### Geändert
+- Perioden, die während einer Pause von Home Assistant geendet haben, werden beim Start archiviert.
+- `set_periodenende` lehnt endgültig abgeschlossene Perioden ab.
+
 ## 0.9.0 – 2026-11-14
 
 **Impulszähler und Abgleich mit Ablesungen.** Abnahme: Abgleich-Test mit verlorenen Impulsen grün (5 % fehlende Impulse: Faktor 1,0526, angeglichene Tageswerte summieren sich exakt auf die Ablesung, fehlende Tage bleiben fehlend, Hinweis ab 2 %).

@@ -1,5 +1,5 @@
 /* Testdaten für die Testseiten: nachgebautes hass-Objekt und Szenarien. Wird vor ../custom_components/tarif_cockpit/frontend/tarif-cockpit.js geladen.
-   URL-Parameter: scene (haus, miete, wasser, nachzahlung, ohne, leer, en, integration, lernt, heizung, waermepumpe, fernwaerme), user (kein Admin), theme, shot (ohne Knopfleiste), narrow */
+   URL-Parameter: scene (haus, miete, wasser, nachzahlung, ohne, leer, en, integration, lernt, heizung, waermepumpe, impulse, archiv, fernwaerme), user (kein Admin), theme, shot (ohne Knopfleiste), narrow */
 (() => {
   // Platzhalter für HA-Elemente
   if (!customElements.get('ha-icon')) customElements.define('ha-icon', class extends HTMLElement { connectedCallback() { this.textContent = '●'; this.style.fontSize = '10px'; } });
@@ -232,6 +232,24 @@
       series: { zaehler_id: 'f1', streuung: scatterData(5.1, 6.2, false, false), kosten: costData('2026-01-01', '2026-12-31', '2026-11-13', 110, 140) },
     },
   };
+  // ---- 1.0: Archiv (Prognose gegen Realität), Band kalt/warm, Kündigungsfrist
+  const ARCH = { zaehler_id: 'm2', waehrung: 'EUR', perioden: [{ beginn: '2025-08-15', ende: '2026-08-14', status: 'closed', archiv: {
+    stand: 'abgeschlossen', grund: 'endablesung', beginn: '2025-08-15', ende: '2026-08-14', menge: 14820, saldo: 143.2, urteil: 'rueckzahlung',
+    kosten: { gesamt: 1956.8, arbeit: 1712.4, grund: 244.4, fest: 0, leistung: 0, abwasser: 0, vollstaendig: true },
+    prognose_gegen_realitaet: [
+      { datum: '2025-09-01', prognose_kosten: 2240, prognose_saldo: -140, qualitaet: 'vorlaeufig', abweichung: 283.2, abweichung_pct: 14.5 },
+      { datum: '2025-12-01', prognose_kosten: 2105, prognose_saldo: -5, qualitaet: 'gut', abweichung: 148.2, abweichung_pct: 7.6 },
+      { datum: '2026-03-01', prognose_kosten: 1990, prognose_saldo: 110, qualitaet: 'gut', abweichung: 33.2, abweichung_pct: 1.7 },
+      { datum: '2026-06-01', prognose_kosten: 1962, prognose_saldo: 138, qualitaet: 'sehr_gut', abweichung: 5.2, abweichung_pct: 0.3 },
+      { datum: '2026-08-14', prognose_kosten: 1958, prognose_saldo: 142, qualitaet: 'sehr_gut', abweichung: 1.2, abweichung_pct: 0.1 },
+    ] } }] };
+  HEAT_SCENES.archiv = Object.assign({}, HEAT_SCENES.heizung, {
+    archive: ARCH,
+    states: Object.assign({}, HEAT_SCENES.heizung.states, {
+      [sid('gas', 'saldo')]: S(-332.9, 'EUR', 'Gas Saldo', Object.assign({ saldo_kalt: -515.4, saldo_warm: -164.0 }, EUR)),
+      [sid('gas', 'periode_ende')]: S('2027-08-14', '', 'Gas Periodenende', { beginn: '2026-08-15', lieferant: 'Gasversorger', kuendigung_bis: '2026-12-02', tage_bis_kuendigung: 19, kuendigung_hinweis: true, vertragsende: '2027-01-13', kuendigung: 'termin' }),
+    }),
+  });
   const heatHass = (key) => (hass) => {
     const sc = HEAT_SCENES[key];
     integHass(false)(hass);
@@ -240,6 +258,7 @@
     hass.callWS = async (m) => {
       if (m.type === 'tarif_cockpit/zaehler') return strip(meta);
       if (m.type === 'tarif_cockpit/reihen') return strip(sc.series);
+      if (m.type === 'tarif_cockpit/archiv') { if (sc.archive) return strip(sc.archive); throw new Error('not_found'); }
       return monthly(m);
     };
     return hass;
@@ -262,6 +281,7 @@
     heizung: { name: 'Gas mit Kaminofen und Split-Klima (Wärmeerzeuger, Diagramme)', states: {}, hook: heatHass('heizung'), overview: { integration: true }, analyse: { integration: true } },
     waermepumpe: { name: 'Wärmepumpe am eigenen Zähler', states: {}, hook: heatHass('waermepumpe'), overview: { integration: true }, analyse: { integration: true } },
     impulse: { name: 'Gas mit Impulszähler: Abgleich, Gasleistung, Brenner', states: {}, hook: heatHass('impulse'), overview: { integration: true }, analyse: { integration: true } },
+    archiv: { name: 'Prognose gegen Realität (Archiv), Band kalt/warm, Kündigungsfrist', states: {}, hook: heatHass('archiv'), overview: { integration: true }, analyse: { integration: true } },
     fernwaerme: { name: 'Fernwärme in MWh', states: {}, hook: heatHass('fernwaerme'), overview: { integration: true }, analyse: { integration: true } },
     en: { name: 'Englische Oberfläche', states: {}, lang: 'en', overview: Object.assign({}, legacy, { analysis: undefined, title: 'Tariffs and billing' }), analyse: Object.assign({}, analysis, { title: 'Gas, weather-adjusted', explain: undefined }) },
   };

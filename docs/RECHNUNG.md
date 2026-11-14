@@ -46,7 +46,8 @@ Vier Bereiche, strikt getrennt: **Verbrauch** (Tageswerte, Verbrauch seit Period
 
 `Rest = Kennwert × Rest-Gradtage (+ Warmwasser-Grundlast × Resttage)`
 
-- Rest-Gradtage aus dem Vorjahresfenster (mindestens 50 % der Tage, Lücken hochgerechnet).
+- Rest-Gradtage (ab 1.0): für die nächsten Tage aus der **Wettervorhersage** der Wetter-Entität (Tagesmittel aus Höchst- und Tiefstwert, mit Heizgrenze und Innenbezug des Haushalts), danach das **Mittel gleicher Kalendertage** der letzten bis zu drei Jahre; gibt es nur ein Jahr, das Vorjahr. Ein Jahr zählt, wenn mindestens 50 % seiner Tage vorhanden sind; Lücken werden hochgerechnet. Attribute `quelle` (`vorhersage+mittel`, `mittel`, `vorjahr` …) und `vorhersage_tage`.
+- **Band:** Ab zwei Vorjahren zusätzlich die Restmenge wie im kältesten bzw. wärmsten dieser Jahre (`rest_kalt`, `rest_warm`, ohne Vorhersage), daraus Prognose-Kosten und Saldo für beide Fälle (gleiche Preise, gleiche Tagesverteilung).
 - Kennwert und Warmwasser-Grundlast aus der Regression `V = WW × Tage + Kennwert × Gradtage` über die letzten 365 Tage (Tage bei Zählern mit Sensor, Ableseperioden bei Ablesungen). Warmwasser wird nur getrennt geschätzt, wenn es Tage ohne Heizbedarf gibt; sonst steckt es im Kennwert.
 - Qualität: „unzureichend“ (unter 21 Tagen bzw. 4 Perioden oder unter 5 K Spanne oder R² < 0,6), „vorläufig“ (R² ≥ 0,6), „gut“ (R² ≥ 0,8 und mindestens 42 Tage bzw. 6 Perioden), „sehr gut“ (mindestens 90 Tage, 10 K Spanne, R² ≥ 0,85).
 - **Unter „vorläufig“ gibt es keine Prognose**; eine Kennwert-Annahme wird nicht verwendet.
@@ -94,6 +95,22 @@ Die Regression ist ab 0.8 allgemein (kleinste Quadrate mit beliebig vielen Regre
 - `Abschlag passend = Prognose Kosten / Anzahl Abschläge der Periode` (wie bisher in den Template-Sensoren).
 - Prognose-Schnappschüsse werden am 1. jedes Monats und beim Wechsel in die nächste Periode (letzter Stand der beendeten Periode) eingefroren.
 - Ist der Zählerstand-Sensor gerade nicht verfügbar, gilt der Stand vom Ende des Vortags aus der Statistik; fehlt auch der, gibt es keine Kosten (nie still der Startstand).
+
+## Archiv und Prognose gegen Realität (1.0)
+
+- **Schnappschüsse:** am 1. jedes Monats und beim Periodenwechsel (erster Lauf der neuen Periode, mit dem letzten Ergebnis der alten): Prognose Menge und Kosten, Qualität, empfohlener Abschlag, Saldo und Urteil.
+- **Vorläufiges Archiv** beim Periodenwechsel bzw. beim nächsten täglichen Lauf: Kosten (gesamt, Arbeit, Grund, fest, Leistung, Abwasser), Menge, Zahlungen (Summe, Einzelposten), Saldo, Urteil, Preise des Vertrags und alle Schnappschüsse der Periode. Gerechnet wird zum Periodenende.
+- **Endgültig** (Status `closed`), wenn eine echte, gültige Ablesung am Periodenende oder bis 11 Tage danach liegt (die früheste wird `end_reading`) oder eine Rechnung des Vertrags die Periode abdeckt, frühestens aber 11 Tage nach dem Ende: Bis dahin darf das Ende mit `set_periodenende` noch verschoben werden, das Archiv bleibt vorläufig und wird täglich neu gerechnet. Spätestens 60 Tage nach dem Ende wird immer abgeschlossen; fehlt der Endstand, mit den Kosten bis zum letzten bekannten Tag (`tageswerte_bis`). Danach wird nichts mehr neu gerechnet; `set_periodenende` lehnt die Periode ab.
+- Eine Ablesung vor dem Periodenende schließt nicht ab (der Verbrauch bis zum Ende fehlt). Liest der Versorger früher ab, zuerst `set_periodenende` auf den Ablesetag setzen.
+- Mit unvollständigen Ist-Kosten bleibt die Abweichung leer; die Karte kennzeichnet die Ist-Kosten als unvollständig.
+- **Prognose gegen Realität:** je Schnappschuss `Abweichung = Prognose Kosten − tatsächliche Kosten` in € und %. Positiv = zu teuer geschätzt.
+
+## Kündigungsfrist (1.0)
+
+- Mit festem Vertragsende: letzter Kündigungstag = Vertragsende − Kündigungsfrist (Wochen).
+- Mit Mindestlaufzeit: Ende der Mindestlaufzeit = Vertragsbeginn + Monate − 1 Tag, davon die Frist abgezogen. Ist die Mindestlaufzeit vorbei, ist der Vertrag jederzeit mit der Frist kündbar (`nach_mindestlaufzeit`, kein Termin).
+- Ohne Frist bzw. Laufzeit kein Termin (`keine_angaben`). Hinweis unter Reparaturen ab 28 Tagen vorher, Event 28 Tage vorher und am letzten Tag (je Frist nur einmal, auch über Neustarts). Die Karte zeigt den Hinweis ab sechs Wochen (Attribut `kuendigung_hinweis`).
+- Mindestlaufzeit: Ende = Vertragsbeginn + Monate − 1 Tag; fehlt der Tag im Zielmonat (Beginn 31.01., 1 Monat), endet sie am Monatsletzten (§ 188 BGB).
 
 ## Abgleich mit 0.3
 

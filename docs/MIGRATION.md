@@ -1,5 +1,45 @@
 # Migration
 
+## 0.9 → 1.0
+
+Update einspielen, neu starten, Browser-Cache leeren. Umzustellen ist nichts.
+
+- Bereits beendete Perioden werden beim ersten Start archiviert (endgültig, wenn eine Endablesung oder eine Rechnung vorliegt oder das Ende mehr als 60 Tage zurückliegt; fehlt der Endstand, mit den Kosten bis zum letzten bekannten Tag). Ältere Prognose-Schnappschüsse haben noch keinen Saldo.
+- Mit Wetter-Entität im Haushalt holt die Integration alle 6 Stunden die Tagesvorhersage; die ersten Rest-Gradtage kommen dann aus ihr. Die Wärmeprognose kann sich dadurch leicht ändern.
+- Mindestlaufzeit und Kündigungsfrist sind leer. Eintragen am Zähler: Neu konfigurieren → **Vertrag ändern**.
+
+## Von 0.3 (Template-Sensoren) auf 1.0
+
+Die Template-Version 0.3 rechnete mit Helfern (`input_number`, `input_datetime`), Template-Sensoren und einer täglichen Automation. 1.0 rechnet alles in der Integration. Die Werte aus den Helfern überträgt die Aktion `tarif_cockpit.uebernahme_v03`.
+
+1. **Marketplace umstellen:** Ist Tarif-Cockpit noch als **Dashboard** eingetragen, entfernen und als **Integration** neu hinzufügen (siehe [0.4 → 0.5](#04--05-von-der-dashboard-karte-zur-integration)). Neu starten.
+2. **Haushalt anlegen:** Einstellungen → Geräte & Dienste → Integration hinzufügen → Tarif-Cockpit. Außentemperatur und Wetter-Entität angeben, falls vorhanden.
+3. **Zähler anlegen** (Strom, Gas, Wasser): Zählerstand-Sensor oder Impulszähler, Vertrag mit Abrechnungsbeginn und Regel. Preise und Abschlag kannst du grob eintragen; die Aktion überschreibt sie zum selben Datum. Hat der Sensor keine Jahreshistorie: **Ersatzquelle für fehlende Historie** (die Entität, aus der die alte Automation die Vorjahreswerte holte).
+4. **Aktion aufrufen** je Zähler (Entwicklerwerkzeuge → Aktionen, YAML-Modus):
+   ```yaml
+   action: tarif_cockpit.uebernahme_v03
+   data:
+     zaehler: 1a2b3c…                                # Gerät „Gas“ des Tarif-Cockpits
+     abschlag: input_number.abschlag_gas
+     zahltag: input_number.zahltag_gas
+     arbeitspreis: input_number.gas_arbeitspreis
+     grundpreis: input_number.gas_grundpreis
+     startstand: input_number.abrechnung_gas_startstand
+     abrechnungsbeginn: input_datetime.abrechnung_gas_beginn
+     brennwert: input_number.gas_brennwert
+     zustandszahl: input_number.gas_zustandszahl
+   ```
+   Die Namen sind Beispiele; nimm deine Helfer. Alle Felder außer `zaehler` sind optional. Werte gelten ab `ab`, sonst ab dem Abrechnungsbeginn bzw. dem Beginn der laufenden Periode. Die Antwort listet, was übernommen und was übersprungen wurde (z. B. „kein Zahlenwert“, „schon vorhanden“, ein anderer Stand zum selben Zeitpunkt, Abrechnungsbeginn passt nicht zur Periode). Ein vorhandener Preisabschnitt wird ergänzt, nicht ersetzt: Fehlt der Grundpreis-Helfer, bleibt der Grundpreis aus der Einrichtung. Ein Startstand wird nie doppelt angelegt.
+5. **Zwei Wochen Parallelbetrieb:** neue Sensoren (`sensor.<zähler>_kosten_bisher`, `_abschlage_bisher`, `_prognose_kosten`, `_saldo`) mit den Template-Sensoren vergleichen. Strom und Kosten sollten auf ±1 % passen. Gas zeigt erst eine Prognose, wenn ein eigener Kennwert gelernt ist (keine feste Annahme mehr).
+6. **Abschalten**, wenn alles passt:
+   - die tägliche Automation (Vorjahreswerte, Prognose),
+   - die Template-Sensoren für Kosten, Abschläge, Prognose, Saldo und Kennwert,
+   - die Helfer für Preise, Abschlag, Zahltag, Startstand, Abrechnungsbeginn, Brennwert und Zustandszahl,
+   - eine Ablesung per Telegram o. Ä. auf `tarif_cockpit.add_ablesung` umstellen ([AUTOMATIONEN.md](AUTOMATIONEN.md#ablesung-per-telegram)).
+7. **Karten:** `integration: true` in beiden Karten (siehe [0.6 → 0.7](#06--07-karte-auf-die-integration-umstellen)).
+
+Preis- und Abschlagsänderungen laufen danach über „Neu konfigurieren“ am Zähler oder die Aktionen `set_preis` und `set_abschlag`.
+
 ## 0.8 → 0.9: Impulszähler und Abgleich
 
 Update einspielen, neu starten, Browser-Cache leeren. Umzustellen ist nichts. Beim ersten Start gleicht die Integration alle Zähler mit Sensor mit den vorhandenen echten Ablesungen ab: Tageswerte (auch ältere) können sich dadurch ändern und als „geschätzt“ erscheinen, „Kosten bisher“ bezieht sich auf die letzte Ablesung. Beendete, eingefrorene Perioden bleiben unverändert.

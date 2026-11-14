@@ -108,12 +108,44 @@ def submeter_forecast(sub_values: Mapping[date, float | None], known_day: date, 
                     method="mittel_30_tage", details={"tage": len(got), "mittel_je_tag": round(avg, 3)})
 
 
+MAX_YEARS = 3
+
+
+def expected_degree_days(
+    values: Mapping[date, float | None], days: list[date], forecast_dd: Mapping[date, float] | None = None
+) -> tuple[dict[date, float | None], str, list[float]]:
+    """Erwartete Gradtage je Resttag: Wettervorhersage für die nächsten Tage, danach das Mittel gleicher Kalendertage der
+    letzten (bis zu 3) Jahre; nur ein Jahr vorhanden: das Vorjahr. Liefert die Werte, die Quelle und die Summen je Vorjahr
+    (für das Band kalt/warm; nur Jahre mit ausreichender Abdeckung)."""
+    forecast_dd = forecast_dd or {}
+    years: list[dict[date, float | None]] = [{d: values.get(add_years(d, -y)) for d in days} for y in range(1, MAX_YEARS + 1)]
+    usable_years = [yv for yv in years if sum(1 for v in yv.values() if v is not None) >= MIN_COVERAGE_DEGREE_DAYS * len(days)]
+    out: dict[date, float | None] = {}
+    for d in days:
+        if d in forecast_dd:
+            out[d] = forecast_dd[d]
+            continue
+        vals = [yv[d] for yv in usable_years if yv.get(d) is not None]
+        out[d] = sum(vals) / len(vals) if vals else None
+    year_totals = []
+    for yv in usable_years:
+        # Vorhersagetage gelten in jedem Jahr, damit das Band die Prognose einschließt
+        ws = window_sum({**yv, **{d: forecast_dd[d] for d in days if d in forecast_dd}}, days[0], days[-1], MIN_COVERAGE_DEGREE_DAYS) if days else None
+        if ws is not None and ws.total is not None:
+            year_totals.append(ws.total)
+    src = "vorjahr" if len(usable_years) <= 1 else "mittel"
+    if any(d in forecast_dd for d in days):
+        src = "vorhersage+" + src
+    return out, src, year_totals
+
+
 def heat_forecast(
     model: HeatModel,
     prev_degree_days: Mapping[date, float | None],
     known_day: date,
     period_end: date,
     relief_per_dd: float = 0.0,
+    forecast_dd: Mapping[date, float] | None = None,
 ) -> Forecast:
     """Wärme-Prognose in kWh: Kennwert × Rest-Gradtage aus dem Vorjahresfenster (+ WW × Resttage).
 
@@ -124,7 +156,7 @@ def heat_forecast(
         return Forecast(rest=0.0, quality=model.confidence, method="periode_beendet")
     if not model.usable:
         return Forecast(quality=model.confidence, details={"grund": "kein belastbarer Kennwert", **model.as_dict()})
-    shifted = _shift_back(prev_degree_days, rest_days)
+    shifted, source, year_totals = expected_degree_days(prev_degree_days, rest_days, forecast_dd)
     dd = window_sum(shifted, rest_days[0], rest_days[-1], MIN_COVERAGE_DEGREE_DAYS)
     if dd.total is None:
         return Forecast(quality=model.confidence, details={"grund": "Gradtage des Vorjahres fehlen"})
@@ -134,7 +166,12 @@ def heat_forecast(
     by_day = _spread(k_eff * dd.total, rest_days, shifted)
     for d in rest_days:
         by_day[d] = by_day.get(d, 0.0) + ww
-    details = {"gradtage_rest": round(dd.total, 2), "hochgerechnet": dd.scaled, **model.as_dict()}
+    details = {"gradtage_rest": round(dd.total, 2), "hochgerechnet": dd.scaled, "quelle": source,
+               "vorhersage_tage": sum(1 for d in rest_days if forecast_dd and d in forecast_dd), **model.as_dict()}
+    if len(year_totals) >= 2:
+        # Band: Restmenge wie im kältesten bzw. wärmsten der Vorjahre (die Vorhersagetage gelten in jedem Jahr)
+        details["rest_kalt"] = round(k_eff * max(year_totals) + ww * len(rest_days), 3)
+        details["rest_warm"] = round(k_eff * min(year_totals) + ww * len(rest_days), 3)
     if relief_per_dd > 0:
         details["entlastung_je_gradtag"] = round(relief_per_dd, 4)
         details["entlastung_rest"] = round((k - k_eff) * dd.total, 3)

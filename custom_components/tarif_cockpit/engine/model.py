@@ -329,6 +329,8 @@ class ForecastSnapshot:
     forecast_kwh: float | None = None
     forecast_cost: float | None = None
     recommended_advance: float | None = None
+    saldo: float | None = None  # ab 1.0
+    verdict: str | None = None  # ab 1.0
 
 
 @dataclass(slots=True)
@@ -383,6 +385,7 @@ class Dataset:
     generator_daily: list[GeneratorDaily] = field(default_factory=list)
     sensor_resets: list[SensorReset] = field(default_factory=list)  # Neustarts von Impulszählern (0.9)
     sensor_last_raw: dict[str, float] = field(default_factory=dict)  # letzter Rohstand je Impulszähler (Einheit)
+    notices_sent: list[str] = field(default_factory=list)  # gesendete Kündigungs-Events „zähler:frist:tage“ (1.0)
     # Zähler, deren Startdaten aus der Einrichtung schon übernommen wurden
     imported_meters: list[str] = field(default_factory=list)
     # Zähler, deren Tageswerte nach dem Update auf 0.6 einmal neu aus der Statistik geholt wurden (Zählerstand am Tagesende)

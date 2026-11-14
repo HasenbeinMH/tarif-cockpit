@@ -26,6 +26,10 @@
     'in.no_heat': '<b>Kein Wärmezähler.</b> Die Auswertung braucht einen Gas- oder Fernwärmezähler in der Integration.',
     'in.learning': 'Wird gelernt', 'in.kw_learned': 'gelernt aus den Tageswerten',
     'in.reconcile': 'Sensor weicht {p} von der Ablesung ab{a}.', 'in.reconciled': ', angeglichen',
+    'in.band': 'Wird der Rest so kalt wie im kältesten Vorjahr: {k}, so mild wie im wärmsten: {w}.',
+    'in.notice': 'Wer zum Vertragsende wechseln will, muss bis {d} kündigen (noch {n} Tage).',
+    'ar.title': 'Prognose gegen Realität', 'ar.prelim': 'vorläufig', 'ar.final': 'abgeschlossen',
+    'ar.actual': 'Tatsächlich {v} · Saldo {s}', 'ar.partial': 'Ist-Kosten unvollständig (Tageswerte bis {d})', 'ar.date': 'Stand', 'ar.fc': 'Prognose', 'ar.dev': 'Abweichung',
     'in.burner_h': 'Brennerlaufzeit', 'in.burner_n': 'Brennerstarts', 'in.gas_kw': 'Gasleistung',
     'in.cycling': 'Der Brenner hat gestern getaktet: Die Heizlast lag unter der kleinsten Modulationsstufe.',
     'in.kw_indoor': 'Kennwert temperaturbereinigt', 'in.pct_k': '{p} % je Kelvin Raumtemperatur',
@@ -59,6 +63,10 @@
     'in.no_heat': '<b>No heat meter.</b> The analysis needs a gas or district heating meter in the integration.',
     'in.learning': 'Being learned', 'in.kw_learned': 'learned from daily values',
     'in.reconcile': 'Sensor differs {p} from the reading{a}.', 'in.reconciled': ', adjusted',
+    'in.band': 'If the rest is as cold as the coldest previous year: {k}; as mild as the warmest: {w}.',
+    'in.notice': 'To switch at the end of the contract, cancel by {d} ({n} days left).',
+    'ar.title': 'Forecast vs. reality', 'ar.prelim': 'provisional', 'ar.final': 'final',
+    'ar.actual': 'Actual {v} · balance {s}', 'ar.partial': 'Actual costs incomplete (daily values until {d})', 'ar.date': 'As of', 'ar.fc': 'Forecast', 'ar.dev': 'Deviation',
     'in.burner_h': 'Burner run time', 'in.burner_n': 'Burner starts', 'in.gas_kw': 'Gas power',
     'in.cycling': 'The burner cycled yesterday: the heat load was below the lowest modulation level.',
     'in.kw_indoor': 'Heat coefficient (indoor-adjusted)', 'in.pct_k': '{p} % per kelvin room temperature',
@@ -166,6 +174,11 @@
     if (rc !== null && attr(h, s.abgleich, 'hinweis')) { // Schwelle entscheidet die Integration (Regel 2)
       hints.push(esc(t('in.reconcile', { p: (rc >= 0 ? '+' : '−') + TC.nf(Math.abs(rc), 1) + ' %', a: attr(h, s.abgleich, 'angeglichen') ? t('in.reconciled') : '' })));
     }
+    const signed = (v) => t(v >= 0 ? 'verdict.back' : 'verdict.extra') + ' ' + TC.eur(Math.abs(v)) + ' ' + TC.cur();
+    const sk = attr(h, s.saldo, 'saldo_kalt'), sw = attr(h, s.saldo, 'saldo_warm');
+    if (typeof sk === 'number' && typeof sw === 'number') hints.push(esc(t('in.band', { k: signed(sk), w: signed(sw) })));
+    const nd = attr(h, s.periode_ende, 'tage_bis_kuendigung');
+    if (attr(h, s.periode_ende, 'kuendigung_hinweis') && typeof nd === 'number') hints.push(esc(t('in.notice', { d: dd(attr(h, s.periode_ende, 'kuendigung_bis')), n: nd })));
     if (saldo === null && fcCost === null) {
       hints.push(esc(m.medium === 'gas' || m.medium === 'fernwaerme' ? t('in.why_heat') : t('in.why')));
     }
@@ -296,6 +309,7 @@
     // Verlauf erst laden, wenn die Zuordnung da ist
     if (!card._histKey) TC.loadHistory(card, a);
     I.loadSeries(card, m.zaehler_id);
+    I.loadArchive(card, m.device_id);
     const hints = [];
     const pct = attr(h, s.kennwert_temperaturbereinigt, 'prozent_je_kelvin');
     const pctQ = attr(h, s.kennwert_temperaturbereinigt, 'prozent_je_kelvin_qualitaet');
@@ -310,7 +324,7 @@
     return head(`<small>${esc(m.name)}</small>`) + TC.analysisHtml(a, h, card._hist, t('an.kennwert'), '')
       + `<div class="qual">${esc(facts.join(' · '))}</div>`
       + hints.map((x) => `<div class="hint">${x}</div>`).join('')
-      + I.seriesHtml(card, m) + I.genHtml(card);
+      + I.seriesHtml(card, m) + I.archiveHtml(card, m) + I.genHtml(card);
   };
 
   // Reihen für die Diagramme (Streudiagramm, Kostenverlauf): gedrosselt wie die Zuordnung
@@ -334,6 +348,44 @@
     card._seriesLoading = false;
     card._last = null;
     card._render();
+  };
+
+  // Archiv beendeter Perioden (Prognose gegen Realität), selten: alle 30 Minuten
+  I.loadArchive = async (card, deviceId) => {
+    const h = card._h;
+    if (!h || typeof h.callWS !== 'function' || card._archLoading || card._c.archiv === false) return;
+    if (card._archAt && card._archKey === deviceId && Date.now() - card._archAt < (card._archErr ? 60e3 : 1800e3)) return;
+    card._archLoading = true;
+    card._archKey = deviceId;
+    try {
+      card._arch = await h.callWS({ type: 'tarif_cockpit/archiv', zaehler: deviceId });
+      card._archErr = null;
+    } catch (e) {
+      card._arch = null;
+      card._archErr = e;
+    }
+    card._archAt = Date.now();
+    card._archLoading = false;
+    card._last = null;
+    card._render();
+  };
+
+  I.archiveHtml = (card, m) => {
+    const t = TC.T;
+    const r = card._arch;
+    if (card._c.archiv === false || !r || r.zaehler_id !== m.zaehler_id || !r.perioden || !r.perioden.length) return '';
+    const a = r.perioden[0].archiv;
+    const rows = (a.prognose_gegen_realitaet || []).filter((x) => x.prognose_kosten !== null && x.prognose_kosten !== undefined);
+    if (!rows.length || !a.kosten) return '';
+    const dev = (x) => (x.abweichung === undefined || x.abweichung === null ? '—'
+      : `${x.abweichung >= 0 ? '+' : '−'}${TC.eur(Math.abs(x.abweichung))} ${TC.cur()}${typeof x.abweichung_pct === 'number' ? ` <small>${x.abweichung_pct >= 0 ? '+' : '−'}${TC.nf(Math.abs(x.abweichung_pct), 1)} %</small>` : ''}`);
+    const saldo = a.saldo === null || a.saldo === undefined ? '—' : `${a.saldo >= 0 ? '+' : '−'}${TC.eur(Math.abs(a.saldo))} ${TC.cur()}`;
+    const stand = a.stand === 'abgeschlossen' ? t('ar.final') : t('ar.prelim');
+    return `<div class="panel wide arch"><div class="chead"><span class="lbl">${esc(t('ar.title'))}</span><span class="leg">${esc(t('period', { a: dd(a.beginn), b: dd(a.ende) }))} · ${esc(stand)}</span></div>
+      <table><thead><tr><th>${esc(t('ar.date'))}</th><th>${esc(t('ar.fc'))}</th><th>${esc(t('ar.dev'))}</th></tr></thead><tbody>
+      ${rows.map((x) => `<tr><td>${esc(dd(x.datum))}</td><td>${money(x.prognose_kosten)}</td><td>${dev(x)}</td></tr>`).join('')}
+      </tbody></table><div class="qual">${esc(t('ar.actual', { v: TC.eur(a.kosten.gesamt) + ' ' + TC.cur(), s: saldo }))}</div>`
+      + (a.tageswerte_bis || !a.kosten.vollstaendig ? `<div class="hint">${esc(t('ar.partial', { d: dd(a.tageswerte_bis || a.ende) }))}</div>` : '') + '</div>';
   };
 
   I.seriesHtml = (card, m) => {
@@ -464,6 +516,11 @@
 
   I.CSS = `
 .qual{margin-top:8px;font-size:.66rem;color:rgba(var(--mut),.9);text-transform:uppercase;letter-spacing:.06em}
+.arch table{width:100%;border-collapse:collapse;font-size:.76rem;font-variant-numeric:tabular-nums;margin-top:6px}
+.arch th{text-align:right;color:rgb(var(--mut));font-weight:500;font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;padding:4px 6px}
+.arch td{text-align:right;padding:5px 6px;border-top:1px solid rgba(var(--ov),.06)}
+.arch th:first-child,.arch td:first-child{text-align:left}
+.arch td small{color:rgb(var(--mut));font-size:.66rem}
 .dlgbg{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:5;border-radius:inherit}
 .dlg{background:var(--panel);color:var(--txt);border:1px solid var(--stroke);border-radius:18px;padding:18px;min-width:260px;max-width:90%;box-shadow:0 10px 40px rgba(0,0,0,.4)}
 .dlgt{font-weight:700;margin-bottom:10px}

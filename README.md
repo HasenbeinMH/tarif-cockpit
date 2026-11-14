@@ -5,7 +5,9 @@ Eine Integration für Home Assistant, die Zähler, Verträge, Abrechnungsperiode
 
 ![Tarifübersicht](docs/img/integration-uebersicht.png)
 
-> **Stand 0.9:** Impulszähler (Impulskonstante, Zählerneustarts), Abgleich jedes Zähler-Sensors mit den Ablesungen (die Ablesung gilt, Tageswerte werden angeglichen, Hinweis ab 2 %), Gasleistung, Brennerlaufzeit, Brennerstarts und Takten bei Gas mit Impulsen.
+> **Stand 1.0:** Wettervorhersage und Mehrjahresmittel für die Rest-Gradtage, Band „kalter/milder Rest-Winter“, **Archiv** jeder beendeten Periode mit **Prognose gegen Realität**, Event bei Urteilswechsel, **Kündigungsfrist** mit Erinnerung, Aktion zur **Übernahme aus 0.3**, vollständige Diagnose. Beispiele für Benachrichtigungen: [docs/AUTOMATIONEN.md](docs/AUTOMATIONEN.md).
+>
+> **Seit 0.9:** Impulszähler (Impulskonstante, Zählerneustarts), Abgleich jedes Zähler-Sensors mit den Ablesungen (die Ablesung gilt, Tageswerte werden angeglichen, Hinweis ab 2 %), Gasleistung, Brennerlaufzeit, Brennerstarts und Takten bei Gas mit Impulsen.
 >
 > **Seit 0.8:** Wärmeerzeuger (Gastherme, Wärmepumpe, Split-Klima, Fernwärme, Kaminofen) mit getrennter eingesetzter Energie, Wärme und Entlastung; Kaminofen und Split-Klima entlasten die Gasprognose, sobald es genug Vergleichstage gibt; Heizen am Haushaltsstrom wird vor der Strom-Grundlast abgezogen; temperaturbereinigter Kennwert; Auswertungskarte mit Streudiagramm und Kostenverlauf. Details: [CHANGELOG.md](CHANGELOG.md).
 >
@@ -21,6 +23,21 @@ Eine Integration für Home Assistant, die Zähler, Verträge, Abrechnungsperiode
 | Karte `custom:tarif-cockpit-analyse-card` | Heizung: gelernter Kennwert je Gradtag, Warmwasser-Grundlast, temperaturbereinigter Kennwert, Streudiagramm Verbrauch über Gradtage, Kostenverlauf gegen die Abschläge, Wärmeerzeuger. |
 
 ![Auswertung](docs/img/heizung-analyse.png)
+
+## Was unterstützt wird
+
+| Thema | Varianten |
+|---|---|
+| Heizung | Gas, Fernwärme, Wärmepumpe (eigener Zähler oder am Hausstrom), Split-Klima, Elektroheizung, Kaminofen und Kombinationen |
+| Warmwasser | über die Heizung, Durchlauferhitzer oder Boiler (Strom), Wärmepumpe, Solarthermie (nur Hinweis) |
+| Strom | Festpreis, mit oder ohne PV und Speicher, Wallbox getrennt, § 14a als fester Rabatt |
+| Abrechnung | 12 oder 11 Abschläge, monatlich, zweimonatlich oder vierteljährlich, Rumpfjahr, Anbieterwechsel, Preiswechsel, Bonus und Gutschrift, Mindestlaufzeit und Kündigungsfrist |
+| Fernwärme | Arbeitspreis (kWh oder MWh), Grundpreis, Leistungspreis, Messpreis |
+| Wasser | Frisch- und Abwasser mit eigenen Preisen, Grundgebühren, Gartenwasser-Abzug, Niederschlagswasser als fester Betrag |
+| Daten | Zählerstand-Sensor, Impulszähler, nur Ablesungen von Hand |
+| Noch nicht | Öl und Pellets (Lieferungen), HT/NT, dynamischer Tarif, § 14a zeitvariabel, Mieter mit Heizkostenverteiler |
+
+Fehlt etwas, gibt es eine Rückfallebene statt einer falschen Zahl: ohne Vorjahr der Jahresverbrauch laut Rechnung, ohne Sensor die Ablesungen, ohne belastbaren Kennwert keine Wärmeprognose (fehlend ist nie 0).
 
 ## Installation
 
@@ -50,14 +67,14 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 | Kosten bisher | Arbeits-, Grund- und Messpreis (bei Wasser auch Abwasser) seit Periodenbeginn, tagesgenau je Preisabschnitt |
 | Abschläge bisher / Abschläge Periode | fällige bzw. alle Abschläge der Periode, mit Einmalzahlungen und Gutschriften |
 | Abschlag | aktueller Abschlag je Zahltag (Attribut `anzahl_je_periode`) |
-| Prognose Verbrauch / Prognose Kosten | bis zum Ende der laufenden Periode; Attribute: Methode, Qualität, Vorjahreswerte bzw. Gradtage |
-| Saldo, Urteil | Saldo = Abschläge der Periode − Prognose Kosten; Urteil `passt`, `rueckzahlung` oder `nachzahlung` (Toleranz des Haushalts) |
+| Prognose Verbrauch / Prognose Kosten | bis zum Ende der laufenden Periode; Attribute: Methode, Qualität, Vorjahreswerte bzw. Gradtage; bei Wärme `quelle` (vorhersage, mittel, vorjahr), `vorhersage_tage`, `rest_kalt`/`rest_warm`; Prognose Kosten mit `kalt`/`warm` |
+| Saldo, Urteil | Saldo = Abschläge der Periode − Prognose Kosten; Urteil `passt`, `rueckzahlung` oder `nachzahlung` (Toleranz des Haushalts); Saldo mit `saldo_kalt`/`saldo_warm`, wenn es mindestens zwei Vorjahre gibt |
 | Abschlag empfohlen | ab dem nächsten Zahltag, damit die Periode ausgeglichen endet; Attribut `vorlaeufig` je nach Prognose-Qualität |
 | Prognose-Qualität | `annahme`, `unzureichend`, `vorlaeufig`, `gut`, `sehr_gut` (Diagnose) |
 | Kennwert, Warmwasser-Grundlast | nur Gas und Fernwärme: gelernter Kennwert (kWh je Gradtag) mit R², Anzahl Tage, Temperaturspanne |
 | Kennwert temperaturbereinigt | Gas/Fernwärme: Kennwert mit Gradtagen aus der gemessenen Innentemperatur; Attribute `prozent_je_kelvin` (gelernt oder 6 %/K als Annahme), `vorjahr` (Aufteilung Raumtemperatur/Mehrverbrauch) |
 | Saldo gesamt | am Gerät „Haushalt“: Summe über alle Zähler; leer, solange ein Zähler noch keinen Saldo hat (Attribut `ohne_prognose`) |
-| Periodenende | Ende der laufenden Abrechnungsperiode. Attribute: `beginn`, `rumpfjahr`, `schlussperiode`, `status`, `regel`, `stichtag`, `lieferant`, `tarif`, `tage_bis_ende` |
+| Periodenende | Ende der laufenden Abrechnungsperiode. Attribute: `beginn`, `rumpfjahr`, `schlussperiode`, `status`, `regel`, `stichtag`, `lieferant`, `tarif`, `tage_bis_ende`, `kuendigung_bis`, `tage_bis_kuendigung`, `kuendigung_hinweis`, `vertragsende`, `kuendigung` (`termin`, `nach_mindestlaufzeit`, `keine_angaben`) |
 | Letzte Ablesung | Zeitpunkt der letzten gültigen Ablesung. Attribute: `stand`, `qualitaet`, `quelle`, `ablesung_id` |
 | Zählerstand (abgelesen) | Letzter gültiger abgelesener Stand |
 | Tageswerte vollständig | Diagnose: Anteil verwendbarer Tageswerte der letzten 30 Tage |
@@ -78,7 +95,7 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 |---|---|
 | `tarif_cockpit.add_ablesung` | Zählerstand eintragen (`zaehler`, `stand`, optional `zeitpunkt`, `qualitaet`, `notiz`). Mit `ersetzt` wird eine frühere Ablesung korrigiert, ohne sie zu löschen. Antwort: `ablesung_id`. |
 | `tarif_cockpit.ablesung_ungueltig` | Ablesung als ungültig markieren; sie bleibt gespeichert. |
-| `tarif_cockpit.add_folgevertrag` | Anbieterwechsel: alter Vertrag endet am Vortag (Schlussperiode), neuer Vertrag mit eigener Abrechnungsregel; optional `wechselstand`. Ein Wechsel in eine bereits beendete Periode wird abgelehnt. |
+| `tarif_cockpit.add_folgevertrag` | Anbieterwechsel: alter Vertrag endet am Vortag (Schlussperiode), neuer Vertrag mit eigener Abrechnungsregel; optional `wechselstand`, `mindestlaufzeit` (Monate), `kuendigungsfrist` (Wochen). Ein Wechsel in eine bereits beendete Periode wird abgelehnt. |
 | `tarif_cockpit.set_periodenende` | Der Versorger hat ein paar Tage früher oder später abgelesen: Ende der laufenden oder zuletzt beendeten Periode verschieben (±10 Tage). |
 | `tarif_cockpit.add_periode` | Nur bei Abrechnung „von Hand“: nächste Periode anhängen. |
 | `tarif_cockpit.set_preis` | Preisänderung ab einem Datum (Arbeits-, Grund-, Messpreis, Brennwert/Zustandszahl, Abwasser, feste Jahresbeträge, Fernwärme-Leistungspreis). Die Verbrauchsprognose bleibt unverändert. |
@@ -86,6 +103,19 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 | `tarif_cockpit.add_zahlung` | Zahlung erfassen: Abschlag (ersetzt den geplanten im selben Monat), Einmalzahlung, Gutschrift, Schlusszahlung, Erstattung; bezahlt, geplant oder storniert. |
 | `tarif_cockpit.add_rechnung` | Rechnung des Versorgers erfassen (getrennt von Zahlungen), auch als Korrektur einer früheren Rechnung. |
 | `tarif_cockpit.recalculate` | Tageswerte neu berechnen (Ablesungen und Verträge bleiben unverändert). |
+| `tarif_cockpit.uebernahme_v03` | Umstieg von der Template-Version 0.3: liest deine Helfer (Abschlag, Zahltag, Arbeits- und Grundpreis, Startstand, Abrechnungsbeginn, Brennwert, Zustandszahl) und trägt sie beim Zähler ein. Antwort: übernommene und übersprungene Werte mit Grund. Anleitung: [docs/MIGRATION.md](docs/MIGRATION.md#von-03-template-sensoren-auf-10). |
+
+**Events** (für Automationen; den Versand, z. B. per Telegram, machst du selbst, Beispiele in [docs/AUTOMATIONEN.md](docs/AUTOMATIONEN.md))
+| Event | Wann | Daten |
+|---|---|---|
+| `tarif_cockpit_urteil_geaendert` | das Urteil eines Zählers wechselt innerhalb derselben Periode (nicht beim Start) | `zaehler`, `device_id`, `name`, `alt`, `neu`, `saldo`, `prognose_kosten`, `qualitaet`, `abschlag_empfohlen` |
+| `tarif_cockpit_kuendigungsfrist` | 28 Tage vor dem letzten Kündigungstag und an diesem Tag, je Frist nur einmal | `zaehler`, `device_id`, `name`, `lieferant`, `kuendigen_bis`, `vertragsende`, `tage` |
+
+Ab 28 Tagen vor dem letzten Kündigungstag steht zusätzlich ein Hinweis unter Einstellungen → Reparaturen. Mindestlaufzeit und Kündigungsfrist trägst du im Vertragsschritt ein oder später am Zähler unter **Neu konfigurieren → Vertrag ändern**.
+
+**Archiv:** Endet eine Periode, friert die Integration Kosten, Menge, Zahlungen, Saldo, Urteil, Preise und alle Prognose-Schnappschüsse ein (vorläufig). Endgültig abgeschlossen ist sie mit einer echten Ablesung am Periodenende oder kurz danach bzw. mit einer Rechnung, frühestens 11 Tage nach dem Ende (bis dahin lässt sich das Ende mit `set_periodenende` noch verschieben), spätestens 60 Tage nach dem Ende; danach ändert sie sich nie mehr. Die Auswertungskarte zeigt daraus „Prognose gegen Realität“.
+
+**Diagnose:** Einstellungen → Geräte & Dienste → Tarif-Cockpit → Menü → **Diagnose herunterladen**. Entitäts-IDs, Namen, Lieferanten und Notizen sind geschwärzt; die Datei kann einem Fehlerbericht beigelegt werden.
 
 Beispiel, Ablesung aus einer Automation (z. B. nach einer Telegram-Nachricht):
 ```yaml
@@ -135,13 +165,19 @@ Die Karte rechnet nichts selbst. Sie holt über die Integration, welche Sensoren
 - **Abschlagsstufen als Text**, z. B. „4 × 166 € + 8 × 180 €“, und der **empfohlene Abschlag** ab dem nächsten Zahltag, bei Qualität unter „gut“ mit „vorläufig“.
 - **Prognose-Qualität** als Etikett; solange es keine Prognose gibt, steht der Grund da (z. B. „Kennwert wird noch gelernt“).
 - **Anbieterwechsel** in der laufenden Periode: alter Vertrag bis zum Wechsel (Schlussrechnung), danach der neue.
+- **Band** bei Wärme: Saldo, wenn der Rest so kalt wie im kältesten bzw. so mild wie im wärmsten Vorjahr wird (ab zwei Vorjahren).
+- **Kündigungsfrist**, sobald sie näher als sechs Wochen ist.
 - Ein **Tipp auf den Abschlag** öffnet einen Dialog: Betrag und „Gültig ab“, dann `tarif_cockpit.set_abschlag`. Nur für Administratoren; andere Benutzer sehen den Abschlag ohne Dialog.
 
 | Kennwert wird noch gelernt | Abschlag ändern |
 |---|---|
 | ![Lernt](docs/img/integration-lernt.png) | ![Dialog](docs/img/abnahme-15-abschlag-dialog.png) |
 
-Die Auswertungskarte geht genauso (`type: custom:tarif-cockpit-analyse-card`, `integration: true`, optional `zaehler: [Gerät des Gas- oder Fernwärmezählers]`; ohne diese der Stromzähler einer Wärmepumpe): gelernter Kennwert, Warmwasser-Grundlast (nur wenn Warmwasser über die Heizung läuft), temperaturbereinigter Kennwert, Qualität mit Anzahl Tage und R², Verlauf des Kennwerts, **Streudiagramm** Verbrauch über Gradtage mit Regressionsgerade (Ofen- und Klimatage farbig), **Kostenverlauf** der Periode (Ist, Prognose, Abschlags-Treppe) und je Wärmeerzeuger Eingang, Wärme, Entlastung. `diagramme: false` bzw. `erzeuger: false` blenden Diagramme bzw. Erzeuger aus. Beispiele: [docs/BEISPIELE.md](docs/BEISPIELE.md).
+| Band und Kündigungsfrist | Prognose gegen Realität |
+|---|---|
+| ![Band](docs/img/archiv-uebersicht.png) | ![Archiv](docs/img/archiv-analyse.png) |
+
+Die Auswertungskarte geht genauso (`type: custom:tarif-cockpit-analyse-card`, `integration: true`, optional `zaehler: [Gerät des Gas- oder Fernwärmezählers]`; ohne diese der Stromzähler einer Wärmepumpe): gelernter Kennwert, Warmwasser-Grundlast (nur wenn Warmwasser über die Heizung läuft), temperaturbereinigter Kennwert, Qualität mit Anzahl Tage und R², Verlauf des Kennwerts, **Streudiagramm** Verbrauch über Gradtage mit Regressionsgerade (Ofen- und Klimatage farbig), **Kostenverlauf** der Periode (Ist, Prognose, Abschlags-Treppe) und je Wärmeerzeuger Eingang, Wärme, Entlastung. Dazu die Tabelle **Prognose gegen Realität** der zuletzt beendeten Periode (je Schnappschuss Prognose und Abweichung zu den tatsächlichen Kosten, vorläufig oder abgeschlossen). `diagramme: false`, `erzeuger: false` bzw. `archiv: false` blenden Diagramme, Erzeuger bzw. die Tabelle aus. Beispiele: [docs/BEISPIELE.md](docs/BEISPIELE.md).
 
 ### Sensor-Modus (ohne Integration)
 

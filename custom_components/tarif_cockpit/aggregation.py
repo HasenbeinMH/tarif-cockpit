@@ -449,6 +449,7 @@ def async_setup_aggregation(hass: HomeAssistant, runtime: TarifRuntime) -> None:
             runtime.data.reaggregated_meters.extend(todo)
         await agg.async_run()
         if runtime.coordinator is not None:
+            await runtime.coordinator.async_update_weather()
             runtime.coordinator.daily()
 
     @callback

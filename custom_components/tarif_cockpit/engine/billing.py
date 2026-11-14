@@ -536,3 +536,35 @@ def calculate_payments(plan: AdvancePlan | None, payments: list[Payment], period
     ps.period_total = round(ps.period_total, 2)
     ps.other = round(ps.other, 2)
     return ps
+
+
+
+def add_months(d: date, months: int) -> date:
+    m = d.month - 1 + months
+    y = d.year + m // 12
+    m = m % 12 + 1
+    from calendar import monthrange  # noqa: PLC0415
+
+    return date(y, m, min(d.day, monthrange(y, m)[1]))
+
+
+def notice_deadline(contract: Contract, today: date) -> tuple[date | None, date | None, str]:
+    """Kündigungsfrist: (letzter Tag zum Kündigen, Vertragsende, Hinweis).
+
+    - Vertrag mit festem Ende: Ende − Kündigungsfrist.
+    - Mit Mindestlaufzeit: Ende der Mindestlaufzeit (Beginn + Monate − 1 Tag) − Frist, solange es noch vor uns liegt.
+    - Danach ("nach_mindestlaufzeit"): jederzeit mit der Frist kündbar, kein Termin.
+    - Ohne Kündigungsfrist oder Laufzeit: kein Termin ("keine_angaben")."""
+    weeks = contract.notice_period_weeks
+    end: date | None = contract.end_date
+    if end is None and contract.min_term_months:
+        target = add_months(contract.start_date, contract.min_term_months)
+        # Fristende wie § 188 BGB: fehlt der entsprechende Tag im Zielmonat (31.01. + 1 Monat), endet die Frist am Monatsletzten
+        term_end = target if target.day < contract.start_date.day else target - timedelta(days=1)
+        if term_end >= today:
+            end = term_end
+        else:
+            return None, None, "nach_mindestlaufzeit"
+    if end is None or not weeks:
+        return None, end, "keine_angaben"
+    return end - timedelta(weeks=weeks), end, "termin"

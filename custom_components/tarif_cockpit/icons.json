@@ -29,6 +29,9 @@
     },
     "add_rechnung": {
       "service": "mdi:file-document-outline"
+    },
+    "uebernahme_v03": {
+      "service": "mdi:import"
     }
   },
   "entity": {

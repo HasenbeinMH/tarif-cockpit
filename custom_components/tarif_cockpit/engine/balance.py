@@ -49,6 +49,11 @@ class Balance:
     fitting_advance: float | None = None  # Prognose / Anzahl Abschläge der Periode (wie bisher "passender Abschlag")
     next_pay_date: date | None = None
     remaining_installments: int = 0
+    # Band (1.0): Prognose-Kosten und Saldo, wenn der Rest so kalt bzw. mild wird wie im kältesten/wärmsten Vorjahr
+    forecast_cost_cold: float | None = None
+    forecast_cost_warm: float | None = None
+    saldo_cold: float | None = None
+    saldo_warm: float | None = None
 
 
 def calculate_balance(forecast_cost: float | None, payments: PaymentState, tolerance_pct: float) -> Balance:
@@ -196,6 +201,7 @@ def evaluate_meter(
     hp_energy: Mapping[date, float | None] | None = None,
     power_heat: PowerHeat | None = None,
     sensor_offset: float | None = None,
+    forecast_dd: Mapping[date, float] | None = None,
 ) -> MeterResult:
     """Vollständige Auswertung eines Zählers für die laufende Periode.
 
@@ -275,7 +281,7 @@ def evaluate_meter(
             relief += _rate_per_dd(stove_hours, daily, spec.start_date, spec.end_date, known_day) * model.stove_coefficient
         if hp_energy and model.hp_avoided_per_kwh and model.hp_quality in (ModelQuality.PRELIMINARY, ModelQuality.GOOD, ModelQuality.VERY_GOOD):
             relief += _rate_per_dd(hp_energy, daily, spec.start_date, spec.end_date, known_day) * model.hp_avoided_per_kwh
-        fc = heat_forecast(model, dd_prev, known_day, spec.end_date, relief_per_dd=relief)
+        fc = heat_forecast(model, dd_prev, known_day, spec.end_date, relief_per_dd=relief, forecast_dd=forecast_dd)
         res.indoor_split = indoor_split(daily, model, spec.start_date, known_day)
         rest_billing_unit = True
     else:
@@ -296,7 +302,7 @@ def evaluate_meter(
                     res.flags.append("wallbox_luecken")
         fc_heat = None
         if power_heat is not None and used is not None:
-            main_vals, used, fc_heat = _split_power_heat(res, power_heat, main_vals, used, daily, spec, known_day, today)
+            main_vals, used, fc_heat = _split_power_heat(res, power_heat, main_vals, used, daily, spec, known_day, today, forecast_dd)
         if power_heat is not None and power_heat.whole_meter and fc_heat is not None and fc_sub is None:
             # Wärmepumpe am eigenen Zähler: der ganze Zähler ist Heizstrom, keine Grundlast-Prognose
             fc = Forecast(rest=fc_heat.rest, rest_by_day=dict(fc_heat.rest_by_day), quality=fc_heat.quality,
@@ -325,8 +331,8 @@ def evaluate_meter(
     if cons.used is not None:
         ww = {k: max(v - (garden.get(k) or 0.0), 0.0) for k, v in used_by_day.items()} if meter.medium == Medium.WASSER else None
         res.actual = calculate_costs(contract, prices, meter, used_by_day, start_dt, known_until, tz, wastewater=ww)
+    ww_rest = None
     if fc.available and factor is not None:
-        ww_rest = None
         if meter.medium == Medium.WASSER:
             # Gartenwasser geht auch im Rest nicht ins Abwasser: Gartenzähler wie die Wallbox fortschreiben
             g_fc = submeter_forecast(garden, known_day, spec.end_date) if garden else None
@@ -343,6 +349,14 @@ def evaluate_meter(
         forecast_cost = round(res.actual.gross + res.rest.gross, 2)
     res.balance = calculate_balance(forecast_cost, res.payments, tolerance_pct)
     res.balance.actual_cost = round(res.actual.gross, 2) if res.actual is not None and res.actual.complete else None
+    if forecast_cost is not None and fc.rest and "rest_kalt" in fc.details and ww_rest is None:
+        for key, qty in (("cold", fc.details["rest_kalt"]), ("warm", fc.details["rest_warm"])):
+            scaled = {d: v * qty / fc.rest for d, v in fc.rest_by_day.items()}
+            band = calculate_costs(contract, prices, meter, scaled, known_until, end_dt, tz, quantities_are_billing_unit=rest_billing_unit)
+            if band.complete:
+                cost = round(res.actual.gross + band.gross, 2)
+                setattr(res.balance, f"forecast_cost_{key}", cost)
+                setattr(res.balance, f"saldo_{key}", round(res.payments.period_total - cost, 2) if res.payments.period_total else None)
     for cb in (res.actual, res.rest):
         if cb is not None:
             res.flags.extend(cb.flags)
@@ -359,6 +373,7 @@ def _split_power_heat(
     spec: PeriodSpec,
     known_day: date,
     today: date,
+    forecast_dd: Mapping[date, float] | None = None,
 ) -> tuple[dict[date, float | None], float, Forecast | None]:
     """Heizen am Hausstrom vor der Grundlast abziehen (wie die Wallbox) und getrennt über die Gradtage fortschreiben.
 
@@ -375,7 +390,7 @@ def _split_power_heat(
         res.power_heat_model, res.samples = model, samples
         heat_used = sum(v for k, v in meas.items() if v is not None and spec.start_date <= k < known_day)
         base_vals = {k: (v - meas[k]) if v is not None and meas.get(k) is not None else v for k, v in main_vals.items()}
-        fc = heat_forecast(model, dd_prev, known_day, spec.end_date) if model.usable else submeter_forecast(meas, known_day, spec.end_date)
+        fc = heat_forecast(model, dd_prev, known_day, spec.end_date, forecast_dd=forecast_dd) if model.usable else submeter_forecast(meas, known_day, spec.end_date)
         if not fc.available:
             res.flags.append("heizstrom_ohne_prognose")
             return main_vals, used, None
@@ -392,7 +407,7 @@ def _split_power_heat(
     weather = {k: k_dd * (daily[k].degree_days or 0.0) if k in daily and daily[k].degree_days is not None else 0.0 for k in main_vals}
     base_vals = {k: (v - weather[k]) if v is not None else None for k, v in main_vals.items()}
     heat_used = sum(weather[k] for k in main_vals if spec.start_date <= k < known_day and main_vals[k] is not None)
-    fc = heat_forecast(replace(model, hot_water_baseload=0.0), dd_prev, known_day, spec.end_date)
+    fc = heat_forecast(replace(model, hot_water_baseload=0.0), dd_prev, known_day, spec.end_date, forecast_dd=forecast_dd)
     if not fc.available:
         res.flags.append("heizstrom_nicht_getrennt")
         return main_vals, used, None

@@ -139,7 +139,13 @@
             "fixed_day": "Fixed day (DD.MM)",
             "first_period_end": "End of the first period",
             "vat_mode": "Prices",
-            "vat_rate": "VAT"
+            "vat_rate": "VAT",
+            "min_term_months": "Minimum term (months)",
+            "notice_period_weeks": "Notice period (weeks)"
+          },
+          "data_description": {
+            "min_term_months": "Leave empty if unknown. Without it there is no notice-period reminder.",
+            "notice_period_weeks": "How many weeks before the contract end must you cancel? (6 weeks ≈ 1.5 months)"
           }
         },
         "startstand": {
@@ -174,7 +180,8 @@
             "stammdaten": "Name, fallback source, calorific value",
             "anbieterwechsel": "Change supplier",
             "preis_aendern": "Change price",
-            "abschlag_aendern": "Change advance payment"
+            "abschlag_aendern": "Change advance payment",
+            "vertrag_aendern": "Change contract (tariff, term, notice period)"
           }
         },
         "zusammenfassung": {
@@ -229,7 +236,13 @@
             "fixed_day": "Fixed day (DD.MM)",
             "first_period_end": "End of the first period",
             "vat_mode": "Prices",
-            "vat_rate": "VAT"
+            "vat_rate": "VAT",
+            "min_term_months": "Minimum term (months)",
+            "notice_period_weeks": "Notice period (weeks)"
+          },
+          "data_description": {
+            "min_term_months": "Leave empty if unknown. Without it there is no notice-period reminder.",
+            "notice_period_weeks": "How many weeks before the contract end must you cancel? (6 weeks ≈ 1.5 months)"
           }
         },
         "wechsel_preis": {
@@ -252,6 +265,19 @@
             "max_per_period": "Payments per billing year (e.g. 11)",
             "price_unit": "Unit price per"
           }
+        },
+        "vertrag_aendern": {
+          "title": "Change contract",
+          "description": "Current contract with {lieferant} since {beginn}. Periods, prices and advances stay unchanged.",
+          "data": {
+            "tariff": "Tariff",
+            "min_term_months": "Minimum term (months)",
+            "notice_period_weeks": "Notice period (weeks)"
+          },
+          "data_description": {
+            "min_term_months": "Leave empty if unknown. Without it there is no notice-period reminder.",
+            "notice_period_weeks": "How many weeks before the contract end must you cancel? (6 weeks ≈ 1.5 months)"
+          }
         }
       },
       "error": {
@@ -271,7 +297,9 @@
         "price_saved": "The price was saved.",
         "advance_saved": "The advance payment was saved.",
         "switch_saved": "The supplier change was saved.",
-        "not_loaded": "The integration is not loaded right now. Please check and reload it under Settings → Devices & services."
+        "not_loaded": "The integration is not loaded right now. Please check and reload it under Settings → Devices & services.",
+        "contract_saved": "The contract was saved.",
+        "no_contract": "This meter has no contract yet."
       }
     },
     "waermeerzeuger": {
@@ -733,6 +761,14 @@
         "wechselstand": {
           "name": "Switch reading",
           "description": "Meter reading at the switch. If missing, add it later as a reading."
+        },
+        "mindestlaufzeit": {
+          "name": "Minimum term",
+          "description": "In months."
+        },
+        "kuendigungsfrist": {
+          "name": "Notice period",
+          "description": "In weeks before the contract end."
         }
       }
     },
@@ -917,6 +953,52 @@
           "description": "Last day."
         }
       }
+    },
+    "uebernahme_v03": {
+      "name": "Take over from version 0.3",
+      "description": "Reads the helpers of the template version 0.3 (advance, prices, starting reading …) and takes them over into a meter. Response: values taken over and skipped.",
+      "fields": {
+        "zaehler": {
+          "name": "Meter",
+          "description": "Tarif-Cockpit meter device."
+        },
+        "ab": {
+          "name": "Valid from",
+          "description": "Default: billing start or start of the current period."
+        },
+        "abschlag": {
+          "name": "Advance payment",
+          "description": "Helper from 0.3: Advance payment."
+        },
+        "zahltag": {
+          "name": "Payment day",
+          "description": "Helper from 0.3: Payment day."
+        },
+        "arbeitspreis": {
+          "name": "Unit price",
+          "description": "Helper from 0.3: Unit price."
+        },
+        "grundpreis": {
+          "name": "Standing charge per month",
+          "description": "Helper from 0.3: Standing charge per month."
+        },
+        "startstand": {
+          "name": "Meter reading at billing start",
+          "description": "Helper from 0.3: Meter reading at billing start."
+        },
+        "abrechnungsbeginn": {
+          "name": "Billing start",
+          "description": "Helper from 0.3: Billing start."
+        },
+        "brennwert": {
+          "name": "Calorific value",
+          "description": "Helper from 0.3: Calorific value."
+        },
+        "zustandszahl": {
+          "name": "Conversion factor",
+          "description": "Helper from 0.3: Conversion factor."
+        }
+      }
     }
   },
   "issues": {
@@ -943,6 +1025,10 @@
     "abgleich_abweichung": {
       "title": "{meter}: sensor differs from the reading",
       "description": "Between the readings from {von} to {bis} the sensor counted {pct} % relative to the read quantity (missing: {fehlt} {unit}). Adjusted: {angeglichen}. Causes: lost pulses, wrong pulse constant, meter replacement or a wrongly entered reading. The notice disappears once the next reading is below 2 % again."
+    },
+    "kuendigungsfrist": {
+      "title": "{meter}: notice period ends soon",
+      "description": "The contract with {lieferant} ends on {ende}. To switch, cancel by {bis} ({tage} days left). The notice disappears after the deadline or when you adjust term or notice period under “Change contract”."
     }
   },
   "exceptions": {

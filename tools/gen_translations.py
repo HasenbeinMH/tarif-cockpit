@@ -563,6 +563,50 @@ S["entity"]["sensor"].update({
     "brennerstarts": {"name": T("Brennerstarts", "Burner starts")},
 })
 
+# ---------------------------------------------------------------- 1.0: Kündigungsfrist, Archiv, Übernahme aus 0.3
+TERMS = {"min_term_months": T("Mindestlaufzeit (Monate)", "Minimum term (months)"), "notice_period_weeks": T("Kündigungsfrist (Wochen)", "Notice period (weeks)")}
+TERMS_DESC = {"min_term_months": T("Leer lassen, wenn unbekannt. Ohne Angaben gibt es keine Erinnerung an die Kündigungsfrist.",
+                                   "Leave empty if unknown. Without it there is no notice-period reminder."),
+              "notice_period_weeks": T("Wie viele Wochen vor Vertragsende muss gekündigt werden? (6 Wochen ≈ 1,5 Monate)",
+                                       "How many weeks before the contract end must you cancel? (6 weeks ≈ 1.5 months)")}
+for step in ("vertrag", "wechsel_vertrag"):
+    SUB["step"][step]["data"].update(TERMS)
+    SUB["step"][step].setdefault("data_description", {}).update(TERMS_DESC)
+SUB["step"]["reconfigure"]["menu_options"]["vertrag_aendern"] = T("Vertrag ändern (Tarif, Laufzeit, Kündigungsfrist)", "Change contract (tariff, term, notice period)")
+SUB["step"]["vertrag_aendern"] = {"title": T("Vertrag ändern", "Change contract"),
+                                  "description": T("Laufender Vertrag bei {lieferant} seit {beginn}. Perioden, Preise und Abschläge bleiben unverändert.",
+                                                   "Current contract with {lieferant} since {beginn}. Periods, prices and advances stay unchanged."),
+                                  "data": {"tariff": T("Tarif", "Tariff"), **TERMS}, "data_description": TERMS_DESC}
+SUB["abort"]["contract_saved"] = T("Der Vertrag wurde gespeichert.", "The contract was saved.")
+SUB["abort"]["no_contract"] = T("Für diesen Zähler gibt es noch keinen Vertrag.", "This meter has no contract yet.")
+SV = S["services"]
+SV["add_folgevertrag"]["fields"].update({
+    "mindestlaufzeit": {"name": T("Mindestlaufzeit", "Minimum term"), "description": T("In Monaten.", "In months.")},
+    "kuendigungsfrist": {"name": T("Kündigungsfrist", "Notice period"), "description": T("In Wochen vor Vertragsende.", "In weeks before the contract end.")},
+})
+ENT = lambda de, en: {"name": T(de, en), "description": T(f"Helfer aus 0.3: {de}.", f"Helper from 0.3: {en}.")}
+SV["uebernahme_v03"] = {
+    "name": T("Übernahme aus Version 0.3", "Take over from version 0.3"),
+    "description": T("Liest die Helfer der Template-Version 0.3 (Abschlag, Preise, Startstand …) und übernimmt sie in einen Zähler. Antwort: übernommene und übersprungene Werte.",
+                     "Reads the helpers of the template version 0.3 (advance, prices, starting reading …) and takes them over into a meter. Response: values taken over and skipped."),
+    "fields": {
+        "zaehler": {"name": T("Zähler", "Meter"), "description": T("Zähler-Gerät des Tarif-Cockpits.", "Tarif-Cockpit meter device.")},
+        "ab": {"name": T("Gültig ab", "Valid from"), "description": T("Standard: Abrechnungsbeginn bzw. Beginn der laufenden Periode.", "Default: billing start or start of the current period.")},
+        "abschlag": ENT("Abschlag", "Advance payment"), "zahltag": ENT("Zahltag", "Payment day"),
+        "arbeitspreis": ENT("Arbeitspreis", "Unit price"), "grundpreis": ENT("Grundpreis je Monat", "Standing charge per month"),
+        "startstand": ENT("Zählerstand zu Abrechnungsbeginn", "Meter reading at billing start"),
+        "abrechnungsbeginn": ENT("Abrechnungsbeginn", "Billing start"),
+        "brennwert": ENT("Brennwert", "Calorific value"), "zustandszahl": ENT("Zustandszahl", "Conversion factor"),
+    },
+}
+S["issues"]["kuendigungsfrist"] = {
+    "title": T("{meter}: Kündigungsfrist endet bald", "{meter}: notice period ends soon"),
+    "description": T("Der Vertrag bei {lieferant} endet am {ende}. Wer wechseln möchte, muss bis {bis} kündigen (noch {tage} Tage). "
+                     "Der Hinweis verschwindet nach Ablauf der Frist oder wenn du Laufzeit bzw. Frist unter „Vertrag ändern“ anpasst.",
+                     "The contract with {lieferant} ends on {ende}. To switch, cancel by {bis} ({tage} days left). "
+                     "The notice disappears after the deadline or when you adjust term or notice period under “Change contract”."),
+}
+
 
 def pick(o, i):
     if isinstance(o, tuple):

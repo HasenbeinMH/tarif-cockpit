@@ -14,7 +14,7 @@ Prognose-Schnappschüsse (Entscheidung L): am 1. jedes Monats und am Ende jeder 
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import logging
 
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
@@ -23,13 +23,15 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
-from .const import signal_updated
+from .const import DOMAIN, EVENT_NOTICE, EVENT_VERDICT, ISSUE_NOTICE, NOTICE_WARN_DAYS, signal_updated
 from collections import deque
 
 from .engine import billing
 from .engine.balance import HEAT_MEDIA, MeterResult, PowerHeat, evaluate_meter
 from .engine.burner import current_power, max_gap_for
 from .engine.pulses import offset_at, unit_per_pulse
+from .engine.archive import build_archive, close_criteria
+from .engine.degree_days import degree_days
 from .engine.reconcile import Reconciliation, reconcile
 from .engine.generators import ON_POWER_KINDS, GeneratorResult, evaluate_generator, stove_relief_per_hour
 from .engine.model import ForecastSnapshot, GeneratorKind, HeatGenerator, Medium, Meter
@@ -50,6 +52,8 @@ class TarifCoordinator:
         self.results: dict[str, MeterResult] = {}
         self.gen_results: dict[str, GeneratorResult] = {}
         self.reconciliations: dict[str, Reconciliation] = {}
+        self.forecast_dd: dict = {}  # Gradtage aus der Wettervorhersage (Datum → Kd)
+        self._forecast_at: datetime | None = None
         self._pulses: dict[str, deque] = {}  # letzte Zählerstand-Wechsel je Impulszähler (Momentanleistung)
         self._models: dict[str, HeatModel] = {}
         self._samples: dict[str, tuple[list, bool]] = {}  # Stichproben zum Modell (Streudiagramm ohne Neuberechnung)
@@ -60,6 +64,16 @@ class TarifCoordinator:
 
     @callback
     def async_start(self) -> None:
+        if self.rt.household.weather_entity:
+            from homeassistant.helpers.event import async_track_time_interval  # noqa: PLC0415
+
+            async def _weather(_=None) -> None:
+                await self.async_update_weather()
+
+            self.rt.unsubs.append(async_track_time_interval(self.hass, _weather, timedelta(hours=6)))
+            from homeassistant.helpers.event import async_call_later  # noqa: PLC0415
+
+            self.rt.unsubs.append(async_call_later(self.hass, 60, _weather))  # Wetter-Integration lädt ggf. später
         entities = {m.entity for m in self.rt.meters.values() if m.entity}
         # Impulszähler: aktuellen Stand als Ausgangspunkt für die Leistung (nach einem Neustart sonst leer)
         for m in self.rt.meters.values():
@@ -71,6 +85,9 @@ class TarifCoordinator:
         if entities:
             self.rt.unsubs.append(async_track_state_change_event(self.hass, sorted(entities), self._on_state))
         self.rt.unsubs.append(self._debouncer.async_shutdown)
+        # nach einem Neustart: Perioden, die während der Pause geendet haben, und Kündigungsfristen gleich prüfen
+        self.archive_ended()
+        self.check_notice()
 
     @callback
     def _on_state(self, event: Event[EventStateChangedData]) -> None:
@@ -189,11 +206,43 @@ class TarifCoordinator:
                     out[day] = (out.get(day) or 0.0) + val
         return out
 
+    async def async_update_weather(self) -> None:
+        """Wettervorhersage (täglich) → Gradtage der nächsten Tage für die Rest-Prognose (Arbeitspaket 3.2)."""
+        hh = self.rt.household
+        entity = hh.weather_entity
+        if not entity or self.hass.states.get(entity) is None:
+            return
+        try:
+            resp = await self.hass.services.async_call("weather", "get_forecasts", {"type": "daily"}, target={"entity_id": entity},
+                                                       blocking=True, return_response=True)
+        except Exception as err:  # noqa: BLE001 - ohne Vorhersage rechnet die Prognose wie bisher
+            _LOGGER.debug("Tarif-Cockpit: Wettervorhersage nicht verfügbar: %s", err)
+            return
+        out: dict = {}
+        today = self.rt.today()
+        for item in ((resp or {}).get(entity) or {}).get("forecast", []) or []:
+            try:
+                d = dt_util.parse_datetime(item["datetime"]).astimezone(self.rt.tz).date()
+                hi = float(item["temperature"])
+                lo = item.get("templow")
+                t = (hi + float(lo)) / 2 if lo is not None else hi
+            except (KeyError, TypeError, ValueError, AttributeError):
+                continue
+            if d >= today:
+                out[d] = degree_days(t, hh.heating_limit, hh.indoor_ref)
+        self._forecast_at = dt_util.utcnow()
+        if out != self.forecast_dd:
+            self.forecast_dd = out
+            self.mark([m.meter_id for m in self.rt.meters.values()], {"forecast"})
+
     def _heat_inputs(self, meter: Meter) -> dict:
         """Zusätzliche Eingaben für ``evaluate_meter`` aus Situation und Wärmeerzeugern (Arbeitspaket 2.4/3.2)."""
         rt = self.rt
         gens = list(rt.generators.values())
         kw: dict = {}
+        if self.forecast_dd and self._forecast_at and dt_util.utcnow() - self._forecast_at < timedelta(hours=24):
+            today = rt.today()
+            kw["forecast_dd"] = {d: v for d, v in self.forecast_dd.items() if d >= today}  # Vorhersage höchstens 24 h alt
         if meter.role != "main":
             return kw
         if meter.medium in HEAT_MEDIA:
@@ -290,6 +339,12 @@ class TarifCoordinator:
                 # Periodenwechsel: letzte Prognose der beendeten Periode einfrieren (Entscheidung L, Regel 4)
                 if self._snapshot(old, now):
                     rt.store.schedule_save(rt.data)
+                rt.sync_periods()
+                self._archive_period(meter_id, old.period.period_id, old)
+            elif (old is not None and old.balance is not None and res.balance is not None and old.period is not None
+                  and res.period is not None and old.period.period_id == res.period.period_id
+                  and old.balance.verdict and res.balance.verdict and old.balance.verdict != res.balance.verdict):
+                self._fire_verdict(meter, old, res)
             self.results[meter_id] = res
             changed = True
         if rt.generators:
@@ -311,7 +366,7 @@ class TarifCoordinator:
         rt.data.snapshots.append(ForecastSnapshot(
             period_id=pid, taken_at=dt_util.as_utc(now), quality=res.forecast.quality.value,
             forecast_kwh=res.forecast_total, forecast_cost=res.balance.forecast_cost,
-            recommended_advance=res.balance.recommended_advance,
+            recommended_advance=res.balance.recommended_advance, saldo=res.balance.saldo, verdict=res.balance.verdict,
         ))
         return True
 
@@ -332,4 +387,131 @@ class TarifCoordinator:
         if dt_util.now(rt.tz).date().day == 1 and self.take_snapshots("monat"):
             rt.store.schedule_save(rt.data)
         self.mark(None, ALL)
+        self.archive_ended()
+        self.check_notice()
+
+    # ------------------------------------------------------------ Archiv (1.0)
+
+    def _device_id(self, meter_id: str) -> str | None:
+        from homeassistant.helpers import device_registry as dr  # noqa: PLC0415
+
+        dev = next((d for d in dr.async_entries_for_config_entry(dr.async_get(self.hass), self.rt.entry.entry_id)
+                    if (DOMAIN, meter_id) in d.identifiers), None)
+        return dev.id if dev else None
+
+    def _fire_verdict(self, meter: Meter, old: MeterResult, res: MeterResult) -> None:
+        """Event bei Urteilswechsel innerhalb derselben Periode (für Benachrichtigungen per Automation)."""
+        self.hass.bus.async_fire(EVENT_VERDICT, {
+            "zaehler": meter.meter_id, "device_id": self._device_id(meter.meter_id), "name": meter.name,
+            "alt": old.balance.verdict, "neu": res.balance.verdict, "saldo": res.balance.saldo,
+            "prognose_kosten": res.balance.forecast_cost,
+            "qualitaet": res.forecast.quality.value if res.forecast else None,
+            "abschlag_empfohlen": res.balance.recommended_advance,
+        })
+
+    def _result_at_end(self, meter_id: str, period, allow_partial: bool = False) -> tuple[MeterResult | None, date | None]:
+        """Ergebnis einer beendeten Periode, gerechnet zum Periodenende (Endablesung bzw. Stand am Ende des letzten Tages).
+
+        Fehlt der Endstand des letzten Tages, mit ``allow_partial`` der letzte bekannte Stand der Periode (zweiter Wert:
+        Tag, bis zu dem die Tageswerte reichen), sonst kein Ergebnis."""
+        from .engine.consumption import day_bounds  # noqa: PLC0415
+
+        rt = self.rt
+        meter = rt.meters[meter_id]
+        end_dt = day_bounds(period.end_date, rt.tz)[1]
+        current = None
+        until: date | None = None
+        if meter.entity:
+            daily = rt.daily(meter_id)
+            d = daily.get(period.end_date)
+            if d is None or d.end_value is None:
+                last = max((k for k, v in daily.items() if period.start_date <= k < period.end_date and v.end_value is not None), default=None)
+                if not allow_partial or last is None:
+                    return None, None
+                until, d = last, daily[last]
+                current = (day_bounds(last, rt.tz)[1], d.end_value)
+            else:
+                current = (end_dt, d.end_value)  # end_value ist schon durchlaufend (Neustarts eingerechnet)
+        rec = reconcile(meter, rt.data.readings, rt.daily(meter_id), rt.tz) if meter.entity and rt.readings(meter_id) else None
+        subs = [m for m in rt.meters.values() if m.parent_meter_id == meter_id]
+        return evaluate_meter(
+            meter, rt.contracts(meter_id), rt.data.prices, rt.data.advance_plans, rt.data.payments, rt.readings(meter_id),
+            rt.daily(meter_id), (current[0] if until else end_dt) - timedelta(seconds=1), rt.tz, current, rt.household.tolerance_pct,
+            rt.actual_ends(meter_id),
+            sub_daily=next((rt.daily(m.meter_id) for m in subs if m.role == "wallbox"), None),
+            garden_daily=next((rt.daily(m.meter_id) for m in subs if m.role == "garden"), None),
+            **{k: v for k, v in self._heat_inputs(meter).items() if k != "forecast_dd"},
+            sensor_offset=rec.offset if rec is not None else None,
+        ), until
+
+    def _archive_period(self, meter_id: str, period_id: str, res: MeterResult | None = None) -> bool:
+        rt = self.rt
+        period = rt.stored_period(period_id)
+        if period is None or period.status.value == "closed":
+            return False
+        final, reason, reading = close_criteria(period.end_date, rt.readings(meter_id), rt.data.invoices, period.contract_id, rt.today(), rt.tz)
+        until = None
+        try:
+            # nach 60 Tagen wird auch ohne Endstand abgeschlossen (Kosten bis zum letzten bekannten Tag, gekennzeichnet)
+            at_end, until = self._result_at_end(meter_id, period, allow_partial=reason == "frist_60_tage")
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Tarif-Cockpit: Archiv für Periode %s nicht berechenbar", period_id)
+            return False
+        if at_end is None:
+            # Endstand fehlt (z. B. um Mitternacht vor dem Tageslauf): nie endgültig, höchstens vorläufig mit dem letzten Ergebnis
+            final = False
+            if res is None or res.period is None or res.period.period_id != period_id:
+                return False
+        else:
+            res = at_end
+        if res.period is None or res.period.period_id != period_id:
+            return False
+        archive = build_archive(res, rt.data.snapshots, rt.data.prices, final, dt_util.now(rt.tz), reason, until)
+        return rt.store_archive(period_id, archive, final, reading.reading_id if reading else None)
+
+    @callback
+    def archive_ended(self) -> int:
+        """Beendete Perioden archivieren: vorläufig, endgültig bei Endablesung, Rechnung oder nach 60 Tagen."""
+        n = 0
+        for meter_id in self.rt.meters:
+            for p in self.rt.stored_periods(meter_id):
+                if p.status.value != "closed" and self._archive_period(meter_id, p.period_id):
+                    n += 1
+        return n
+
+    # ------------------------------------------------------------ Kündigungsfrist (1.0)
+
+    @callback
+    def check_notice(self) -> None:
+        from homeassistant.helpers import issue_registry as ir  # noqa: PLC0415
+
+        rt = self.rt
+        today = rt.today()
+        reg = ir.async_get(self.hass)
+        for (domain, issue_id) in list(reg.issues):
+            # Hinweise entfernter Zähler aufräumen
+            if domain == DOMAIN and issue_id.startswith(f"{ISSUE_NOTICE}_") and issue_id[len(ISSUE_NOTICE) + 1:] not in rt.meters:
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+        for meter_id, meter in rt.meters.items():
+            if meter.role != "main":
+                continue
+            contract = billing.contract_on(rt.contracts(meter_id), today)
+            issue_id = f"{ISSUE_NOTICE}_{meter_id}"
+            deadline, end, _kind = billing.notice_deadline(contract, today) if contract else (None, None, "")
+            days = (deadline - today).days if deadline else None
+            if days is not None and 0 <= days <= NOTICE_WARN_DAYS:
+                ir.async_create_issue(self.hass, DOMAIN, issue_id, is_fixable=False, severity=ir.IssueSeverity.WARNING,
+                                      translation_key=ISSUE_NOTICE, translation_placeholders={
+                                          "meter": meter.name or meter_id, "lieferant": contract.supplier,
+                                          "bis": deadline.isoformat(), "ende": end.isoformat() if end else "", "tage": str(days)})
+                key = f"{meter_id}:{deadline.isoformat()}:{days}"
+                if days in (NOTICE_WARN_DAYS, 0) and key not in rt.data.notices_sent:
+                    # je Zähler, Frist und Stufe nur einmal (auch über Neustarts und „Vertrag ändern“)
+                    rt.data.notices_sent.append(key)
+                    rt.store.schedule_save(rt.data)
+                    self.hass.bus.async_fire(EVENT_NOTICE, {"zaehler": meter_id, "device_id": self._device_id(meter_id), "name": meter.name,
+                                                            "lieferant": contract.supplier, "kuendigen_bis": deadline.isoformat(),
+                                                            "vertragsende": end.isoformat() if end else None, "tage": days})
+            else:
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
 

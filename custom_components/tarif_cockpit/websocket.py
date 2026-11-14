@@ -24,6 +24,7 @@ from .engine import series
 def async_setup_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_meters)
     websocket_api.async_register_command(hass, ws_series)
+    websocket_api.async_register_command(hass, ws_archive)
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/zaehler"})
@@ -116,3 +117,26 @@ def build_series(hass: HomeAssistant, key: str) -> dict[str, Any] | None:
             "waehrung": hass.config.currency,
         }
     return None
+
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/archiv", vol.Required("zaehler"): str})
+@callback
+def ws_archive(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Beendete Perioden eines Zählers mit eingefrorenem Archiv und Prognose gegen Realität (neueste zuerst)."""
+    dev = dr.async_get(hass).async_get(msg["zaehler"])
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.state is not ConfigEntryState.LOADED:
+            continue
+        rt = entry.runtime_data
+        key = msg["zaehler"]
+        meter_id = key if key in rt.meters else next((m for m in rt.meters if dev is not None and (DOMAIN, m) in dev.identifiers), None)
+        if meter_id is None:
+            continue
+        periods = sorted(rt.stored_periods(meter_id), key=lambda p: p.start_date, reverse=True)
+        connection.send_result(msg["id"], {"zaehler_id": meter_id, "waehrung": hass.config.currency, "perioden": [
+            {"beginn": p.start_date.isoformat(), "ende": p.end_date.isoformat(), "status": p.status.value, "archiv": p.archive}
+            for p in periods if p.archive
+        ]})
+        return
+    connection.send_error(msg["id"], "not_found", "Zähler nicht gefunden")

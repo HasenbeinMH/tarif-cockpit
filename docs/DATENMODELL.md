@@ -55,7 +55,7 @@ Die Periode ist die zentrale Einheit für Berechnung und Archiv, nicht der Vertr
 - Beginnt ein Vertrag am 29.02., endet sein Vertragsjahr am 28.02.
 - Liest der Versorger ein paar Tage früher oder später ab (höchstens ±10 Tage), verschiebt sich nur das Ende dieser einen Periode; die Regel bleibt.
 - **Anbieterwechsel** (`add_folgevertrag`): Der alte Vertrag endet am Vortag des Wechsels, seine letzte Periode wird zur Schlussperiode (oft ein Rumpfjahr). Der neue Vertrag beginnt mit eigenen Perioden nach seiner Regel. Die Vertragskette eines Zählers muss lückenlos sein.
-- Status: `open` (läuft), `closing` (Ende vorbei, Endablesung fehlt), `closed` (abgeschlossen; Archiv ab 0.6/1.0).
+- Status: `open` (läuft), `closing` (Ende vorbei, Archiv vorläufig), `closed` (abgeschlossen, Archiv endgültig: Endablesung am Ende oder bis 11 Tage danach bzw. Rechnung, frühestens 11 Tage nach dem Ende; spätestens 60 Tage nach dem Ende). Das Archiv (`archive`) enthält Kosten, Menge, Zahlungen, Saldo, Urteil, Preise und die Prognose-Schnappschüsse; `archived_at` und `end_reading` kommen beim Abschluss dazu. Siehe [RECHNUNG.md](RECHNUNG.md#archiv-und-prognose-gegen-realität-10).
 - **Beendete Perioden werden eingefroren:** Sobald eine Periode vorbei ist, wird sie gespeichert und danach nicht mehr verändert. Ein Folgevertrag, der in einer beendeten Periode beginnen würde, wird abgelehnt.
 - Abweichender Ablesetermin: Aktion `set_periodenende`, nur für die laufende oder die zuletzt beendete Periode.
 - Abrechnung „von Hand“: die erste Periode in der Einrichtung, weitere mit der Aktion `add_periode`.

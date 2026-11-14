@@ -189,6 +189,31 @@ class TarifRuntime:
             self.reconcile_meter(meter_id)
             self.changed(meter_id=meter_id)
 
+    def store_archive(self, period_id: str, archive: dict, final: bool, end_reading: str | None) -> bool:
+        """Archiv einer beendeten Periode speichern. Endgültig abgeschlossene Perioden ändern sich nie mehr (Regel 4)."""
+        for i, p in enumerate(self.data.periods):
+            if p.period_id != period_id:
+                continue
+            if p.status == PeriodStatus.CLOSED:
+                return False
+            new = replace(p, archive=archive, status=PeriodStatus.CLOSED if final else PeriodStatus.CLOSING,
+                          archived_at=dt_util.utcnow() if final else p.archived_at, end_reading=end_reading or p.end_reading)
+            if new != p:
+                self.data.periods[i] = new
+                self.store.schedule_save(self.data)
+                return True
+            return False
+        return False
+
+    def set_contract_terms(self, meter_id: str, tariff: str | None, min_term_months: int | None, notice_period_weeks: int | None) -> Contract:
+        """Vertragsdaten ohne Einfluss auf die Perioden ändern (Tarifname, Mindestlaufzeit, Kündigungsfrist) des laufenden Vertrags."""
+        contract = billing.contract_on(self.contracts(meter_id), self.today()) or (self.contracts(meter_id) or [None])[-1]
+        if contract is None:
+            raise billing.BillingError("Für diesen Zähler gibt es keinen Vertrag")
+        new = replace(contract, tariff=tariff, min_term_months=min_term_months, notice_period_weeks=notice_period_weeks)
+        self.data.contracts = [new if c.contract_id == contract.contract_id else c for c in self.data.contracts]
+        return new
+
     def resets(self, meter_id: str) -> list[tuple[datetime, float]]:
         return [(r.at, r.prev_raw) for r in self.data.sensor_resets if r.meter_id == meter_id]
 
@@ -271,6 +296,8 @@ class TarifRuntime:
                 f"Kein reguläres Periodenende in der Nähe von {actual_end} (nur die laufende oder die zuletzt beendete Periode)"
             )
         billing.shifted_end(spec, actual_end)
+        if any(p.period_id == spec.period_id and p.status == PeriodStatus.CLOSED for p in self.data.periods):
+            raise billing.BillingError("Die Periode ist abgeschlossen (Endablesung oder Rechnung erfasst) und wird nicht mehr verändert")
         if any(p.start_date > spec.start_date for p in self.stored_periods(meter_id)):
             raise billing.BillingError("Die folgende Periode ist schon beendet und wird nicht mehr verändert")
         status = PeriodStatus.CLOSING if actual_end < today else PeriodStatus.OPEN

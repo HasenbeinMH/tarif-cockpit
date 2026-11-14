@@ -139,7 +139,13 @@
             "fixed_day": "Stichtag (TT.MM)",
             "first_period_end": "Ende der ersten Periode",
             "vat_mode": "Preise",
-            "vat_rate": "Mehrwertsteuer"
+            "vat_rate": "Mehrwertsteuer",
+            "min_term_months": "Mindestlaufzeit (Monate)",
+            "notice_period_weeks": "Kündigungsfrist (Wochen)"
+          },
+          "data_description": {
+            "min_term_months": "Leer lassen, wenn unbekannt. Ohne Angaben gibt es keine Erinnerung an die Kündigungsfrist.",
+            "notice_period_weeks": "Wie viele Wochen vor Vertragsende muss gekündigt werden? (6 Wochen ≈ 1,5 Monate)"
           }
         },
         "startstand": {
@@ -174,7 +180,8 @@
             "stammdaten": "Name, Ersatzquelle, Brennwert",
             "anbieterwechsel": "Anbieter wechseln",
             "preis_aendern": "Preis ändern",
-            "abschlag_aendern": "Abschlag ändern"
+            "abschlag_aendern": "Abschlag ändern",
+            "vertrag_aendern": "Vertrag ändern (Tarif, Laufzeit, Kündigungsfrist)"
           }
         },
         "zusammenfassung": {
@@ -229,7 +236,13 @@
             "fixed_day": "Stichtag (TT.MM)",
             "first_period_end": "Ende der ersten Periode",
             "vat_mode": "Preise",
-            "vat_rate": "Mehrwertsteuer"
+            "vat_rate": "Mehrwertsteuer",
+            "min_term_months": "Mindestlaufzeit (Monate)",
+            "notice_period_weeks": "Kündigungsfrist (Wochen)"
+          },
+          "data_description": {
+            "min_term_months": "Leer lassen, wenn unbekannt. Ohne Angaben gibt es keine Erinnerung an die Kündigungsfrist.",
+            "notice_period_weeks": "Wie viele Wochen vor Vertragsende muss gekündigt werden? (6 Wochen ≈ 1,5 Monate)"
           }
         },
         "wechsel_preis": {
@@ -252,6 +265,19 @@
             "max_per_period": "Abschläge je Abrechnungsjahr (z. B. 11)",
             "price_unit": "Arbeitspreis je"
           }
+        },
+        "vertrag_aendern": {
+          "title": "Vertrag ändern",
+          "description": "Laufender Vertrag bei {lieferant} seit {beginn}. Perioden, Preise und Abschläge bleiben unverändert.",
+          "data": {
+            "tariff": "Tarif",
+            "min_term_months": "Mindestlaufzeit (Monate)",
+            "notice_period_weeks": "Kündigungsfrist (Wochen)"
+          },
+          "data_description": {
+            "min_term_months": "Leer lassen, wenn unbekannt. Ohne Angaben gibt es keine Erinnerung an die Kündigungsfrist.",
+            "notice_period_weeks": "Wie viele Wochen vor Vertragsende muss gekündigt werden? (6 Wochen ≈ 1,5 Monate)"
+          }
         }
       },
       "error": {
@@ -271,7 +297,9 @@
         "price_saved": "Der Preis wurde gespeichert.",
         "advance_saved": "Der Abschlag wurde gespeichert.",
         "switch_saved": "Der Anbieterwechsel wurde gespeichert.",
-        "not_loaded": "Die Integration ist gerade nicht geladen. Bitte unter Einstellungen → Geräte & Dienste prüfen und neu laden."
+        "not_loaded": "Die Integration ist gerade nicht geladen. Bitte unter Einstellungen → Geräte & Dienste prüfen und neu laden.",
+        "contract_saved": "Der Vertrag wurde gespeichert.",
+        "no_contract": "Für diesen Zähler gibt es noch keinen Vertrag."
       }
     },
     "waermeerzeuger": {
@@ -733,6 +761,14 @@
         "wechselstand": {
           "name": "Wechselstand",
           "description": "Zählerstand zum Wechsel. Fehlt er, kann er später als Ablesung nachgetragen werden."
+        },
+        "mindestlaufzeit": {
+          "name": "Mindestlaufzeit",
+          "description": "In Monaten."
+        },
+        "kuendigungsfrist": {
+          "name": "Kündigungsfrist",
+          "description": "In Wochen vor Vertragsende."
         }
       }
     },
@@ -917,6 +953,52 @@
           "description": "Letzter Tag."
         }
       }
+    },
+    "uebernahme_v03": {
+      "name": "Übernahme aus Version 0.3",
+      "description": "Liest die Helfer der Template-Version 0.3 (Abschlag, Preise, Startstand …) und übernimmt sie in einen Zähler. Antwort: übernommene und übersprungene Werte.",
+      "fields": {
+        "zaehler": {
+          "name": "Zähler",
+          "description": "Zähler-Gerät des Tarif-Cockpits."
+        },
+        "ab": {
+          "name": "Gültig ab",
+          "description": "Standard: Abrechnungsbeginn bzw. Beginn der laufenden Periode."
+        },
+        "abschlag": {
+          "name": "Abschlag",
+          "description": "Helfer aus 0.3: Abschlag."
+        },
+        "zahltag": {
+          "name": "Zahltag",
+          "description": "Helfer aus 0.3: Zahltag."
+        },
+        "arbeitspreis": {
+          "name": "Arbeitspreis",
+          "description": "Helfer aus 0.3: Arbeitspreis."
+        },
+        "grundpreis": {
+          "name": "Grundpreis je Monat",
+          "description": "Helfer aus 0.3: Grundpreis je Monat."
+        },
+        "startstand": {
+          "name": "Zählerstand zu Abrechnungsbeginn",
+          "description": "Helfer aus 0.3: Zählerstand zu Abrechnungsbeginn."
+        },
+        "abrechnungsbeginn": {
+          "name": "Abrechnungsbeginn",
+          "description": "Helfer aus 0.3: Abrechnungsbeginn."
+        },
+        "brennwert": {
+          "name": "Brennwert",
+          "description": "Helfer aus 0.3: Brennwert."
+        },
+        "zustandszahl": {
+          "name": "Zustandszahl",
+          "description": "Helfer aus 0.3: Zustandszahl."
+        }
+      }
     }
   },
   "issues": {
@@ -943,6 +1025,10 @@
     "abgleich_abweichung": {
       "title": "{meter}: Sensor weicht von der Ablesung ab",
       "description": "Zwischen den Ablesungen vom {von} bis {bis} hat der Sensor {pct} % gegenüber der abgelesenen Menge gezählt (fehlend: {fehlt} {unit}). Angeglichen: {angeglichen}. Ursachen: verlorene Impulse, falsche Impulskonstante, Zählertausch oder eine falsch eingetragene Ablesung. Der Hinweis verschwindet, wenn die nächste Ablesung wieder unter 2 % liegt."
+    },
+    "kuendigungsfrist": {
+      "title": "{meter}: Kündigungsfrist endet bald",
+      "description": "Der Vertrag bei {lieferant} endet am {ende}. Wer wechseln möchte, muss bis {bis} kündigen (noch {tage} Tage). Der Hinweis verschwindet nach Ablauf der Frist oder wenn du Laufzeit bzw. Frist unter „Vertrag ändern“ anpasst."
     }
   },
   "exceptions": {

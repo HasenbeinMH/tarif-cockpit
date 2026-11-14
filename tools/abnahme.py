@@ -1,4 +1,4 @@
-"""Abnahme-Durchlauf 0.7 in einer frischen Home-Assistant-Test-Instanz (Docker), nur über die Oberfläche, ohne YAML.
+"""Abnahme-Durchlauf (ab 0.7) in einer frischen Home-Assistant-Test-Instanz (Docker), nur über die Oberfläche, ohne YAML.
 
 Ablauf:
   1. Onboarding per REST (Test-Benutzer mit zufälligem Kennwort, gespeichert in <config>/.abnahme-zugang.json)
@@ -11,7 +11,7 @@ Vorbereitung (Beispiel, Port 8124):
     -v <leerer-ordner>:/config -v <repo>/custom_components/tarif_cockpit:/config/custom_components/tarif_cockpit:ro \
     ghcr.io/home-assistant/home-assistant:2026.11.1
 Aufruf:
-  python tools/abnahme.py <leerer-ordner> [http://127.0.0.1:8124] [alles|haushalt|zaehler|karte|dialog|waermeerzeuger|analyse|impulse]
+  python tools/abnahme.py <leerer-ordner> [http://127.0.0.1:8124] [alles|haushalt|zaehler|karte|dialog|waermeerzeuger|analyse|impulse|uebernahme]
 """
 from __future__ import annotations
 
@@ -385,6 +385,31 @@ def step_impulse(page: Page, base: str) -> None:
     shot(page, "28-abgleich-reparatur", "ha-config-repairs-dashboard")
 
 
+def step_uebernahme(page: Page, base: str) -> None:
+    """Übernahme aus 0.3 (1.0): Helfer wie in der Template-Version anlegen, Aktion uebernahme_v03 für den Gaszähler aufrufen."""
+    helpers = {"Abschlag Gas": 185, "Zahltag Gas": 15, "Arbeitspreis Gas": 0.1123, "Grundpreis Gas": 14.9}
+    for name, value in helpers.items():
+        page.evaluate(f"async () => {{ const l = await {HASS}.callWS({{type: 'input_number/list'}}); "
+                      f"if (!l.some((x) => x.name === '{name}')) await {HASS}.callWS({{type: 'input_number/create', name: '{name}', min: 0, max: 10000, step: 0.0001, mode: 'box'}}); }}")
+        page.wait_for_timeout(500)
+        eid = "input_number." + name.lower().replace(" ", "_")
+        page.evaluate(f"async () => {HASS}.callService('input_number', 'set_value', {{entity_id: '{eid}', value: {value}}})")
+    page.wait_for_timeout(1000)
+    dev = page.evaluate(f"async () => (await {HASS}.callWS({{type: 'config/device_registry/list'}}))"
+                        f".find((d) => d.name === 'Gas' && d.manufacturer === 'Tarif-Cockpit').id")
+    resp = page.evaluate(f"""async () => (await {HASS}.callWS({{type: 'execute_script', sequence: [{{action: 'tarif_cockpit.uebernahme_v03',
+        data: {{zaehler: '{dev}', abschlag: 'input_number.abschlag_gas', zahltag: 'input_number.zahltag_gas',
+                arbeitspreis: 'input_number.arbeitspreis_gas', grundpreis: 'input_number.grundpreis_gas'}}, response_variable: 'r'}},
+        {{stop: 'ok', response_variable: 'r'}}]}})).response""")
+    print("Übernahme:", resp)
+    assert set(resp["uebernommen"]) >= {"abschlag", "zahltag", "arbeitspreis", "grundpreis"}, resp
+    page.wait_for_timeout(2000)
+    adv = page.evaluate(f"() => Object.keys({HASS}.states).filter((e) => e.startsWith('sensor.gas') && "
+                        f"({HASS}.states[e].attributes.friendly_name || '').endsWith('Abschlag')).map((e) => {HASS}.states[e].state)")
+    assert "185.0" in adv or "185" in adv, adv
+    print("Abschlag-Sensor:", adv)
+
+
 def pick_entity(page: Page, label: str, name: str) -> None:
     """Entitätsauswahl im Dialog: Feld öffnen, Namen suchen, Treffer wählen."""
     d = dialog(page)
@@ -404,10 +429,10 @@ def click_center(page: Page, loc) -> None:
 
 
 def step_alles(page: Page, base: str) -> None:
-    for name in ("haushalt", "zaehler", "karte", "dialog", "waermeerzeuger", "analyse", "impulse"):
+    for name in ("haushalt", "zaehler", "karte", "dialog", "waermeerzeuger", "analyse", "impulse", "uebernahme"):
         print("Schritt", name)
         globals()[f"step_{name}"](page, base)
-    print("Abnahme bestanden: Einrichtung ohne YAML bis zur Karte, Abschlag über den Dialog, Wärmeerzeuger, Auswertungskarte, Impulszähler.")
+    print("Abnahme bestanden: Einrichtung ohne YAML bis zur Karte, Abschlag über den Dialog, Wärmeerzeuger, Auswertungskarte, Impulszähler, Übernahme aus 0.3.")
 
 
 def tb(page: Page, label: str):

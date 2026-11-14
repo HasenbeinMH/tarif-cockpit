@@ -57,6 +57,9 @@ JOBS = [
     # Impulszähler (0.9)
     ('overview.html', 'impulse-uebersicht', 'scene=impulse', 1100, CARD),
     ('analyse.html', 'impulse-analyse', 'scene=impulse', 1100, CARD),
+    ('overview.html', 'archiv-uebersicht', 'scene=archiv', 1100, CARD),
+    ('analyse.html', 'archiv-analyse', 'scene=archiv', 1100, CARD),
+    ('analyse.html', 'archiv-analyse-hell', 'scene=archiv&theme=hell', 1100, CARD),
 ]
 
 

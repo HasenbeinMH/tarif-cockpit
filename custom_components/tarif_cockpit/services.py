@@ -20,7 +20,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .engine import billing
-from .engine.model import BillingRule, Contract, Medium, PaymentStatus, PaymentType, PeriodSpan, ReadingSource, VatMode, new_id
+from .engine.model import BillingRule, Contract, Medium, PaymentStatus, PaymentType, PeriodSpan, ReadingSource, VatMode, new_id, to_dict
 from .engine.quality import Quality
 from .runtime import TarifRuntime
 
@@ -51,6 +51,8 @@ SCHEMA_FOLLOW_UP = vol.Schema({
     vol.Optional("vat_mode", default="gross"): vol.In([v.value for v in VatMode]),
     vol.Optional("vat_rate"): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
     vol.Optional("wechselstand"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("mindestlaufzeit"): vol.All(vol.Coerce(int), vol.Range(min=0, max=120)),
+    vol.Optional("kuendigungsfrist"): vol.All(vol.Coerce(int), vol.Range(min=0, max=104)),
 })
 SCHEMA_PERIOD_END = vol.Schema({vol.Required(ATTR_METER): cv.string, vol.Required("ende"): cv.date})
 SCHEMA_RECALC = vol.Schema({
@@ -130,6 +132,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
             fixed_day=call.data.get("stichtag") if rule == BillingRule.FIXED_DAY else None,
             vat_mode=VatMode(call.data["vat_mode"]),
             vat_rate=call.data.get("vat_rate", DEFAULT_VAT[rt.meters[meter_id].medium]),
+            min_term_months=call.data.get("mindestlaufzeit"), notice_period_weeks=call.data.get("kuendigungsfrist"),
         )
         try:
             old, created = rt.add_follow_up(new)
@@ -183,6 +186,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
     reg(DOMAIN, "add_periode", add_period, SCHEMA_PERIOD_END, supports_response=SupportsResponse.OPTIONAL)
     reg(DOMAIN, "recalculate", recalculate, SCHEMA_RECALC)
     async_setup_services_06(hass)
+    async_setup_service_v03(hass)
 
 
 # ---------------------------------------------------------------- Preise, Abschläge, Zahlungen, Rechnungen (0.6)
@@ -283,3 +287,123 @@ def async_setup_services_06(hass: HomeAssistant) -> None:
     reg(DOMAIN, "set_abschlag", set_advance, SCHEMA_ADVANCE, supports_response=SupportsResponse.OPTIONAL)
     reg(DOMAIN, "add_zahlung", add_payment, SCHEMA_PAYMENT, supports_response=SupportsResponse.OPTIONAL)
     reg(DOMAIN, "add_rechnung", add_invoice, SCHEMA_INVOICE, supports_response=SupportsResponse.OPTIONAL)
+
+
+
+# ---------------------------------------------------------------- Übernahme aus 0.3 (1.0)
+
+SCHEMA_V03 = vol.Schema({
+    vol.Required(ATTR_METER): cv.string,
+    vol.Optional("ab"): cv.date,
+    vol.Optional("abschlag"): cv.entity_id,
+    vol.Optional("zahltag"): cv.entity_id,
+    vol.Optional("arbeitspreis"): cv.entity_id,
+    vol.Optional("grundpreis"): cv.entity_id,
+    vol.Optional("startstand"): cv.entity_id,
+    vol.Optional("abrechnungsbeginn"): cv.entity_id,
+    vol.Optional("brennwert"): cv.entity_id,
+    vol.Optional("zustandszahl"): cv.entity_id,
+})
+
+
+@callback
+def async_setup_service_v03(hass: HomeAssistant) -> None:
+    """``tarif_cockpit.uebernahme_v03``: Werte aus den Helfern von 0.3 in einen Zähler übernehmen."""
+
+    def num(entity_id: str | None) -> float | None:
+        st = hass.states.get(entity_id) if entity_id else None
+        try:
+            return float(st.state) if st is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def day(entity_id: str | None) -> date | None:
+        st = hass.states.get(entity_id) if entity_id else None
+        if st is None:
+            return None
+        try:
+            return date.fromisoformat(str(st.state)[:10])
+        except ValueError:
+            return None
+
+    async def take_over(call: ServiceCall) -> ServiceResponse:
+        rt, meter_id = _resolve(hass, call.data[ATTR_METER])
+        taken: list[str] = []
+        skipped: list[dict[str, str]] = []
+        spec = rt.current_period(meter_id)
+        start = call.data.get("ab") or day(call.data.get("abrechnungsbeginn")) or (spec.start_date if spec else rt.today())
+
+        def skip(field: str, reason: str) -> None:
+            if call.data.get(field):
+                skipped.append({"feld": field, "grund": reason})
+
+        work, base = num(call.data.get("arbeitspreis")), num(call.data.get("grundpreis"))
+        contract = billing.contract_on(rt.contracts(meter_id), start)
+        # vorhandenen Preisabschnitt zum Datum übernehmen, nur die gelesenen Werte ersetzen (fehlend ist nie 0)
+        existing = None if contract is None else next(
+            (p for p in sorted(rt.data.prices, key=lambda p: p.valid_from, reverse=True)
+             if p.contract_id == contract.contract_id and p.valid_from <= start and (p.valid_to is None or p.valid_to >= start)), None)
+        if base is None and existing is not None:
+            base = existing.base_price
+        if work is not None and base is None:
+            for f in ("arbeitspreis", "grundpreis", "brennwert", "zustandszahl"):
+                skip(f, "Grundpreis fehlt (kein Zahlenwert und kein Preis aus der Einrichtung)")
+        elif work is not None:
+            values: dict = {}
+            if existing is not None:
+                values = {k: v for k, v in to_dict(existing).items() if k not in ("contract_id", "valid_from", "valid_to")}
+                values["components"] = dict(existing.components)
+            values.update(work_price=work, base_price=base)
+            cal, z = num(call.data.get("brennwert")), num(call.data.get("zustandszahl"))
+            if cal is not None:
+                values["calorific"] = cal
+            if z is not None:
+                values["z_factor"] = z
+            try:
+                rt.set_price(meter_id, start, **values)
+                taken += ["arbeitspreis"] + [k for k in ("grundpreis", "brennwert", "zustandszahl") if num(call.data.get(k)) is not None]
+                for k in ("grundpreis", "brennwert", "zustandszahl"):
+                    if call.data.get(k) and num(call.data.get(k)) is None:
+                        skip(k, "kein Zahlenwert")
+            except billing.BillingError as err:
+                for f in ("arbeitspreis", "grundpreis", "brennwert", "zustandszahl"):
+                    skip(f, str(err))
+        else:
+            skip("arbeitspreis", "kein Zahlenwert")
+        amount = num(call.data.get("abschlag"))
+        if amount is not None:
+            pay_day = num(call.data.get("zahltag"))
+            try:
+                rt.set_advance(meter_id, start, amount, int(pay_day) if pay_day else None)
+                taken += ["abschlag"] + (["zahltag"] if pay_day else [])
+            except billing.BillingError as err:
+                skip("abschlag", str(err))
+        else:
+            skip("abschlag", "kein Zahlenwert")
+        reading = num(call.data.get("startstand"))
+        if reading is not None:
+            ts = datetime.combine(start, time(0), tzinfo=rt.tz)
+            same = [r for r in rt.readings(meter_id) if r.timestamp == ts and not r.superseded_by and r.quality != Quality.INVALID]
+            try:
+                rt._not_in_ended_period(meter_id, start, "Ein Startstand")  # noqa: SLF001
+                ended = None
+            except billing.BillingError as err:
+                ended = str(err)
+            if ended:
+                skip("startstand", ended)
+            elif any(abs(r.value - reading) < 1e-9 for r in same):
+                skip("startstand", "schon vorhanden")
+            elif same:
+                skip("startstand", f"zum {start} gibt es schon den Stand {same[0].value}; bitte mit add_ablesung und ersetzt korrigieren")
+            else:
+                rt.add_reading(meter_id, ts, reading, Quality.REAL, ReadingSource.IMPORT, "Übernahme aus 0.3")
+                taken.append("startstand")
+        else:
+            skip("startstand", "kein Zahlenwert")
+        if call.data.get("abrechnungsbeginn") and spec is not None and day(call.data["abrechnungsbeginn"]) not in (None, spec.start_date):
+            skipped.append({"feld": "abrechnungsbeginn", "grund": f"Periode beginnt laut Vertrag am {spec.start_date}; bitte Vertrag prüfen"})
+        await rt.after_readings_changed(meter_id)
+        rt.changed(meter_id=meter_id)
+        return {"uebernommen": taken, "uebersprungen": skipped, "ab": start.isoformat()}
+
+    async_register_admin_service(hass, DOMAIN, "uebernahme_v03", take_over, SCHEMA_V03, SupportsResponse.OPTIONAL)

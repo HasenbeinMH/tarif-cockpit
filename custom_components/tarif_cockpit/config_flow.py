@@ -222,7 +222,13 @@ def _contract_schema(medium: Medium, defaults: dict[str, Any] | None = None) -> 
         vol.Optional("first_period_end"): selector.DateSelector(),
         vol.Required("vat_mode", default=VatMode.GROSS.value): _select([v.value for v in VatMode], "vat_mode"),
         vol.Required("vat_rate", default=DEFAULT_VAT[medium]): _number(0, 30, 0.1, "%"),
+        vol.Optional("min_term_months"): _number(0, 120, 1),
+        vol.Optional("notice_period_weeks"): _number(0, 104, 1),
     })
+
+
+def _int_or_none(v: Any) -> int | None:
+    return int(v) if v not in (None, "") else None
 
 
 def _contract_from(user_input: dict[str, Any]) -> tuple[Contract | None, dict[str, str]]:
@@ -239,6 +245,7 @@ def _contract_from(user_input: dict[str, Any]) -> tuple[Contract | None, dict[st
         contract_id="neu", meter_id="neu", supplier=user_input["supplier"], start_date=start, billing_rule=rule,
         tariff=user_input.get("tariff"), fixed_day=user_input.get("fixed_day") if rule == BillingRule.FIXED_DAY else None,
         manual_periods=manual, vat_mode=VatMode(user_input["vat_mode"]), vat_rate=float(user_input["vat_rate"]),
+        min_term_months=_int_or_none(user_input.get("min_term_months")), notice_period_weeks=_int_or_none(user_input.get("notice_period_weeks")),
     )
     if billing.validate_contract(contract):
         errors["fixed_day" if rule == BillingRule.FIXED_DAY else "base"] = "invalid_billing"
@@ -566,7 +573,7 @@ class MeterSubentryFlow(ConfigSubentryFlow):
         meter = sub.data.get(CONF_METER, {})
         options = ["stammdaten"]
         if meter.get("role", "main") == "main" and self._runtime() is not None:
-            options += ["anbieterwechsel", "preis_aendern", "abschlag_aendern"]
+            options += ["anbieterwechsel", "vertrag_aendern", "preis_aendern", "abschlag_aendern"]
         return self.async_show_menu(step_id="reconfigure", menu_options=options)
 
     async def async_step_stammdaten(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
@@ -617,6 +624,35 @@ class MeterSubentryFlow(ConfigSubentryFlow):
     def _meter_id_and_medium(self) -> tuple[str, Medium]:
         sub = self._get_reconfigure_subentry()
         return sub.subentry_id, Medium(sub.data.get(CONF_METER, {}).get("medium", "strom"))
+
+    async def async_step_vertrag_aendern(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Tarifname, Mindestlaufzeit und Kündigungsfrist des laufenden Vertrags (Perioden bleiben unberührt)."""
+        meter_id, _ = self._meter_id_and_medium()
+        rt = self._runtime()
+        if rt is None:
+            return self.async_abort(reason="not_loaded")
+        current = billing.contract_on(rt.contracts(meter_id), rt.today()) or (rt.contracts(meter_id) or [None])[-1]
+        if current is None:
+            return self.async_abort(reason="no_contract")
+        if user_input is not None:
+            rt.set_contract_terms(meter_id, user_input.get("tariff") or None, _int_or_none(user_input.get("min_term_months")),
+                                  _int_or_none(user_input.get("notice_period_weeks")))
+            rt.store.schedule_save(rt.data)
+            rt.changed(meter_id=meter_id, flags={"payments"})
+            if rt.coordinator is not None:
+                rt.coordinator.check_notice()
+            return self.async_abort(reason="contract_saved")
+
+        def opt(key: str, value: Any) -> vol.Optional:
+            return vol.Optional(key, description={"suggested_value": value}) if value is not None else vol.Optional(key)
+
+        schema = vol.Schema({
+            opt("tariff", current.tariff): str,
+            opt("min_term_months", current.min_term_months): _number(0, 120, 1),
+            opt("notice_period_weeks", current.notice_period_weeks): _number(0, 104, 1),
+        })
+        return self.async_show_form(step_id="vertrag_aendern", data_schema=schema,
+                                    description_placeholders={"lieferant": current.supplier, "beginn": current.start_date.isoformat()})
 
     async def async_step_preis_aendern(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         meter_id, medium = self._meter_id_and_medium()
