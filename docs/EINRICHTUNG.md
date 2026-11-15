@@ -38,7 +38,7 @@ Beim Eintrag „Tarif-Cockpit“ → **Zähler hinzufügen**. Für jeden Zähler
 | ![Vertrag](img/abnahme-7-zaehler-vertrag.png) | ![Preise](img/abnahme-8-zaehler-preis.png) | ![Abschläge](img/abnahme-9-zaehler-abschlag.png) |
 
 - **Vertrag:** „Wann rechnet dein Versorger ab?“ Vertragsjahr, Kalenderjahr (erstes Jahr als Rumpfjahr), **fester Stichtag** (erster Tag der neuen Periode als TT.MM) oder von Hand.
-- **Preise:** wie im Vertrag, brutto oder netto.
+- **Preise:** wie im Vertrag, brutto oder netto. Den Arbeitspreis gibst du in **Cent je kWh** ein (z. B. 31,54); Wasser in Euro je m³, Fernwärme wahlweise in Cent je kWh oder Euro je MWh. Ein Wert unter 1 ct/kWh wird als vermutlich in Euro eingegeben abgelehnt.
 - **Abschläge:** Betrag, Zahltag, Rhythmus. Ohne Betrag gibt es keine Abschläge (z. B. bei Abrechnung über den Vermieter).
 
 | Startstand | Zusammenfassung |

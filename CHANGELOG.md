@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 – 2026-11-15
+
+### Geändert
+- **Arbeitspreis in Cent je kWh** in allen Dialogen (Zähler anlegen, Preis ändern, Anbieterwechsel), wie auf Vertrag und Rechnung. Gespeichert und gerechnet wird weiter in Euro je kWh; vorhandene Preise bleiben unverändert und werden beim Ändern in Cent vorbelegt. Ein Wert unter 1 ct/kWh wird mit einem Hinweis abgelehnt (vermutlich in Euro eingegeben). Wasser bleibt in Euro je m³, Fernwärme wahlweise Cent je kWh oder Euro je MWh. Die Aktionen (`set_preis`, `uebernahme_v03`) erwarten weiterhin Euro je kWh.
+- Doku: Wirkung des Wallbox-Unterzählers genauer beschrieben ([docs/RECHNUNG.md](docs/RECHNUNG.md)).
+
 ## 1.0.0 – 2026-11-14
 
 **Stabile Version.** Abnahme: Integrationstests auf HA 2026.11 und der kleinsten unterstützten Version grün, Abnahme-Durchlauf in einer frischen Home-Assistant-Instanz einschließlich der Übernahme aus 0.3.

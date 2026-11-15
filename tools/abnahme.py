@@ -180,7 +180,7 @@ def step_zaehler(page: Page, base: str) -> None:
     page.wait_for_timeout(600)
     shot(page, "7-zaehler-vertrag")
     ok(page)
-    num(page, "Arbeitspreis").fill("0.3154")
+    num(page, "Arbeitspreis").fill("31.54")
     num(page, "Grundpreis").fill("13.09")
     num(page, "Grundpreis").press("Tab")
     page.wait_for_timeout(400)
@@ -248,13 +248,17 @@ def step_dialog(page: Page, base: str) -> None:
     card = page.locator("tarif-cockpit-card").first
     card.locator("[data-advance]").first.click()
     page.wait_for_timeout(800)
+    # vorbelegt mit dem empfohlenen Abschlag (hängt vom Tag ab, daher aus dem Sensor)
+    rec = page.evaluate(f"() => {{ const s = {HASS}.states; const id = Object.keys(s).find((e) => e.startsWith('sensor.') && "
+                        f"(s[e].attributes.friendly_name || '').endsWith('Abschlag empfohlen')); return s[id].state; }}")
+    rec = str(int(float(rec))) if float(rec).is_integer() else rec
     amount = card.locator('[data-dlg="amount"]')
-    expect(amount).to_have_value("112")  # vorbelegt mit dem empfohlenen Abschlag
+    expect(amount).to_have_value(rec)
     shot(page, "15-abschlag-dialog", "tarif-cockpit-card")
     card.locator('[data-dlg="save"]').click()
     page.wait_for_timeout(3000)
     expect(card.locator(".dlg")).to_have_count(0)
-    expect(card).to_contain_text("Abschlag 112")
+    expect(card).to_contain_text(f"Abschlag {rec}")
     shot(page, "16-karte-nach-aenderung", "tarif-cockpit-card")
 
 
@@ -351,7 +355,7 @@ def step_impulse(page: Page, base: str) -> None:
     ok(page)
     tb(page, "Lieferant").fill("Gasversorger")
     ok(page)
-    num(page, "Arbeitspreis").fill("0.10")
+    num(page, "Arbeitspreis").fill("10")
     num(page, "Grundpreis").fill("15")
     ok(page)
     num(page, "Abschlag").fill("150")

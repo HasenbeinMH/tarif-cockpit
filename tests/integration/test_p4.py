@@ -51,7 +51,7 @@ async def test_situation_drives_meter_dialog(hass: HomeAssistant) -> None:
     r = await flow.async_configure(r["flow_id"], {"name": "Strom 2"})
     r = await flow.async_configure(r["flow_id"], {"unit": "kWh"})
     r = await flow.async_configure(r["flow_id"], {"supplier": "SW", "start_date": "2026-01-01", "billing_rule": "calendar_year", "vat_mode": "gross", "vat_rate": 19})
-    r = await flow.async_configure(r["flow_id"], {"work_price": 0.3, "base_price": 10})
+    r = await flow.async_configure(r["flow_id"], {"work_price": 30, "base_price": 10})
     rhythm_default = next(k.default() for k in r["data_schema"].schema if str(k) == "rhythm")
     assert rhythm_default == "2"  # Rhythmus aus der Situation
 
@@ -85,7 +85,7 @@ async def test_menu_price_and_advance(hass: HomeAssistant) -> None:
     entry = make_entry(strom_sub())
     assert await setup(hass, entry)
     flow, r = await _menu(hass, entry, "preis_aendern")
-    r = await flow.async_configure(r["flow_id"], {"valid_from": "2026-12-01", "work_price": 0.40, "base_price": 15})
+    r = await flow.async_configure(r["flow_id"], {"valid_from": "2026-12-01", "work_price": 40, "base_price": 15})
     assert r["type"] is FlowResultType.ABORT and r["reason"] == "price_saved"
     assert max(entry.runtime_data.data.prices, key=lambda p: p.valid_from).work_price == 0.40
     flow, r = await _menu(hass, entry, "abschlag_aendern")
@@ -95,7 +95,7 @@ async def test_menu_price_and_advance(hass: HomeAssistant) -> None:
     assert res.payments.period_total == 5 * 165 + 7 * 120
     # vor Vertragsbeginn: Fehler im Formular, nichts gespeichert
     flow, r = await _menu(hass, entry, "preis_aendern")
-    r = await flow.async_configure(r["flow_id"], {"valid_from": "2026-01-01", "work_price": 0.1, "base_price": 1})
+    r = await flow.async_configure(r["flow_id"], {"valid_from": "2026-01-01", "work_price": 10, "base_price": 1})
     assert r["errors"] == {"base": "billing_error"} and r["description_placeholders"]["error"]
 
 
@@ -115,7 +115,7 @@ async def test_supplier_switch_flow(hass: HomeAssistant, freezer) -> None:
     assert r["step_id"] == "wechsel_vertrag"
     r = await flow.async_configure(r["flow_id"], {"supplier": "Neu AG", "billing_rule": "contract_year", "vat_mode": "gross", "vat_rate": 19})
     assert r["step_id"] == "wechsel_preis"
-    r = await flow.async_configure(r["flow_id"], {"work_price": 0.28, "base_price": 12, "amount": 150, "pay_day": 1, "rhythm": "1", "max_per_period": 11})
+    r = await flow.async_configure(r["flow_id"], {"work_price": 28, "base_price": 12, "amount": 150, "pay_day": 1, "rhythm": "1", "max_per_period": 11})
     assert r["reason"] == "switch_saved"
     rt = entry.runtime_data
     chain = rt.contracts("m1")
@@ -136,7 +136,7 @@ async def test_menu_prefills_current_values(hass: HomeAssistant, freezer) -> Non
     assert await setup(hass, entry)
     flow, r = await _menu(hass, entry, "preis_aendern")
     keys = {str(k): k for k in r["data_schema"].schema}
-    assert keys["work_price"].default() == 0.3154 and keys["base_price"].default() == 13.09
+    assert keys["work_price"].default() == 31.54 and keys["base_price"].default() == 13.09
     assert keys["metering_price"].description == {"suggested_value": 2.5}
     flow, r = await _menu(hass, entry, "abschlag_aendern")
     keys = {str(k): k for k in r["data_schema"].schema}
@@ -169,7 +169,7 @@ async def test_summary_survives_probe_error(hass: HomeAssistant, monkeypatch) ->
     r = await flow.async_configure(r["flow_id"], {"name": "Strom Keller"})
     r = await flow.async_configure(r["flow_id"], {"unit": "kWh", "annual_consumption": 3500})
     r = await flow.async_configure(r["flow_id"], {"supplier": "SW", "start_date": "2026-01-01", "billing_rule": "calendar_year", "vat_mode": "gross", "vat_rate": 19})
-    r = await flow.async_configure(r["flow_id"], {"work_price": 0.3, "base_price": 10})
+    r = await flow.async_configure(r["flow_id"], {"work_price": 30, "base_price": 10})
     r = await flow.async_configure(r["flow_id"], {"amount": 85, "pay_day": 1, "rhythm": "1"})
     r = await flow.async_configure(r["flow_id"], {"value": 1000.0, "timestamp": "2026-01-01 00:00:00", "quality": "real"})
     assert r["step_id"] == "zusammenfassung" and r["description_placeholders"]["prognose"]
@@ -224,12 +224,12 @@ async def test_summary_forecast_without_sensor(hass: HomeAssistant) -> None:
     r = await flow.async_configure(r["flow_id"], {"name": "Strom Keller"})
     r = await flow.async_configure(r["flow_id"], {"unit": "kWh", "annual_consumption": 3500})
     r = await flow.async_configure(r["flow_id"], {"supplier": "SW", "start_date": "2026-01-01", "billing_rule": "calendar_year", "vat_mode": "gross", "vat_rate": 19})
-    r = await flow.async_configure(r["flow_id"], {"work_price": 0.3154, "base_price": 13.09})
+    r = await flow.async_configure(r["flow_id"], {"work_price": 31.54, "base_price": 13.09})
     r = await flow.async_configure(r["flow_id"], {"amount": 85, "pay_day": 1, "rhythm": "1"})
     r = await flow.async_configure(r["flow_id"], {"value": 1000.0, "timestamp": "2026-01-01 00:00:00", "quality": "real"})
     assert r["step_id"] == "zusammenfassung"
     ph = r["description_placeholders"]
-    assert ph["preis"].startswith("0,3154 EUR/kWh") and "13,09" in ph["preis"]
+    assert ph["preis"].startswith("31,54 ct/kWh") and "13,09" in ph["preis"]
     assert ph["abschlag"] == "85,00 EUR · Zahltag 1 · monatlich"
     assert ph["prognose"].startswith("Kosten der Periode") and "Annahme" in ph["prognose"]
 
@@ -253,3 +253,17 @@ async def test_websocket_rights_and_disabled_sensors(hass: HomeAssistant, hass_w
     with pytest.raises(Unauthorized):
         await hass.services.async_call(DOMAIN, "set_abschlag", {"zaehler": device_id, "ab": "2026-12-01", "betrag": 100},
                                        blocking=True, context=Context(user_id=hass_read_only_user.id))
+
+
+async def test_work_price_in_cents(hass: HomeAssistant) -> None:
+    """1.0.1: Arbeitspreis im Dialog in Cent je kWh, gespeichert in Euro; Eingabe in Euro wird abgefangen."""
+    hass.states.async_set("sensor.zaehler", "6645.9", {"unit_of_measurement": "kWh"})
+    entry = make_entry(strom_sub())
+    assert await setup(hass, entry)
+    flow, r = await _menu(hass, entry, "preis_aendern")
+    r = await flow.async_configure(r["flow_id"], {"valid_from": "2026-12-01", "work_price": 0.3154, "base_price": 13.09})
+    assert r["type"] is FlowResultType.FORM and r["errors"] == {"work_price": "work_price_cents"}
+    r = await flow.async_configure(r["flow_id"], {"valid_from": "2026-12-01", "work_price": 31.54, "base_price": 13.09})
+    assert r["reason"] == "price_saved"
+    seg = max(entry.runtime_data.data.prices, key=lambda p: p.valid_from)
+    assert seg.work_price == pytest.approx(0.3154) and seg.base_price == 13.09

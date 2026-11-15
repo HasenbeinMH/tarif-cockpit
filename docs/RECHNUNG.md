@@ -39,7 +39,7 @@ Vier Bereiche, strikt getrennt: **Verbrauch** (Tageswerte, Verbrauch seit Period
 - Ersatzquelle: Tage ohne Statistik des Zählers kommen aus der eingetragenen Ersatzquelle (Qualität „geschätzt“).
 - Rückfall 1: Durchschnitt seit Periodenbeginn × Resttage (ab 30 Tagen, „vorläufig“).
 - Rückfall 2: Jahresverbrauch laut letzter Rechnung tagesanteilig („Annahme“). Eine Verteilung nach Standardlastprofil folgt später.
-- **Wallbox**: Als Unterzähler wird sie vom Hauptzähler abgezogen; die Grundlast folgt dem Vorjahr, die Wallbox ihrem Mittel der letzten 30 Tage (mindestens 14 Tage mit Werten). Tage ohne Wallbox-Wert zählen ganz zur Grundlast (Hinweis `wallbox_luecken`).
+- **Wallbox**: Ein Unterzähler hinter dem Hausstromzähler, ohne eigenen Vertrag und ohne eigene Kosten. Kosten, Abschläge und Saldo bleiben beim Hauptzähler, denn bezahlt wird, was der Hauptzähler zählt. Getrennt wird nur die **Prognose**: Wallbox-Tageswerte werden vor der Grundlast-Prognose abgezogen, damit Ladetage den Vorjahresvergleich nicht verzerren. Die Grundlast folgt dem Vorjahr, die Wallbox ihrem Mittel der letzten 30 Tage (mindestens 14 Tage mit Werten, sonst wird nicht getrennt); beide Reste werden addiert (Attribut `wallbox_rest`). Tage ohne Wallbox-Wert zählen ganz zur Grundlast (Hinweis `wallbox_luecken`). Lädt die Wallbox überwiegend PV-Strom, ist das richtig so: Nur der Netzbezug am Hauptzähler kostet Geld. Ein eigener Wallbox-Tarif mit eigenem Zähler (z. B. § 14a mit separatem Zähler) wird stattdessen als eigener Hauptzähler mit Vertrag angelegt.
 - **Gartenwasser**: geht weder bisher noch in der Prognose ins Abwasser; der Gartenzähler wird wie die Wallbox fortgeschrieben.
 
 **Gas und Fernwärme**

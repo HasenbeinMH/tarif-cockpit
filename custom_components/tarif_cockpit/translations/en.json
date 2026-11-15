@@ -114,7 +114,8 @@
             "price_unit": "Unit price per"
           },
           "data_description": {
-            "price_unit": "District heating is often billed per MWh; internally it is calculated per kWh."
+            "price_unit": "District heating is often billed per MWh; internally it is calculated per kWh.",
+            "work_price": "In cents per kWh as on contract and bill, e.g. 31.54. Water in euros per m³, district heating per MWh in euros."
           }
         },
         "abschlag": {
@@ -203,6 +204,9 @@
             "demand_price": "Demand charge per kW and year",
             "demand_kw": "Connected load",
             "price_unit": "Unit price per"
+          },
+          "data_description": {
+            "work_price": "In cents per kWh as on contract and bill, e.g. 31.54. Water in euros per m³, district heating per MWh in euros."
           }
         },
         "abschlag_aendern": {
@@ -264,6 +268,9 @@
             "rhythm": "Interval",
             "max_per_period": "Payments per billing year (e.g. 11)",
             "price_unit": "Unit price per"
+          },
+          "data_description": {
+            "work_price": "In cents per kWh as on contract and bill, e.g. 31.54. Water in euros per m³, district heating per MWh in euros."
           }
         },
         "vertrag_aendern": {
@@ -290,7 +297,8 @@
         "billing_error": "Not possible, see the note above.",
         "switch_invalid": "A switch on this date is not possible, see the note above.",
         "switch_reading_future": "The switch is in the future: please enter the meter reading after the switch (action “Add reading”).",
-        "entity_or_pulses": "Please choose either a meter sensor or a pulse counter, not both."
+        "entity_or_pulses": "Please choose either a meter sensor or a pulse counter, not both.",
+        "work_price_cents": "The unit price is entered in cents per kWh: 31.54 instead of 0.3154."
       },
       "abort": {
         "reconfigure_successful": "The meter was changed.",
@@ -555,8 +563,8 @@
     },
     "price_unit": {
       "options": {
-        "kwh": "kWh",
-        "mwh": "MWh"
+        "kwh": "cents per kWh",
+        "mwh": "euros per MWh"
       }
     },
     "pulse_mode": {
@@ -814,7 +822,7 @@
         },
         "arbeitspreis": {
           "name": "Unit price",
-          "description": "Per kWh (water per m³)."
+          "description": "In euros per kWh (water per m³), e.g. 0.3154. The dialogs ask in cents per kWh."
         },
         "grundpreis": {
           "name": "Standing charge",

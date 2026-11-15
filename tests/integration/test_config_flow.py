@@ -51,7 +51,7 @@ async def test_meter_subentry_readings_only(hass: HomeAssistant) -> None:
     good = {k: v for k, v in bad.items() if k != "fixed_day"}
     r = await flow.async_configure(r["flow_id"], {**good, "billing_rule": "calendar_year"})
     assert r["step_id"] == "preis"
-    r = await flow.async_configure(r["flow_id"], {"work_price": 0.0952, "base_price": 19.04})
+    r = await flow.async_configure(r["flow_id"], {"work_price": 9.52, "base_price": 19.04})
     assert r["step_id"] == "abschlag"
     r = await flow.async_configure(r["flow_id"], {"amount": 166, "pay_day": 1, "rhythm": "1"})
     assert r["step_id"] == "startstand"
@@ -98,7 +98,7 @@ async def test_meter_with_entity_duplicate(hass: HomeAssistant) -> None:
     assert r["step_id"] == "einheit"
     r = await flow.async_configure(r["flow_id"], {"unit": "m³", "calorific": 11.3, "z_factor": 0.96})
     r = await flow.async_configure(r["flow_id"], {"supplier": "SW", "start_date": "2026-07-30", "billing_rule": "fixed_day", "fixed_day": "30.07", "vat_mode": "gross", "vat_rate": 19})
-    r = await flow.async_configure(r["flow_id"], {"work_price": 0.1, "base_price": 10})
+    r = await flow.async_configure(r["flow_id"], {"work_price": 10, "base_price": 10})
     r = await flow.async_configure(r["flow_id"], {"pay_day": 1, "rhythm": "1"})  # ohne Betrag: keine Abschläge
     r = await flow.async_configure(r["flow_id"], {"quality": "real"})  # mit Sensor: Startstand optional
     assert r["step_id"] == "zusammenfassung"

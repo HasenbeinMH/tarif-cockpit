@@ -67,8 +67,9 @@ async def _probe_summary(hass: HomeAssistant, rt: Any, data: dict[str, Any]) -> 
 
     out = {
         "perioden": MeterSubentryFlow._preview(raw),
-        "preis": (f"{_num(hass, price.get('work_price'))} {hass.config.currency}/{'m³' if data['medium'] == 'wasser' else 'kWh'}, "
-                  f"{'Grundpreis' if de else 'standing charge'} {_num(hass, price.get('base_price'), 2)} {hass.config.currency}/{'Monat' if de else 'month'}")
+        "preis": ((f"{_num(hass, float(price['work_price']) * 100)} ct/kWh, " if data["medium"] != "wasser" and hass.config.currency == "EUR"
+                   else f"{_num(hass, price.get('work_price'))} {hass.config.currency}/{'m³' if data['medium'] == 'wasser' else 'kWh'}, ")
+                  + f"{'Grundpreis' if de else 'standing charge'} {_num(hass, price.get('base_price'), 2)} {hass.config.currency}/{'Monat' if de else 'month'}")
         if price else "–",
         "abschlag": (f"{_num(hass, plan['amount'], 2)} {hass.config.currency} · {'Zahltag' if de else 'day'} {int(plan['pay_day'])} · "
                      + ((f"alle {int(plan['rhythm'])} Monate" if de else f"every {int(plan['rhythm'])} months") if int(plan['rhythm']) > 1

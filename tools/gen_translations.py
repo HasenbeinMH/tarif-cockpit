@@ -608,6 +608,19 @@ S["issues"]["kuendigungsfrist"] = {
 }
 
 
+# ---------------------------------------------------------------- 1.0.1: Arbeitspreis in Cent je kWh
+WORK_DESC = T("In Cent je kWh wie auf Vertrag und Rechnung, z. B. 31,54. Wasser in Euro je m³, Fernwärme je MWh in Euro.",
+              "In cents per kWh as on contract and bill, e.g. 31.54. Water in euros per m³, district heating per MWh in euros.")
+for step in ("preis", "preis_aendern", "wechsel_preis"):
+    S["config_subentries"]["zaehler"]["step"][step].setdefault("data_description", {})["work_price"] = WORK_DESC
+S["config_subentries"]["zaehler"]["error"]["work_price_cents"] = T(
+    "Der Arbeitspreis wird in Cent je kWh eingegeben: 31,54 statt 0,3154.", "The unit price is entered in cents per kWh: 31.54 instead of 0.3154.")
+S["selector"]["price_unit"] = {"options": {"kwh": T("Cent je kWh", "cents per kWh"), "mwh": T("Euro je MWh", "euros per MWh")}}
+S["services"]["set_preis"]["fields"]["arbeitspreis"]["description"] = T(
+    "In Euro je kWh (Wasser je m³), z. B. 0,3154. Die Dialoge fragen in Cent je kWh.",
+    "In euros per kWh (water per m³), e.g. 0.3154. The dialogs ask in cents per kWh.")
+
+
 def pick(o, i):
     if isinstance(o, tuple):
         return o[i]

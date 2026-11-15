@@ -52,7 +52,7 @@ async def test_pulse_meter_flow(hass: HomeAssistant) -> None:
     assert r["step_id"] == "einheit" and "pulse_constant" in {str(k) for k in r["data_schema"].schema}
     r = await flow.async_configure(r["flow_id"], {"unit": "m³", "calorific": 11.4, "z_factor": 0.95, "pulse_constant": 0.01, "pulse_mode": "per_pulse"})
     r = await flow.async_configure(r["flow_id"], {"supplier": "SW", "start_date": "2026-09-01", "billing_rule": "calendar_year", "vat_mode": "gross", "vat_rate": 19})
-    r = await flow.async_configure(r["flow_id"], {"work_price": 0.1, "base_price": 10})
+    r = await flow.async_configure(r["flow_id"], {"work_price": 10, "base_price": 10})
     r = await flow.async_configure(r["flow_id"], {"pay_day": 1, "rhythm": "1"})
     r = await flow.async_configure(r["flow_id"], {"quality": "real"})
     r = await flow.async_configure(r["flow_id"], {})

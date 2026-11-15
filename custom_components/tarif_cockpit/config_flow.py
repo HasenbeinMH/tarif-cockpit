@@ -253,10 +253,18 @@ def _contract_from(user_input: dict[str, Any]) -> tuple[Contract | None, dict[st
     return contract, errors
 
 
+def _cents(hass: Any, medium: Medium) -> bool:
+    """Arbeitspreis je kWh in Cent eingeben (wie auf Vertrag und Rechnung); Wasser je m³ in Euro. Gespeichert wird je kWh in Euro."""
+    return medium != Medium.WASSER and hass.config.currency == "EUR"
+
+
 def _price_schema(hass: Any, medium: Medium, with_date: bool = False, current: PriceSegment | None = None) -> vol.Schema:
     """Preisformular; ``current`` belegt alle Felder mit dem laufenden Preisabschnitt vor (nichts geht still verloren)."""
     per = "m³" if medium == Medium.WASSER else "kWh"
     cur = hass.config.currency
+    cents = _cents(hass, medium)
+    work_unit = ("ct/kWh" if cents else f"{cur}/{per}") + (f" · {cur}/MWh" if medium == Medium.FERNWAERME else "")
+    work_default = vol.UNDEFINED if current is None else round(current.work_price * (100 if cents else 1), 6)
 
     def opt(key: str) -> vol.Optional:
         value = getattr(current, key, None) if current is not None else None
@@ -266,7 +274,7 @@ def _price_schema(hass: Any, medium: Medium, with_date: bool = False, current: P
     if with_date:
         fields[vol.Required("valid_from")] = selector.DateSelector()
     fields.update({
-        vol.Required("work_price", default=current.work_price if current else vol.UNDEFINED): _number(0, 10000, "any", f"{cur}/{per}"),
+        vol.Required("work_price", default=work_default): _number(0, 10000, "any", work_unit),
         vol.Required("base_price", default=current.base_price if current else 0): _number(0, 10000, "any", f"{cur}/Monat"),
         opt("metering_price"): _number(0, 1000, "any", f"{cur}/Monat"),
     })
@@ -286,11 +294,21 @@ def _price_schema(hass: Any, medium: Medium, with_date: bool = False, current: P
 PRICE_KEYS = ("metering_price", "calorific", "z_factor", "wastewater_price", "fixed_yearly", "demand_price", "demand_kw")
 
 
-def _price_from(user_input: dict[str, Any]) -> dict[str, float]:
-    """Formular → Preisabschnitt. Fernwärme je MWh wird auf kWh umgerechnet (gerechnet wird immer je kWh)."""
+def _price_errors(user_input: dict[str, Any], cents: bool) -> dict[str, str]:
+    """Arbeitspreis unter 1 ct/kWh ist fast sicher in Euro eingegeben (0,3154 statt 31,54)."""
+    if cents and user_input.get("price_unit") != "mwh" and 0 < float(user_input["work_price"]) < 1:
+        return {"work_price": "work_price_cents"}
+    return {}
+
+
+def _price_from(user_input: dict[str, Any], cents: bool = False) -> dict[str, float]:
+    """Formular → Preisabschnitt in Euro je kWh (bzw. je m³). Eingabe in Cent je kWh oder bei Fernwärme in Euro je MWh."""
     work = float(user_input["work_price"])
     if user_input.get("price_unit") == "mwh":
         work = work / 1000.0
+    elif cents:
+        work = work / 100.0
+    work = round(work, 10)  # 9,52 ct → 0,0952 € ohne Rundungsrest
     price = {"work_price": work, "base_price": float(user_input["base_price"])}
     for key in PRICE_KEYS:
         if user_input.get(key) is not None:
@@ -505,13 +523,18 @@ class MeterSubentryFlow(ConfigSubentryFlow):
     async def async_step_preis(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         """Preise zu Vertragsbeginn (weitere Preisänderungen über „Neu konfigurieren“ oder die Aktion set_preis)."""
         medium = Medium(self._data["medium"])
+        errors: dict[str, str] = {}
         if user_input is not None:
-            self._data["price"] = _price_from(user_input)
-            return await self.async_step_abschlag()
+            errors = _price_errors(user_input, _cents(self.hass, medium))
+            if not errors:
+                self._data["price"] = _price_from(user_input, _cents(self.hass, medium))
+                return await self.async_step_abschlag()
         schema = _price_schema(self.hass, medium)
         if medium == Medium.GAS:  # Brennwert steht bei Gas schon im Zähler
             schema = vol.Schema({k: v for k, v in schema.schema.items() if str(k) not in ("calorific", "z_factor")})
-        return self.async_show_form(step_id="preis", data_schema=schema)
+        if user_input is not None:
+            schema = self.add_suggested_values_to_schema(schema, user_input)
+        return self.async_show_form(step_id="preis", data_schema=schema, errors=errors)
 
     async def async_step_abschlag(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         """Abschlagsplan: Betrag, Zahltag, Rhythmus, Anzahl je Periode. Ohne Betrag: keine Abschläge."""
@@ -662,8 +685,10 @@ class MeterSubentryFlow(ConfigSubentryFlow):
         if rt is None:
             return self.async_abort(reason="not_loaded")
         if user_input is not None:
+            errors = _price_errors(user_input, _cents(self.hass, medium))
+        if user_input is not None and not errors:
             try:
-                rt.set_price(meter_id, date.fromisoformat(user_input["valid_from"]), **_price_from(user_input))
+                rt.set_price(meter_id, date.fromisoformat(user_input["valid_from"]), **_price_from(user_input, _cents(self.hass, medium)))
             except billing.BillingError as err:
                 errors["base"] = "billing_error"
                 placeholders["error"] = str(err)
@@ -752,11 +777,13 @@ class MeterSubentryFlow(ConfigSubentryFlow):
         if rt is None:
             return self.async_abort(reason="not_loaded")
         if user_input is not None:
+            errors = _price_errors(user_input, _cents(self.hass, medium))
+        if user_input is not None and not errors:
             start = new.start_date
             created = replace(new, contract_id=new_id(), meter_id=meter_id)
             try:
                 rt.add_follow_up(created)
-                rt.set_price(meter_id, start, **_price_from(user_input))
+                rt.set_price(meter_id, start, **_price_from(user_input, _cents(self.hass, medium)))
                 if user_input.get("amount"):
                     rt.set_advance(meter_id, start, float(user_input["amount"]), int(user_input["pay_day"]), int(user_input["rhythm"]),
                                    int(user_input["max_per_period"]) if user_input.get("max_per_period") else None)

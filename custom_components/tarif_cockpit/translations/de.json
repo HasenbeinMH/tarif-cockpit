@@ -114,7 +114,8 @@
             "price_unit": "Arbeitspreis je"
           },
           "data_description": {
-            "price_unit": "Fernwärme wird oft je MWh abgerechnet; gerechnet wird intern je kWh."
+            "price_unit": "Fernwärme wird oft je MWh abgerechnet; gerechnet wird intern je kWh.",
+            "work_price": "In Cent je kWh wie auf Vertrag und Rechnung, z. B. 31,54. Wasser in Euro je m³, Fernwärme je MWh in Euro."
           }
         },
         "abschlag": {
@@ -203,6 +204,9 @@
             "demand_price": "Leistungspreis je kW und Jahr",
             "demand_kw": "Anschlussleistung",
             "price_unit": "Arbeitspreis je"
+          },
+          "data_description": {
+            "work_price": "In Cent je kWh wie auf Vertrag und Rechnung, z. B. 31,54. Wasser in Euro je m³, Fernwärme je MWh in Euro."
           }
         },
         "abschlag_aendern": {
@@ -264,6 +268,9 @@
             "rhythm": "Rhythmus",
             "max_per_period": "Abschläge je Abrechnungsjahr (z. B. 11)",
             "price_unit": "Arbeitspreis je"
+          },
+          "data_description": {
+            "work_price": "In Cent je kWh wie auf Vertrag und Rechnung, z. B. 31,54. Wasser in Euro je m³, Fernwärme je MWh in Euro."
           }
         },
         "vertrag_aendern": {
@@ -290,7 +297,8 @@
         "billing_error": "Nicht möglich, siehe Hinweis oben.",
         "switch_invalid": "Wechsel an diesem Datum nicht möglich, siehe Hinweis oben.",
         "switch_reading_future": "Der Wechsel liegt in der Zukunft: den Zählerstand bitte erst nach dem Wechsel eintragen (Aktion „Ablesung hinzufügen“).",
-        "entity_or_pulses": "Bitte entweder einen Zählerstand-Sensor oder einen Impulszähler wählen, nicht beides."
+        "entity_or_pulses": "Bitte entweder einen Zählerstand-Sensor oder einen Impulszähler wählen, nicht beides.",
+        "work_price_cents": "Der Arbeitspreis wird in Cent je kWh eingegeben: 31,54 statt 0,3154."
       },
       "abort": {
         "reconfigure_successful": "Der Zähler wurde geändert.",
@@ -555,8 +563,8 @@
     },
     "price_unit": {
       "options": {
-        "kwh": "kWh",
-        "mwh": "MWh"
+        "kwh": "Cent je kWh",
+        "mwh": "Euro je MWh"
       }
     },
     "pulse_mode": {
@@ -814,7 +822,7 @@
         },
         "arbeitspreis": {
           "name": "Arbeitspreis",
-          "description": "Je kWh (Wasser je m³)."
+          "description": "In Euro je kWh (Wasser je m³), z. B. 0,3154. Die Dialoge fragen in Cent je kWh."
         },
         "grundpreis": {
           "name": "Grundpreis",
