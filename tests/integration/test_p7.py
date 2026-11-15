@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
 
@@ -112,7 +112,7 @@ async def test_websocket_archive(hass: HomeAssistant, freezer, hass_ws_client) -
 async def test_verdict_event_only_on_change(hass: HomeAssistant, freezer) -> None:
     freezer.move_to("2026-06-15 12:00:00+02:00")
     events = []
-    hass.bus.async_listen(EVENT_VERDICT, lambda e: events.append(e.data))
+    hass.bus.async_listen(EVENT_VERDICT, callback(lambda e: events.append(e.data)))
     entry = make_entry(strom(start="2026-01-01"))
     assert await setup(hass, entry)
     rt = entry.runtime_data
@@ -133,7 +133,7 @@ async def test_verdict_event_only_on_change(hass: HomeAssistant, freezer) -> Non
 async def test_notice_period_attribute_issue_event(hass: HomeAssistant, freezer) -> None:
     freezer.move_to("2026-11-13 12:00:00+01:00")
     events = []
-    hass.bus.async_listen(EVENT_NOTICE, lambda e: events.append(e.data))
+    hass.bus.async_listen(EVENT_NOTICE, callback(lambda e: events.append(e.data)))
     # Mindestlaufzeit 12 Monate ab 2026-01-01 → Ende 2026-12-31; 6 Wochen Frist → kündigen bis 2026-11-19
     entry = make_entry(strom(start="2026-01-01", min_term_months=12, notice_period_weeks=6))
     assert await setup(hass, entry)

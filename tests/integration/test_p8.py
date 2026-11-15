@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 
 from homeassistant.config_entries import SOURCE_RECONFIGURE
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
@@ -64,7 +64,7 @@ async def test_invoice_calorific_repair_applies_calibration(hass: HomeAssistant,
     from pytest_homeassistant.common import async_fire_time_changed  # noqa: PLC0415
 
     events = []
-    hass.bus.async_listen(EVENT_INVOICE, lambda e: events.append(e.data))
+    hass.bus.async_listen(EVENT_INVOICE, callback(lambda e: events.append(e.data)))
     entry = make_entry(gas())
     assert await setup(hass, entry)
     rt = entry.runtime_data
