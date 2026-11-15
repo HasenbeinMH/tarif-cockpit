@@ -340,6 +340,7 @@ async def test_fallback_value_never_replaces_own_value(hass: HomeAssistant, reco
     rt = entry.runtime_data
     from dataclasses import replace  # noqa: PLC0415
 
+    await rt.aggregator.async_run()  # nicht auf den Lauf nach dem Start verlassen
     own = replace(rt.daily("m1")[date(2026, 11, 11)], consumption=20.0, quality=Quality.REAL, quality_flags=[])
     rt.put_daily([own])
     await rt.aggregator.async_run(overwrite=True)
