@@ -29,7 +29,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_GENERATOR, CONF_HOUSEHOLD, CONF_INITIAL_CONTRACT, CONF_INITIAL_PLAN, CONF_INITIAL_PRICE, CONF_INITIAL_READING,
-    CONF_METER, DOMAIN, SUBENTRY_GENERATOR, SUBENTRY_METER,
+    CONF_METER, DOMAIN, METER_SUBENTRIES, SUBENTRY_GENERATOR, SUBENTRY_METER, SUBENTRY_SUBMETER,
 )
 from .engine import billing
 from .engine.model import BillingRule, Contract, Medium, PeriodSpan, PriceSegment, ReadingSource, VatMode, from_dict, new_id, to_dict
@@ -53,7 +53,6 @@ DEVICE_CLASSES: dict[str, list[str]] = {
 }
 DEFAULT_VAT = {Medium.STROM: 19.0, Medium.GAS: 19.0, Medium.WASSER: 7.0, Medium.FERNWAERME: 19.0}
 # mögliche Unterzähler je Medium (Entscheidung D: Wallbox; Wasser: Gartenwasser ohne Abwasser)
-ROLES = {Medium.STROM: "wallbox", Medium.WASSER: "garden"}
 
 HEATING = ["gas", "fernwaerme", "waermepumpe", "strom", "kaminofen", "oel_pellets", "keine"]
 HOT_WATER = ["heizung", "strom", "waermepumpe", "solarthermie"]
@@ -144,7 +143,7 @@ class TarifCockpitConfigFlow(ConfigFlow, domain=DOMAIN):
     @classmethod
     @callback
     def async_get_supported_subentry_types(cls, config_entry: ConfigEntry) -> dict[str, type[ConfigSubentryFlow]]:
-        return {SUBENTRY_METER: MeterSubentryFlow, SUBENTRY_GENERATOR: GeneratorSubentryFlow}
+        return {SUBENTRY_METER: MeterSubentryFlow, SUBENTRY_SUBMETER: SubmeterSubentryFlow, SUBENTRY_GENERATOR: GeneratorSubentryFlow}
 
     @staticmethod
     @callback
@@ -404,7 +403,6 @@ class MeterSubentryFlow(ConfigSubentryFlow):
     async def async_step_quelle(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         medium = Medium(self._data["medium"])
         errors: dict[str, str] = {}
-        roles = self._roles(medium)
         if user_input is not None:
             entity = user_input.get("entity")
             pulse = user_input.get("pulse_entity")
@@ -414,7 +412,7 @@ class MeterSubentryFlow(ConfigSubentryFlow):
             self._data["pulses"] = bool(pulse) and not errors
             if entity:
                 for sub in self._get_entry().subentries.values():
-                    if sub.subentry_type == SUBENTRY_METER and sub.data.get(CONF_METER, {}).get("entity") == entity:
+                    if sub.subentry_type in METER_SUBENTRIES and sub.data.get(CONF_METER, {}).get("entity") == entity:
                         errors["entity"] = "already_configured"
             role = user_input.get("role", "main")
             if role != "main" and not self._mains(medium):
@@ -429,19 +427,7 @@ class MeterSubentryFlow(ConfigSubentryFlow):
             # Impulszähler: ohne Geräteklasse (z. B. ESPHome pulse_counter, Zähler-Helfer)
             vol.Optional("pulse_entity"): selector.EntitySelector(selector.EntitySelectorConfig(domain=["sensor", "counter", "input_number"])),
         }
-        if len(roles) > 1:
-            fields[vol.Required("role", default="main")] = _select(roles, "role")
         return self.async_show_form(step_id="quelle", data_schema=vol.Schema(fields), errors=errors)
-
-    def _roles(self, medium: Medium) -> list[str]:
-        """Unterzähler nur, wenn passend: Wallbox nur mit Wallbox in der Situation (oder ohne Situationsangaben)."""
-        if medium not in ROLES:
-            return ["main"]
-        role = ROLES[medium]
-        sit = self._situation()
-        if role == "wallbox" and sit and "wallbox" not in sit.get("extras", []):
-            return ["main"]
-        return ["main", role]
 
     def _mains(self, medium: Medium) -> dict[str, str]:
         """Hauptzähler gleichen Mediums (für Unterzähler): subentry_id → Titel."""
@@ -1088,3 +1074,75 @@ class GeneratorSubentryFlow(ConfigSubentryFlow):
                     })
                 return self.async_update_and_abort(entry, sub, title=user_input["name"], data={CONF_GENERATOR: g})
         return self.async_show_form(step_id="reconfigure", data_schema=schema, errors=errors)
+
+
+class SubmeterSubentryFlow(ConfigSubentryFlow):
+    """Unterzähler (1.0.2): Wallbox hinter dem Stromzähler oder Gartenwasser hinter dem Wasserzähler.
+    Ohne eigenen Vertrag, ohne Preise und Abschläge: Kosten bleiben beim Hauptzähler, getrennt wird nur die Prognose."""
+
+    KINDS = {"wallbox": Medium.STROM, "garden": Medium.WASSER}
+
+    def __init__(self) -> None:
+        self._data: dict[str, Any] = {}
+
+    def _mains(self, medium: Medium) -> dict[str, str]:
+        return {
+            sid: sub.title for sid, sub in self._get_entry().subentries.items()
+            if sub.subentry_type == SUBENTRY_METER and sub.data.get(CONF_METER, {}).get("medium") == medium
+            and sub.data.get(CONF_METER, {}).get("role", "main") == "main"
+        }
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        kinds = [k for k, m in self.KINDS.items() if self._mains(m)]
+        if not kinds:
+            return self.async_abort(reason="no_main_meter")
+        if user_input is not None:
+            self._data["role"] = user_input["role"]
+            return await self.async_step_details()
+        return self.async_show_form(step_id="user", data_schema=vol.Schema({
+            vol.Required("role", default=kinds[0]): _select(kinds, "role")}))
+
+    async def async_step_details(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        medium = self.KINDS[self._data["role"]]
+        mains = self._mains(medium)
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            entity = user_input["entity"]
+            for sub in self._get_entry().subentries.values():
+                if sub.subentry_type in METER_SUBENTRIES and sub.data.get(CONF_METER, {}).get("entity") == entity:
+                    errors["entity"] = "already_configured"
+            if not errors:
+                meter = {
+                    "medium": medium.value, "unit": user_input["unit"], "entity": entity, "name": user_input["name"], "data_level": 2,
+                    "conversion": {}, "history_entity": None, "role": self._data["role"], "parent_meter_id": user_input["parent"],
+                    "annual_consumption": None, "pulse_constant": None, "pulse_mode": "per_unit",
+                }
+                return self.async_create_entry(title=user_input["name"], data={CONF_METER: meter}, unique_id=entity)
+        unit = UNITS[medium][0]
+        schema = vol.Schema({
+            vol.Required("name", default=_media_label(self.hass, "wallbox") if self._data["role"] == "wallbox"
+                         else ("Gartenwasser" if str(self.hass.config.language or "de").startswith("de") else "Garden water")): str,
+            vol.Required("entity"): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", device_class=DEVICE_CLASSES[medium])),
+            vol.Required("unit", default=unit): selector.SelectSelector(selector.SelectSelectorConfig(options=UNITS[medium])),
+            vol.Required("parent", default=next(iter(mains))): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=[selector.SelectOptionDict(value=k, label=v) for k, v in mains.items()])),
+        })
+        if user_input is not None:
+            schema = self.add_suggested_values_to_schema(schema, user_input)
+        return self.async_show_form(step_id="details", data_schema=schema, errors=errors)
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Name und Hauptzähler ändern (der Sensor bleibt; für einen anderen Sensor den Unterzähler neu anlegen)."""
+        entry = self._get_entry()
+        sub = self._get_reconfigure_subentry()
+        meter = dict(sub.data.get(CONF_METER, {}))
+        mains = self._mains(Medium(meter.get("medium", "strom")))
+        if user_input is not None:
+            meter.update(name=user_input["name"], parent_meter_id=user_input["parent"])
+            return self.async_update_and_abort(entry, sub, title=user_input["name"], data={**sub.data, CONF_METER: meter})
+        parent = meter.get("parent_meter_id") if meter.get("parent_meter_id") in mains else next(iter(mains), None)
+        return self.async_show_form(step_id="reconfigure", data_schema=vol.Schema({
+            vol.Required("name", default=meter.get("name") or sub.title): str,
+            vol.Required("parent", default=parent): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=[selector.SelectOptionDict(value=k, label=v) for k, v in mains.items()])),
+        }))

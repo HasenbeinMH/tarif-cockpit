@@ -13,7 +13,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers import config_validation as cv, issue_registry as ir
 from homeassistant.helpers.storage import UnsupportedStorageVersionError
@@ -25,7 +25,7 @@ from .coordinator import TarifCoordinator
 from .const import (
     CONF_HOUSEHOLD, CONF_INITIAL_CONTRACT, CONF_INITIAL_PLAN, CONF_INITIAL_PRICE, CONF_INITIAL_READING, CONF_METER,
     CONF_GENERATOR, CONF_STORE_CREATED, DOMAIN,
-    ISSUE_STORE_INVALID, ISSUE_STORE_LOST, ISSUE_STORE_TOO_NEW, SUBENTRY_GENERATOR, SUBENTRY_METER,
+    ISSUE_STORE_INVALID, ISSUE_STORE_LOST, ISSUE_STORE_TOO_NEW, METER_SUBENTRIES, SUBENTRY_GENERATOR, SUBENTRY_METER,
 )
 from .engine.model import (
     AdvancePlan, Contract, Dataset, HeatGenerator, Household, Meter, PriceSegment, ReadingSource, from_dict, new_id,
@@ -62,7 +62,7 @@ def household_from_entry(entry: ConfigEntry) -> Household:
 def meters_from_entry(entry: ConfigEntry) -> dict[str, Meter]:
     meters: dict[str, Meter] = {}
     for sub in entry.subentries.values():
-        if sub.subentry_type != SUBENTRY_METER:
+        if sub.subentry_type not in METER_SUBENTRIES:
             continue
         raw = dict(sub.data.get(CONF_METER, {}))
         raw["meter_id"] = sub.subentry_id
@@ -191,6 +191,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TarifConfigEntry) -> boo
         subentry_ids=frozenset(entry.subentries),
         subentry_signature=_subentry_signature(entry),
     )
+    _cleanup_issues(hass, runtime)
     imported = _import_initial(runtime)
     if runtime.sync_periods() or imported or not entry.data.get(CONF_STORE_CREATED):
         await store.async_save_now(runtime.data)
@@ -205,6 +206,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: TarifConfigEntry) -> boo
     async_setup_aggregation(hass, runtime)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
+
+
+@callback
+def _cleanup_issues(hass: HomeAssistant, runtime: TarifRuntime) -> None:
+    """Hinweise unter Reparaturen, die zu einem gelöschten Zähler gehören, entfernen (sie bleiben sonst für immer stehen)."""
+    from homeassistant.helpers import issue_registry as ir  # noqa: PLC0415
+
+    from .const import ISSUE_NO_STATISTICS, ISSUE_NOTICE, ISSUE_RECONCILE  # noqa: PLC0415
+
+    for domain, issue_id in list(ir.async_get(hass).issues):
+        if domain != DOMAIN:
+            continue
+        for prefix in (ISSUE_NO_STATISTICS, ISSUE_RECONCILE, ISSUE_NOTICE):
+            if issue_id.startswith(prefix + "_") and issue_id[len(prefix) + 1:] not in runtime.meters:
+                ir.async_delete_issue(hass, DOMAIN, issue_id)
 
 
 def _subentry_signature(entry: ConfigEntry) -> str:

@@ -65,12 +65,10 @@
             "name": "Name",
             "entity": "Meter reading sensor (empty = readings only)",
             "history_entity": "Fallback source for missing history",
-            "role": "Kind of meter",
             "pulse_entity": "Pulse counter (instead of a meter sensor)"
           },
           "data_description": {
             "history_entity": "Optional. Fills days the meter sensor has no statistics for yet, e.g. with the inverter's grid import meter. Such days count as estimated.",
-            "role": "A wallbox or garden meter is a sub-meter of a main meter without its own contract.",
             "pulse_entity": "E.g. an ESPHome pulse counter or counter helper counting the meter's pulses. The pulse constant follows in the next step."
           }
         },
@@ -439,6 +437,46 @@
       },
       "abort": {
         "reconfigure_successful": "The heat generator was changed."
+      }
+    },
+    "unterzaehler": {
+      "initiate_flow": {
+        "user": "Add sub-meter"
+      },
+      "entry_type": "Sub-meter",
+      "step": {
+        "user": {
+          "title": "Add sub-meter",
+          "description": "A sub-meter measures part of a main meter, e.g. the wallbox behind the electricity meter or the garden water meter. It has no contract of its own: costs and advances stay with the main meter, only the forecast is split.",
+          "data": {
+            "role": "Kind"
+          }
+        },
+        "details": {
+          "title": "Sub-meter",
+          "description": "Sensor with the running total (e.g. total energy charged by the wallbox) and the main meter it sits behind.",
+          "data": {
+            "name": "Name",
+            "entity": "Meter reading sensor",
+            "unit": "Unit",
+            "parent": "Main meter"
+          }
+        },
+        "reconfigure": {
+          "title": "Change sub-meter",
+          "description": "For a different sensor, delete the sub-meter and add it again.",
+          "data": {
+            "name": "Name",
+            "parent": "Main meter"
+          }
+        }
+      },
+      "error": {
+        "already_configured": "This sensor is already set up as a meter."
+      },
+      "abort": {
+        "no_main_meter": "Add the main meter first (electricity for a wallbox, water for a garden meter).",
+        "reconfigure_successful": "Saved."
       }
     }
   },

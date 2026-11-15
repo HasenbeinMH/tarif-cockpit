@@ -65,12 +65,10 @@
             "name": "Name",
             "entity": "Zählerstand-Sensor (leer = nur Ablesungen)",
             "history_entity": "Ersatzquelle für fehlende Historie",
-            "role": "Art des Zählers",
             "pulse_entity": "Impulszähler (statt Zählerstand-Sensor)"
           },
           "data_description": {
             "history_entity": "Optional. Füllt Tage, für die der Zähler-Sensor noch keine Statistik hat, z. B. mit dem Bezugszähler des Wechselrichters. Solche Tage gelten als geschätzt.",
-            "role": "Wallbox bzw. Gartenzähler sind Unterzähler eines Hauptzählers ohne eigenen Vertrag.",
             "pulse_entity": "Z. B. ESPHome-Impulszähler oder Zähler-Helfer, der die Impulse des Zählers zählt. Die Impulskonstante folgt im nächsten Schritt."
           }
         },
@@ -439,6 +437,46 @@
       },
       "abort": {
         "reconfigure_successful": "Der Wärmeerzeuger wurde geändert."
+      }
+    },
+    "unterzaehler": {
+      "initiate_flow": {
+        "user": "Unterzähler hinzufügen"
+      },
+      "entry_type": "Unterzähler",
+      "step": {
+        "user": {
+          "title": "Unterzähler hinzufügen",
+          "description": "Ein Unterzähler misst einen Teil des Hauptzählers, z. B. die Wallbox hinter dem Stromzähler oder den Gartenwasserzähler. Er hat keinen eigenen Vertrag: Kosten und Abschläge bleiben beim Hauptzähler, getrennt wird die Prognose.",
+          "data": {
+            "role": "Art"
+          }
+        },
+        "details": {
+          "title": "Unterzähler",
+          "description": "Sensor mit der laufenden Summe (z. B. Lademenge gesamt der Wallbox) und der Hauptzähler, hinter dem er hängt.",
+          "data": {
+            "name": "Name",
+            "entity": "Zählerstand-Sensor",
+            "unit": "Einheit",
+            "parent": "Hauptzähler"
+          }
+        },
+        "reconfigure": {
+          "title": "Unterzähler ändern",
+          "description": "Für einen anderen Sensor den Unterzähler löschen und neu anlegen.",
+          "data": {
+            "name": "Name",
+            "parent": "Hauptzähler"
+          }
+        }
+      },
+      "error": {
+        "already_configured": "Dieser Sensor ist schon als Zähler eingerichtet."
+      },
+      "abort": {
+        "no_main_meter": "Lege zuerst den Hauptzähler an (Strom für eine Wallbox, Wasser für einen Gartenzähler).",
+        "reconfigure_successful": "Gespeichert."
       }
     }
   },

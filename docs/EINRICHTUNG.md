@@ -10,7 +10,7 @@ Voraussetzung: Tarif-Cockpit ist über den Marketplace installiert und Home Assi
 
 Einstellungen → Geräte & Dienste → **Integration hinzufügen** → „Tarif-Cockpit“.
 
-Zuerst kommen ein paar Fragen statt Fachbegriffe. Die Antworten steuern die folgenden Schritte: Wer nicht heizt, bekommt keinen Klima-Schritt; eine Wallbox als Unterzähler wird nur angeboten, wenn du eine angibst; der Rhythmus der Abschläge wird beim Zähler vorbelegt.
+Zuerst kommen ein paar Fragen statt Fachbegriffe. Die Antworten steuern die folgenden Schritte: Wer nicht heizt, bekommt keinen Klima-Schritt; eine Wallbox oder einen Gartenzähler legst du später mit dem Knopf **Unterzähler hinzufügen** an (ohne Vertrag und Preise); der Rhythmus der Abschläge wird beim Zähler vorbelegt.
 
 | Fragen zum Haushalt | Klima (nur wenn geheizt wird) | Abschluss |
 |---|---|---|

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.2 – 2026-11-15
+
+### Neu
+- **Knopf „Unterzähler hinzufügen“** für Wallbox und Gartenwasser: Art, Sensor, Einheit, Hauptzähler; kein Vertrag, keine Preise, keine Abschläge. Ändern über „Neu konfigurieren“ (Name, Hauptzähler). Im Dialog „Zähler hinzufügen“ gibt es die Auswahl „Art des Zählers“ nicht mehr; bestehende Unterzähler bleiben unverändert.
+
+### Behoben
+- **Wallbox mit PV-Laden:** Abgezogen und fortgeschrieben wird je Tag höchstens der Netzbezug des Stromzählers. Vorher konnte die Grundlast an sonnigen Ladetagen negativ werden und die Prognose zu niedrig ausfallen (Hinweis `wallbox_mehr_als_bezug`).
+- Hinweise unter Reparaturen zu gelöschten Zählern (fehlende Statistik, Abgleich, Kündigungsfrist) werden beim Start entfernt.
+
 ## 1.0.1 – 2026-11-15
 
 ### Geändert

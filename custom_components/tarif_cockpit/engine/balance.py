@@ -289,7 +289,12 @@ def evaluate_meter(
         used = cons.used
         fc_sub = None
         if sub_daily:
-            sub_vals = usable_values(sub_daily)
+            raw_sub = usable_values(sub_daily)
+            # Lädt die Wallbox mit PV, zählt sie mehr, als der Hauptzähler (Netzbezug) an dem Tag bezogen hat. Abgezogen und
+            # fortgeschrieben wird deshalb höchstens der Tagesbezug des Hauptzählers (nie eine negative Grundlast).
+            sub_vals = {k: (min(v, main_vals[k]) if v is not None and main_vals.get(k) is not None else v) for k, v in raw_sub.items()}
+            capped = any(v is not None and main_vals.get(k) is not None and v > main_vals[k] + 1e-9 for k, v in raw_sub.items()
+                         if spec.start_date <= k < known_day)
             fc_sub = submeter_forecast(sub_vals, known_day, spec.end_date)
             if fc_sub.available and used is not None:
                 # Tage ohne Wallbox-Wert: ganzer Verbrauch zählt als Grundlast (nicht als Wallbox = 0); als Lücke markiert
@@ -298,6 +303,8 @@ def evaluate_meter(
                 base_vals = {k: (v - sub_vals[k]) if v is not None and sub_vals.get(k) is not None else v for k, v in main_vals.items()}
                 main_vals, used = base_vals, max(used - sub_used, 0.0)
                 res.flags.append("wallbox_getrennt")
+                if capped:
+                    res.flags.append("wallbox_mehr_als_bezug")
                 if any(spec.start_date <= k < known_day for k in gaps):
                     res.flags.append("wallbox_luecken")
         fc_heat = None

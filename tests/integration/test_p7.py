@@ -267,3 +267,15 @@ async def test_diagnostics_redacted(hass: HomeAssistant) -> None:
     m = diag["meters"]["s1"]
     assert m["meter"]["entity"] == "**REDACTED**" and m["contracts"][0]["supplier"] == "**REDACTED**"
     assert m["result"] is not None and "periods" in m and "counts" in diag
+
+
+async def test_stale_issues_of_removed_meters_are_cleaned(hass: HomeAssistant) -> None:
+    """1.0.2: Hinweise unter Reparaturen zu einem gelöschten Zähler verschwinden beim nächsten Start."""
+    ir.async_create_issue(hass, DOMAIN, "zaehler_ohne_statistik_weg", is_fixable=False, severity=ir.IssueSeverity.WARNING,
+                          translation_key="zaehler_ohne_statistik", translation_placeholders={"meter": "x", "entity": "y"})
+    ir.async_create_issue(hass, DOMAIN, "anderes_problem", is_fixable=False, severity=ir.IssueSeverity.WARNING, translation_key="x")
+    entry = make_entry(strom(start="2026-01-01"))
+    assert await setup(hass, entry)
+    reg = ir.async_get(hass)
+    assert reg.async_get_issue(DOMAIN, "zaehler_ohne_statistik_weg") is None
+    assert reg.async_get_issue(DOMAIN, "anderes_problem") is not None

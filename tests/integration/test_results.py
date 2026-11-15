@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import ServiceValidationError
 
-from custom_components.tarif_cockpit.const import DOMAIN, SUBENTRY_METER
+from custom_components.tarif_cockpit.const import DOMAIN, SUBENTRY_METER, SUBENTRY_SUBMETER
 
 from .conftest import make_entry, meter_device_id, meter_subentry, setup
 
@@ -151,17 +151,25 @@ async def test_subentry_flow_wallbox_and_reconfigure(hass: HomeAssistant) -> Non
     entry = strom_entry()
     assert await setup(hass, entry)
     flow = hass.config_entries.subentries
-    r = await flow.async_init((entry.entry_id, SUBENTRY_METER), context={"source": SOURCE_USER})
-    r = await flow.async_configure(r["flow_id"], {"medium": "strom"})
-    r = await flow.async_configure(r["flow_id"], {"name": "Wallbox", "entity": "sensor.wallbox", "role": "wallbox"})
-    r = await flow.async_configure(r["flow_id"], {"unit": "kWh"})
-    assert r["step_id"] == "unterzaehler"
-    r = await flow.async_configure(r["flow_id"], {"parent": "m1"})
+    # 1.0.2: eigener Knopf „Unterzähler hinzufügen“, ohne Vertrag, Preise und Abschläge
+    r = await flow.async_init((entry.entry_id, SUBENTRY_SUBMETER), context={"source": SOURCE_USER})
+    assert r["step_id"] == "user" and r["data_schema"].schema["role"].config["options"] == ["wallbox"]  # kein Wasserzähler → kein Garten
+    r = await flow.async_configure(r["flow_id"], {"role": "wallbox"})
+    assert r["step_id"] == "details"
+    r = await flow.async_configure(r["flow_id"], {"name": "Wallbox", "entity": "sensor.zaehler", "unit": "kWh", "parent": "m1"})
+    assert r["errors"] == {"entity": "already_configured"}
+    r = await flow.async_configure(r["flow_id"], {"name": "Wallbox", "entity": "sensor.wallbox", "unit": "kWh", "parent": "m1"})
     assert r["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     rt = entry.runtime_data
     wb = next(m for m in rt.meters.values() if m.role == "wallbox")
-    assert wb.parent_meter_id == "m1" and not rt.contracts(wb.meter_id)
+    assert wb.parent_meter_id == "m1" and not rt.contracts(wb.meter_id) and wb.entity == "sensor.wallbox"
+    # Unterzähler ändern: Name
+    r = await flow.async_init((entry.entry_id, SUBENTRY_SUBMETER), context={"source": "reconfigure", "subentry_id": wb.meter_id})
+    r = await flow.async_configure(r["flow_id"], {"name": "Wallbox Garage", "parent": "m1"})
+    assert r["reason"] == "reconfigure_successful"
+    await hass.async_block_till_done()
+    assert entry.runtime_data.meters[wb.meter_id].name == "Wallbox Garage"
     # Neu konfigurieren: Ersatzquelle setzen
     r = await flow.async_init((entry.entry_id, SUBENTRY_METER), context={"source": "reconfigure", "subentry_id": "m1"})
     assert r["type"] is FlowResultType.MENU
@@ -257,3 +265,47 @@ async def test_gas_m3_flow_requires_calorific(hass: HomeAssistant) -> None:
     assert r["errors"] == {"calorific": "required_for_m3"}
     r = await flow.async_configure(r["flow_id"], {"unit": "m³", "calorific": 11.3, "z_factor": 0.96})
     assert r["step_id"] == "vertrag"
+
+
+async def test_submeter_needs_main_meter(hass: HomeAssistant) -> None:
+    entry = make_entry()
+    assert await setup(hass, entry)
+    r = await hass.config_entries.subentries.async_init((entry.entry_id, SUBENTRY_SUBMETER), context={"source": SOURCE_USER})
+    assert r["type"] is FlowResultType.ABORT and r["reason"] == "no_main_meter"
+
+
+async def test_wallbox_never_more_than_grid(hass: HomeAssistant) -> None:
+    """PV-Laden: die Wallbox zählt mehr, als der Stromzähler bezogen hat → abgezogen wird höchstens der Tagesbezug."""
+    from datetime import timedelta  # noqa: PLC0415
+
+    from custom_components.tarif_cockpit.engine.model import DailyConsumption  # noqa: PLC0415
+    from custom_components.tarif_cockpit.engine.quality import Quality  # noqa: PLC0415
+
+    from homeassistant.config_entries import ConfigSubentryData  # noqa: PLC0415
+
+    hass.states.async_set("sensor.zaehler", "6645.9", {"unit_of_measurement": "kWh", "device_class": "energy"})
+    hass.states.async_set("sensor.wallbox", "120", {"unit_of_measurement": "kWh", "device_class": "energy"})
+    main = meter_subentry(
+        "m1", "Strom", "strom", "kWh", entity="sensor.zaehler",
+        contract={"supplier": "Stadtwerke", "start_date": "2026-06-30", "billing_rule": "fixed_day", "fixed_day": "30.06"},
+        reading={"timestamp": "2026-06-30T00:00:00+02:00", "value": 5645.0, "quality": "real"},
+    )
+    main["data"]["initial_price"] = {"work_price": 0.3154, "base_price": 13.09}
+    wb = ConfigSubentryData(data={"meter": {"medium": "strom", "unit": "kWh", "entity": "sensor.wallbox", "name": "Wallbox", "data_level": 2,
+                                            "conversion": {}, "role": "wallbox", "parent_meter_id": "m1"}},
+                            subentry_id="wb", subentry_type=SUBENTRY_SUBMETER, title="Wallbox", unique_id="sensor.wallbox")
+    entry = make_entry(main, wb)
+    assert await setup(hass, entry)
+    rt = entry.runtime_data
+    days = []
+    for i in range(40):
+        d = date(2026, 10, 1) + timedelta(days=i)
+        main, box = 8.0, (20.0 if i % 2 else 0.0)  # jeden zweiten Tag 20 kWh geladen, davon 12 kWh aus PV
+        days += [DailyConsumption("m1", d, main, quality=Quality.REAL), DailyConsumption("wb", d, box, quality=Quality.REAL)]
+    rt.put_daily(days)
+    rt.coordinator.mark(None, {"consumption", "forecast"})
+    res = rt.coordinator.results["m1"]
+    assert "wallbox_getrennt" in res.flags and "wallbox_mehr_als_bezug" in res.flags
+    # Wallbox-Rest aus dem begrenzten Mittel (≈ 4 kWh/Tag, gemittelt über die Tage mit Wert), nicht aus 10 kWh/Tag ungekürzt
+    rest_days = (res.period.end_date - date(2026, 11, 13)).days + 1
+    assert 3.5 * rest_days < res.forecast.details["wallbox_rest"] < 5.0 * rest_days

@@ -621,6 +621,35 @@ S["services"]["set_preis"]["fields"]["arbeitspreis"]["description"] = T(
     "In euros per kWh (water per m³), e.g. 0.3154. The dialogs ask in cents per kWh.")
 
 
+# ---------------------------------------------------------------- 1.0.2: eigener Knopf „Unterzähler hinzufügen“
+S["config_subentries"]["unterzaehler"] = {
+    "initiate_flow": {"user": T("Unterzähler hinzufügen", "Add sub-meter")},
+    "entry_type": T("Unterzähler", "Sub-meter"),
+    "step": {
+        "user": {"title": T("Unterzähler hinzufügen", "Add sub-meter"),
+                 "description": T("Ein Unterzähler misst einen Teil des Hauptzählers, z. B. die Wallbox hinter dem Stromzähler oder den Gartenwasserzähler. "
+                                  "Er hat keinen eigenen Vertrag: Kosten und Abschläge bleiben beim Hauptzähler, getrennt wird die Prognose.",
+                                  "A sub-meter measures part of a main meter, e.g. the wallbox behind the electricity meter or the garden water meter. "
+                                  "It has no contract of its own: costs and advances stay with the main meter, only the forecast is split."),
+                 "data": {"role": T("Art", "Kind")}},
+        "details": {"title": T("Unterzähler", "Sub-meter"),
+                    "description": T("Sensor mit der laufenden Summe (z. B. Lademenge gesamt der Wallbox) und der Hauptzähler, hinter dem er hängt.",
+                                     "Sensor with the running total (e.g. total energy charged by the wallbox) and the main meter it sits behind."),
+                    "data": {"name": T("Name", "Name"), "entity": T("Zählerstand-Sensor", "Meter reading sensor"), "unit": T("Einheit", "Unit"),
+                             "parent": T("Hauptzähler", "Main meter")}},
+        "reconfigure": {"title": T("Unterzähler ändern", "Change sub-meter"),
+                        "description": T("Für einen anderen Sensor den Unterzähler löschen und neu anlegen.", "For a different sensor, delete the sub-meter and add it again."),
+                        "data": {"name": T("Name", "Name"), "parent": T("Hauptzähler", "Main meter")}},
+    },
+    "error": {"already_configured": T("Dieser Sensor ist schon als Zähler eingerichtet.", "This sensor is already set up as a meter.")},
+    "abort": {"no_main_meter": T("Lege zuerst den Hauptzähler an (Strom für eine Wallbox, Wasser für einen Gartenzähler).",
+                                 "Add the main meter first (electricity for a wallbox, water for a garden meter)."),
+              "reconfigure_successful": T("Gespeichert.", "Saved.")},
+}
+S["config_subentries"]["zaehler"]["step"]["quelle"]["data"].pop("role", None)
+S["config_subentries"]["zaehler"]["step"]["quelle"].get("data_description", {}).pop("role", None)
+
+
 def pick(o, i):
     if isinstance(o, tuple):
         return o[i]
