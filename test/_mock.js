@@ -1,5 +1,5 @@
 /* Testdaten für die Testseiten: nachgebautes hass-Objekt und Szenarien. Wird vor ../custom_components/tarif_cockpit/frontend/tarif-cockpit.js geladen.
-   URL-Parameter: scene (haus, miete, wasser, nachzahlung, ohne, leer, en, integration, lernt, heizung, waermepumpe, impulse, archiv, fernwaerme), user (kein Admin), theme, shot (ohne Knopfleiste), narrow */
+   URL-Parameter: scene (haus, miete, wasser, nachzahlung, ohne, leer, en, integration, lernt, heizung, waermepumpe, impulse, archiv, rechnung, fernwaerme), user (kein Admin), theme, shot (ohne Knopfleiste), narrow */
 (() => {
   // Platzhalter für HA-Elemente
   if (!customElements.get('ha-icon')) customElements.define('ha-icon', class extends HTMLElement { connectedCallback() { this.textContent = '●'; this.style.fontSize = '10px'; } });
@@ -250,6 +250,31 @@
       [sid('gas', 'periode_ende')]: S('2027-08-14', '', 'Gas Periodenende', { beginn: '2026-08-15', lieferant: 'Gasversorger', kuendigung_bis: '2026-12-02', tage_bis_kuendigung: 19, kuendigung_hinweis: true, vertragsende: '2027-01-13', kuendigung: 'termin' }),
     }),
   });
+  // ---- 1.1: Rechnung gegen Integration, Prognosegüte, Heizlast
+  HEAT_SCENES.rechnung = Object.assign({}, HEAT_SCENES.archiv, {
+    meta: () => {
+      const m = HEAT_SCENES.heizung.meta();
+      m.haushalte[0].waermeerzeuger.unshift({ erzeuger_id: 'b1', device_id: 'dev_kessel', name: 'Buderus', typ: 'gas_boiler', zaehler_id: null,
+        am_haushaltsstrom: false, ww_zentral: true, sensoren: Object.assign(gsens('kessel'), { heizlast: gsid('kessel', 'heizlast') }) });
+      return m;
+    },
+    archive: Object.assign({}, ARCH, {
+      einheit: 'm³',
+      rechnungen: [
+        { rechnung: 'r24', von: '2024-08-15', bis: '2025-08-14', menge_rechnung: 1412, menge_eigen: 1405, abweichung_pct: -0.5, brennwert_rechnung: 11.32, brennwert_eigen: 11.32, vorschlaege: [], hinweise: [], flags: ['ohne_vertrag'] },
+        { rechnung: 'r25', von: '2025-08-15', bis: '2026-08-14', menge_rechnung: 1360, menge_eigen: 1366, abweichung_pct: 0.4, brennwert_rechnung: 11.4, brennwert_eigen: 11.318, vorschlaege: [{ art: 'brennwert', wert: 11.4 }], hinweise: [], flags: [] },
+      ],
+      kalibrierungen: [{ art: 'brennwert', wert: 11.4, rechnung: 'r25', von: '2025-08-15', bis: '2026-08-14' }],
+      prognoseguete: { perioden: 2, qualitaet: 'gut', vorlauf: [
+        { monate: 11, kosten_pct: 12.1, menge_pct: 10.4, perioden: 2 }, { monate: 8, kosten_pct: 6.3, menge_pct: 5.9, perioden: 2 },
+        { monate: 5, kosten_pct: 2.4, menge_pct: 2.0, perioden: 2 }, { monate: 2, kosten_pct: 0.6, menge_pct: 0.5, perioden: 2 },
+        { monate: 0, kosten_pct: 0.1, menge_pct: 0.1, perioden: 2 }] },
+    }),
+    states: Object.assign({}, HEAT_SCENES.archiv.states, {
+      [gsid('kessel', 'heizlast')]: S(7.4, 'kW', 'Heizlast', { heizlast_kw: 7.4, qualitaet: 'gut', nennleistung_kw: 19.5, kleinste_leistung_kw: 4.7,
+        verhaeltnis: 2.64, einordnung: 'ueberdimensioniert', taktgrenze_c: 3.6, takttage_anteil: 0.58, heiztage: 214, gemessen_max_kw: null, normaussentemperatur: -12 }),
+    }),
+  });
   const heatHass = (key) => (hass) => {
     const sc = HEAT_SCENES[key];
     integHass(false)(hass);
@@ -282,6 +307,7 @@
     waermepumpe: { name: 'Wärmepumpe am eigenen Zähler', states: {}, hook: heatHass('waermepumpe'), overview: { integration: true }, analyse: { integration: true } },
     impulse: { name: 'Gas mit Impulszähler: Abgleich, Gasleistung, Brenner', states: {}, hook: heatHass('impulse'), overview: { integration: true }, analyse: { integration: true } },
     archiv: { name: 'Prognose gegen Realität (Archiv), Band kalt/warm, Kündigungsfrist', states: {}, hook: heatHass('archiv'), overview: { integration: true }, analyse: { integration: true } },
+    rechnung: { name: 'Rechnung gegen Integration, Prognosegüte, Heizlast (1.1)', states: {}, hook: heatHass('rechnung'), overview: { integration: true }, analyse: { integration: true } },
     fernwaerme: { name: 'Fernwärme in MWh', states: {}, hook: heatHass('fernwaerme'), overview: { integration: true }, analyse: { integration: true } },
     en: { name: 'Englische Oberfläche', states: {}, lang: 'en', overview: Object.assign({}, legacy, { analysis: undefined, title: 'Tariffs and billing' }), analyse: Object.assign({}, analysis, { title: 'Gas, weather-adjusted', explain: undefined }) },
   };

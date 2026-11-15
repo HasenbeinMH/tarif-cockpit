@@ -57,6 +57,7 @@ def forecast_vs_actual(archive: dict) -> list[dict]:
     actual = (archive.get("kosten") or {}).get("gesamt")
     # mit unvollständigen Ist-Kosten (fehlende Tageswerte, fehlender Preis) wäre die Abweichung irreführend
     complete = (archive.get("kosten") or {}).get("vollstaendig", False) and not archive.get("tageswerte_bis")
+    qty = archive.get("menge")
     out = []
     for s in archive.get("prognosen", []):
         fc = s.get("forecast_cost")
@@ -64,8 +65,57 @@ def forecast_vs_actual(archive: dict) -> list[dict]:
         if fc is not None and actual is not None and complete:
             row["abweichung"] = round(fc - actual, 2)
             row["abweichung_pct"] = round((fc / actual - 1) * 100, 1) if actual else None
+        fq = s.get("forecast_kwh")
+        if fq is not None and qty and complete:  # 1.1: auch die Menge
+            row["prognose_menge"] = fq
+            row["abweichung_menge_pct"] = round((fq / qty - 1) * 100, 1)
         out.append(row)
     return out
+
+
+def _months_before(taken: str, end: str, tz: tzinfo | None = None) -> int | None:
+    """Monate zwischen Schnappschuss und Periodenende. Schnappschüsse sind in UTC gespeichert und entstehen kurz nach
+    Mitternacht: ohne lokales Datum läge der Monatserste im Vormonat."""
+    try:
+        dt = datetime.fromisoformat(taken)
+        t = dt.astimezone(tz).date() if tz is not None and dt.tzinfo is not None else dt.date()
+        e = date.fromisoformat(end[:10])
+    except (TypeError, ValueError):
+        return None
+    return max((e.year - t.year) * 12 + e.month - t.month, 0)
+
+
+def forecast_accuracy(archives: Iterable[dict], tz: tzinfo | None = None) -> dict:
+    """Prognosegüte über mehrere Jahre (1.1): je Vorlauf (Monate vor dem Periodenende) die mittlere absolute Abweichung der
+    Prognose von Kosten und Menge über alle abgeschlossenen Perioden. Unter zwei Perioden „vorläufig“ (Regel 10)."""
+    rows: dict[int, dict[str, list[float]]] = {}
+    periods = 0
+    for a in archives:
+        if a.get("stand") != "abgeschlossen" or not a.get("ende"):
+            continue
+        used = False
+        for r, snap in zip(forecast_vs_actual(a), a.get("prognosen", [])):
+            m = _months_before(snap.get("taken_at", ""), a["ende"], tz)
+            if m is None:
+                continue
+            slot = rows.setdefault(m, {"kosten": [], "menge": [], "perioden": []})
+            if r.get("abweichung_pct") is not None:
+                slot["kosten"].append(abs(r["abweichung_pct"]))
+                used = True
+                slot["perioden"].append(a["ende"])
+            if r.get("abweichung_menge_pct") is not None:
+                slot["menge"].append(abs(r["abweichung_menge_pct"]))
+                used = True
+                slot["perioden"].append(a["ende"])
+        periods += 1 if used else 0
+    out = []
+    for m in sorted(rows, reverse=True):
+        slot = rows[m]
+        mean = (lambda xs: round(sum(xs) / len(xs), 1) if xs else None)
+        out.append({"monate": m, "kosten_pct": mean(slot["kosten"]), "menge_pct": mean(slot["menge"]),
+                    "perioden": len(set(slot["perioden"]))})
+    return {"perioden": periods, "qualitaet": "unzureichend" if periods == 0 else ("vorlaeufig" if periods < 2 else "gut"),
+            "vorlauf": out}
 
 
 def close_criteria(period_end: date, readings: Iterable[Reading], invoices: Iterable[Invoice], contract_id: str,

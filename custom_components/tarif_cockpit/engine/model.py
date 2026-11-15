@@ -59,6 +59,7 @@ class ReadingSource(StrEnum):
     SWITCH = "switch"  # Wechselablesung beim Anbieterwechsel
     IMPORT = "import"  # Übernahme (z. B. Migration von v0.3)
     ENTITY = "entity"  # aus dem Zählerstand-Sensor
+    INVOICE = "invoice"  # Anfangs-/Endstand laut Jahresabrechnung (1.1)
 
 
 class PaymentType(StrEnum):
@@ -109,6 +110,7 @@ class Household:
     rooms: list[Room] = field(default_factory=list)
     # Antworten des Fragen-Assistenten: heating, hot_water, extras, tenure, rhythm (Abschnitt 1a)
     situation: dict[str, Any] = field(default_factory=dict)
+    design_temp: float = -12.0  # Normaußentemperatur für die Heizlast (1.1), je nach Region etwa −10 … −16 °C
 
 
 @dataclass(slots=True)
@@ -222,6 +224,7 @@ class DailyConsumption:
     raw_quality: Quality | None = None  # Qualität vor dem Abgleich (zum Zurücksetzen)
     burner_starts: int | None = None  # Brennerstarts (Gas mit Impulsen)
     cycling: bool | None = None  # Brenner taktet (Heizlast unter der kleinsten Modulationsstufe)
+    mean_power_kw: float | None = None  # mittlere Brennerleistung während der Laufzeit (Gas mit Impulsen, ab 1.1)
 
 
 @dataclass(slots=True)
@@ -265,6 +268,24 @@ class BillingPeriod:
 
 
 @dataclass(slots=True)
+class PriceTier:
+    """Preisstufe (1.1): Arbeitspreis bis zur Menge ``upto`` (Abrechnungseinheit je Jahr; None = darüber)."""
+
+    upto: float | None
+    work_price: float
+
+
+@dataclass(slots=True)
+class Rounding:
+    """Rundungsregeln des Versorgers (1.1). Ohne Angabe wie bisher: 365,25 Tage, Grundpreis je Tag, keine Rundung."""
+
+    days_per_year: str = "365.25"  # 365.25 | 365 | actual (365 bzw. 366)
+    base_by: str = "day"  # day (Monatspreis × 12 / Tage je Jahr) | month (Monatspreis anteilig nach Tagen des Monats)
+    quantity_decimals: int | None = None  # Menge je Preisstufe auf so viele Stellen runden
+    money_decimals: int | None = None  # jede Position auf so viele Stellen runden (2 = Cent)
+
+
+@dataclass(slots=True)
 class PriceSegment:
     contract_id: str
     valid_from: date
@@ -279,6 +300,9 @@ class PriceSegment:
     wastewater_price: float | None = None  # Wasser: Abwasser je m³
     fixed_yearly: float | None = None  # feste Jahresbeträge, z. B. Niederschlagswasser
     demand_kw: float | None = None  # Fernwärme: Anschlussleistung kW für den Leistungspreis
+    tiers: list[PriceTier] = field(default_factory=list)  # Staffel (1.1); leer = einheitlicher Arbeitspreis
+    tier_mode: str = "block"  # block: jede Stufe zum eigenen Preis | total: ganze Menge zum Preis der erreichten Stufe
+    rounding: Rounding | None = None
 
 
 @dataclass(slots=True)
@@ -310,8 +334,11 @@ class Payment:
 
 @dataclass(slots=True)
 class Invoice:
+    """Rechnung des Versorgers. Ab 1.1 mit Menge, Ständen und Positionen (alles optional) und auch ohne Vertrag
+    (alte Jahresrechnungen vor dem Vertragsbeginn hängen nur am Zähler)."""
+
     invoice_id: str
-    contract_id: str
+    contract_id: str | None
     invoice_date: date
     period_from: date
     period_to: date
@@ -319,6 +346,33 @@ class Invoice:
     period_id: str | None = None
     is_correction: bool = False
     corrects_invoice_id: str | None = None
+    meter_id: str | None = None
+    quantity: float | None = None  # Menge in der Zählereinheit (m³, kWh)
+    quantity_kwh: float | None = None  # abgerechnete kWh (Gas: nach Brennwert und Zustandszahl)
+    start_reading: float | None = None
+    end_reading: float | None = None
+    readings_estimated: bool = False  # Stände laut Rechnung geschätzt
+    calorific: float | None = None
+    z_factor: float | None = None
+    work_cost: float | None = None  # Arbeitspreis-Kosten laut Rechnung (brutto)
+    base_cost: float | None = None  # Grund-/Messpreis-Kosten laut Rechnung (brutto)
+    advances_paid: float | None = None
+    note: str | None = None
+
+
+@dataclass(slots=True)
+class Calibration:
+    """Übernommener Vorschlag aus einem Rechnungsvergleich (1.1): Brennwert, Zustandszahl oder Faktor der Ersatzquelle.
+    Entsteht nur nach Bestätigung unter Reparaturen; gilt von ``valid_from`` bis ``valid_to`` (None = unbegrenzt)."""
+
+    calibration_id: str
+    meter_id: str
+    kind: str  # brennwert | zustandszahl | faktor_ersatzquelle
+    value: float
+    applied_at: datetime
+    invoice_id: str | None = None
+    valid_from: date | None = None
+    valid_to: date | None = None
 
 
 @dataclass(slots=True)
@@ -386,6 +440,7 @@ class Dataset:
     sensor_resets: list[SensorReset] = field(default_factory=list)  # Neustarts von Impulszählern (0.9)
     sensor_last_raw: dict[str, float] = field(default_factory=dict)  # letzter Rohstand je Impulszähler (Einheit)
     notices_sent: list[str] = field(default_factory=list)  # gesendete Kündigungs-Events „zähler:frist:tage“ (1.0)
+    calibrations: list[Calibration] = field(default_factory=list)  # übernommene Rechnungs-Vorschläge (1.1)
     # Zähler, deren Startdaten aus der Einrichtung schon übernommen wurden
     imported_meters: list[str] = field(default_factory=list)
     # Zähler, deren Tageswerte nach dem Update auf 0.6 einmal neu aus der Statistik geholt wurden (Zählerstand am Tagesende)
@@ -567,10 +622,19 @@ def check_consistency(ds: Dataset) -> list[str]:
         for rid in (p.start_reading, p.end_reading):
             if rid and rid not in readings:
                 errors.append(f"Periode {p.period_id}: Ablesung {rid} fehlt")
-    for group, name in ((ds.prices, "Preis"), (ds.advance_plans, "Abschlagsplan"), (ds.payments, "Zahlung"), (ds.invoices, "Rechnung")):
+    for group, name in ((ds.prices, "Preis"), (ds.advance_plans, "Abschlagsplan"), (ds.payments, "Zahlung")):
         for it in group:
             if it.contract_id not in contracts:
                 errors.append(f"{name}: Vertrag {it.contract_id} fehlt")
+    for inv in ds.invoices:
+        # ab 1.1 auch ohne Vertrag (alte Jahresrechnung), dann am Zähler
+        if inv.contract_id is None and not inv.meter_id:
+            errors.append(f"Rechnung {inv.invoice_id}: weder Vertrag noch Zähler")
+        elif inv.contract_id is not None and inv.contract_id not in contracts:
+            errors.append(f"Rechnung: Vertrag {inv.contract_id} fehlt")
+        if inv.period_to < inv.period_from:
+            errors.append(f"Rechnung {inv.invoice_id}: Ende vor Beginn")
+    unique(ds.calibrations, "calibration_id", "Kalibrierungen")
     gen_days: set[tuple[str, date]] = set()
     for g in ds.generator_daily:
         if (g.generator_id, g.date) in gen_days:

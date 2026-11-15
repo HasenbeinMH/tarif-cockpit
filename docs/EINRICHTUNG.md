@@ -56,8 +56,9 @@ Das Stift-Symbol am Zähler öffnet ein Menü:
 |---|---|
 | Stammdaten | Name, Ersatzquelle, Brennwert, Jahresverbrauch |
 | Anbieter wechseln | Wechseldatum, Wechselablesung (echt oder geschätzt), neuer Vertrag mit Abrechnungsregel, Preise und Abschlag des neuen Vertrags. Der alte Vertrag endet am Vortag mit einer Schlussperiode. Ein Wechsel in eine bereits beendete Periode wird gleich im ersten Schritt abgelehnt. Liegt der Wechsel in der Zukunft, trägst du den Zählerstand erst danach ein (Aktion „Ablesung hinzufügen“). |
-| Preis ändern | neue Preise ab einem Datum; vorbelegt mit den laufenden Preisen, damit nichts verloren geht |
+| Preis ändern | neue Preise ab einem Datum; vorbelegt mit den laufenden Preisen, damit nichts verloren geht. Mit „Staffel oder Rundung festlegen“ folgt ein Schritt für bis zu drei Preisstufen je Jahr und die Rundungsregeln des Versorgers (1.1) |
 | Abschlag ändern | neuer Abschlag ab einem Datum; Zahltag und Rhythmus sind mit den laufenden Werten vorbelegt |
+| Rechnung erfassen | Jahresabrechnung mit Zeitraum und Betrag, optional Stände, Menge, Brennwert und Positionen. Vorbelegt mit der letzten beendeten Periode, sonst den zwölf Monaten bis gestern. Auch ältere Rechnungen vor dem Vertrag. Abweichungen stehen danach unter Reparaturen (siehe unten). |
 | Vertrag ändern | Tarifname, Mindestlaufzeit, Kündigungsfrist und die Abrechnung (Regel, Stichtag). Die Abrechnung nur, solange noch kein Abrechnungszeitraum dieses Vertrags beendet ist; das Formular zeigt den laufenden Zeitraum an. |
 
 Die Formulare rufen dieselbe Logik auf wie die gleichnamigen Aktionen (`set_preis`, `set_abschlag`, `add_folgevertrag`).
@@ -136,6 +137,20 @@ Hinweis unter Reparaturen, wenn der Sensor abweicht (hier im Abnahme-Durchlauf: 
 **Abgleich mit den Ablesungen:** Bei jedem Zähler mit Sensor (Impulse oder Zählerstand) vergleicht die Integration die gemessene Menge zwischen zwei Ablesungen mit der abgelesenen. Die (echte) Ablesung gilt: Fehlen Impulse, werden die Tageswerte zwischen den beiden Ablesungen anteilig angeglichen und als „abgeglichen“ markiert. Ab 2 % Abweichung steht ein Hinweis unter Einstellungen → Reparaturen, und die Tarifübersicht zeigt „Sensor weicht … ab, angeglichen“. Der Diagnose-Sensor „Abgleich mit Ablesung“ zeigt die Abweichung des letzten Intervalls. Eine Ablesung „jetzt“ (Aktion `tarif_cockpit.add_ablesung` ohne Zeitpunkt) merkt sich den Sensorstand dazu; der aktuelle Stand bezieht sich danach auf diese Ablesung, wie eine Referenz.
 
 **Gas mit Impulsen** liefert zusätzlich die Gasleistung (live), Brennerlaufzeit und Brennerstarts. Hängt eine Gastherme mit kleinster Modulationsleistung am Zähler, wird gemeldet, wenn der Brenner taktet.
+
+## 8. Jahresabrechnung und Heizlast (ab 1.1)
+
+**Rechnung erfassen:** am Zähler unter Neu konfigurieren → „Rechnung erfassen“. Die Integration vergleicht die Rechnung mit ihren eigenen Daten. Passt etwas nicht, steht unter Einstellungen → Reparaturen ein Hinweis; mit Vorschlag (Brennwert laut Rechnung, Faktor für die Ersatzquelle) übernimmst du ihn mit „OK“. Ohne deine Bestätigung ändert sich nichts. Rechenweg: [RECHNUNG.md](RECHNUNG.md#jahresabrechnung-und-kalibrieren-11).
+
+| Hinweis unter Reparaturen | Vorschlag übernehmen |
+|---|---|
+| ![Reparatur](img/abnahme-29-rechnung-reparatur.png) | ![Übernehmen](img/abnahme-30-rechnung-uebernehmen.png) |
+
+**Normaußentemperatur:** im Haushalt (Integration → Konfigurieren), Standard −12 °C. Damit rechnet der Sensor **Heizlast** am Gaskessel bzw. an der Fernwärme: Heizlast, Verhältnis zur Nennleistung, Taktgrenze und Anteil der Takttage. Er bleibt leer, bis der Kennwert mindestens „vorläufig“ gelernt ist.
+
+Die Auswertungskarte zeigt „Rechnung gegen Integration“, „Prognosegüte“ (sobald es abgeschlossene Perioden gibt) und „Heizlast“ (ausblendbar mit `rechnung: false`, `archiv: false`, `heizlast: false`):
+
+![Auswertung 1.1](img/rechnung-analyse.png)
 
 ## Hinweise
 

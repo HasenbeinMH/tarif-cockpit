@@ -333,6 +333,9 @@ Später: Optionen, „Neu konfigurieren“, eigener Ablauf **„Anbieter wechsel
 | **P5 · 0.8** | Wärmeerzeuger (Eingang/Wärme/Entlastung getrennt), Warmwasser, Kaminofen (Vergleichstage), Split-Klima, Fernwärme, Innentemperatur-Bereinigung, Streudiagramm, Kostenverlauf | Erweiterte Prognose; Szenario-Tests Heizung grün | Opus · high |
 | **P6 · 0.9** | Impulszähler, Tagesregression, Abgleich mit Ablesungen, Gas-Leistung und Takten | Erweiterte Datenauswertung; Abgleich-Test mit verlorenen Impulsen | Opus · medium |
 | **P7 · 1.0** | Wettervorhersage für Rest-Gradtage, Archiv, Prognose gegen Realität (Anzeige), Benachrichtigung/Event, Kündigungsfrist, Migration von v0.3, Doku vollständig | Stabiler Release; Migration in Daniels HA abgeschlossen | `opusplan` · medium; **Live-Migration: Opus · high** |
+| **P8 · 1.1** | Jahresabrechnung erfassen (auch vor dem Vertrag, als Lerndaten) und mit der Integration vergleichen, Vorschläge unter Reparaturen mit Knopf übernehmen (Brennwert, Faktor der Ersatzquelle), Preisstaffeln und Rundungsregeln, Prognosegüte über mehrere Jahre, Heizlast und Überdimensionierung | Rechnungsbeispiel geht auf den Cent auf; Vorschlag übernehmen in der Oberfläche (Abnahme) | Opus · high (Planung xhigh) |
+| **P9 · 1.2** | Zeitfenster aus Stundenwerten: HT/NT, § 14a (Modul 1–3), dynamischer Tarif mit eigener Viertelstunden-Abrechnung und Vergleich „was hätte er gekostet“, Kühlgradtage für Klima, Leckage-Erkennung Wasser | eigener Planmodus | Opus · high (Planung xhigh) |
+| **P10 · 1.3** | Öl und Pellets (Lieferungen, Tankstand, Heizwert, Nachbestellen), Mieter-Modus (Vorauszahlung, Grund-/Verbrauchsanteil, Heizkostenverteiler) | eigener Planmodus | Opus · medium |
 
 **Modell und Aufwand** (Einschätzung, keine Vorgabe der Doku): Einstellen mit `/model …` und `/effort …` bzw. `claude --model opus --effort high`. Am Ende jeder Phase eine Prüfung durch einen frischen Subagenten (Opus · high) gegen die Abnahmekriterien. `max` nicht verwenden. Läuft eine Phase auf medium zu ungenau: eine Stufe höher.
 
@@ -360,9 +363,10 @@ Entschieden (13.11.2026):
 - `[L]` Prognose-Schnappschüsse werden historisch eingefroren.
 - `[M]` HA-Versionen, Config-Entry- und Store-Migrationen automatisiert testen.
 
-Noch offen:
-- Daten: Beginnt Daniels Abrechnungsjahr am 30.06. oder 30.07.? (Regel `fixed_day`)
-- Zugriff: Claude Code braucht Schreibrechte auf das Repo (Session mit Push-Zugang).
+Geklärt (15.11.2026):
+- Daniels Strom-Abrechnung endet am 30.06., der neue Zeitraum beginnt am 01.07. (Regel `fixed_day`, Stichtag 01.07.).
+- Zugriff: Claude Code hat Schreibrechte auf das Repo.
+- Nach 1.0 geht es mit der Liste „Nach 1.0“ weiter, geordnet nach dem Nutzen für Daniels Haus: P8 · 1.1, P9 · 1.2, P10 · 1.3 (Abschnitt 11).
 
 ## 13. Verbindliche Entwicklungsregeln für Claude Code
 

@@ -263,14 +263,16 @@ def _offset_on(meter: Meter, day: date) -> float:
     return sum(rep.old_end - rep.new_start for rep in meter.replacements if rep.date <= day)
 
 
-def value_at(meter: Meter, readings: Iterable[Reading], t: datetime, tz: tzinfo, tolerance: timedelta = timedelta(hours=24)) -> float | None:
+def value_at(meter: Meter, readings: Iterable[Reading], t: datetime, tz: tzinfo, tolerance: timedelta = timedelta(hours=24),
+             max_span: timedelta | None = None) -> float | None:
     """Durchlaufender Zählerstand zum Zeitpunkt t: zwischen zwei Ablesungen linear, sonst die nächste Ablesung
-    innerhalb ``tolerance``. None, wenn keine passende Ablesung da ist."""
+    innerhalb ``tolerance``. Mit ``max_span`` nur zwischen Ablesungen, die höchstens so weit auseinander liegen.
+    None, wenn keine passende Ablesung da ist."""
     rs = valid_readings(readings, meter.meter_id)
     pts = [(r.timestamp.astimezone(UTC), continuous_value(meter, r, tz)) for r in rs]
     t = t.astimezone(UTC)
     for (t0, v0), (t1, v1) in zip(pts, pts[1:]):
-        if t0 <= t <= t1:
+        if t0 <= t <= t1 and (max_span is None or t1 - t0 <= max_span):
             return v0 if t1 == t0 else v0 + (v1 - v0) * (t - t0).total_seconds() / (t1 - t0).total_seconds()
     near = [(abs((tp - t).total_seconds()), v) for tp, v in pts if abs(tp - t) <= tolerance]
     return min(near)[1] if near else None
@@ -296,11 +298,14 @@ def calculate_consumption(
     readings = list(readings)
     st = ConsumptionState()
     t0 = day_bounds(period_start, tz)[0]
-    start = value_at(meter, readings, t0, tz)
+    prev = daily.get(period_start - timedelta(days=1))
+    # Zähler mit Sensor: eine Ablesung am Periodenbeginn (bzw. zwischen nahen Ablesungen) gilt; liegen die Ablesungen weit
+    # auseinander (z. B. Endstand einer alten Jahresrechnung, 1.1), ist der Zählerstand aus der Statistik genauer als eine Gerade
+    span = timedelta(days=2) if meter.entity and prev is not None and prev.end_value is not None else None
+    start = value_at(meter, readings, t0, tz, max_span=span)
     if start is not None:
         st.start_value, st.start_source = start, "reading"
     else:
-        prev = daily.get(period_start - timedelta(days=1))
         if prev is not None and prev.end_value is not None:
             st.start_value = prev.end_value + _offset_on(meter, period_start - timedelta(days=1))
             st.start_source = "daily_end_value"

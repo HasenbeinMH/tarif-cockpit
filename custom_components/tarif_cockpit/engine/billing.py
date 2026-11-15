@@ -7,13 +7,15 @@ durch den tatsächlichen Ablesetermin, Prüfung der Vertragskette (0.5); Kosten 
 
 from __future__ import annotations
 
+import calendar
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta, tzinfo
+import math
 
 from .model import (
     AdvancePlan, BillingPeriod, BillingRule, Contract, Medium, Meter, Payment, PaymentStatus, PaymentType, PeriodStatus,
-    PriceSegment, VatMode,
+    PriceSegment, Rounding, VatMode,
 )
 from .units import gas_factor
 
@@ -325,15 +327,16 @@ class CostBreakdown:
 
     @property
     def complete(self) -> bool:
-        return not any(f in self.flags for f in ("kein_preis", "brennwert_fehlt"))
+        return not any(f in self.flags for f in ("kein_preis", "brennwert_fehlt", "staffel_ohne_gesamtmenge"))
 
 
 def segment_on(segments: list[PriceSegment], day: date) -> PriceSegment | None:
-    """Preisabschnitt, der an ``day`` gilt (der jüngste mit valid_from ≤ day und ohne abgelaufenes valid_to)."""
+    """Preisabschnitt, der an ``day`` gilt (der jüngste mit valid_from ≤ day und ohne abgelaufenes valid_to). Bei gleichem
+    Beginn gilt der spätere in der Liste (Überlagerung mit dem Brennwert laut Rechnung, 1.1)."""
     best = None
     for s in segments:
         if s.valid_from <= day and (s.valid_to is None or day <= s.valid_to):
-            if best is None or s.valid_from > best.valid_from:
+            if best is None or s.valid_from >= best.valid_from:
                 best = s
     return best
 
@@ -349,6 +352,50 @@ def energy_factor(meter: Meter, seg: PriceSegment | None) -> float | None:
     return 1.0
 
 
+def _days_per_year(rounding: Rounding | None, day: date) -> float:
+    rule = rounding.days_per_year if rounding else "365.25"
+    if rule == "365":
+        return 365.0
+    if rule == "actual":
+        return 366.0 if calendar.isleap(day.year) else 365.0
+    return DAYS_PER_YEAR
+
+
+def _base_per_day(seg: PriceSegment, day: date) -> float:
+    """Grund- und Messpreis eines Tages. Monatspreis × 12 / Tage je Jahr, oder je Monat anteilig nach dessen Tagen."""
+    monthly = (seg.base_price or 0.0) + (seg.metering_price or 0.0)
+    if seg.rounding and seg.rounding.base_by == "month":
+        return monthly / calendar.monthrange(day.year, day.month)[1]
+    return monthly * 12 / _days_per_year(seg.rounding, day)
+
+
+def tier_split(seg: PriceSegment, qty: float, before: float, total: float | None, scale: float) -> list[tuple[float, float]]:
+    """Menge ``qty`` auf Preisstufen verteilen: (Menge, Arbeitspreis). ``before`` = Menge der Periode davor,
+    ``total`` = Menge der ganzen Periode (für ``tier_mode`` total), ``scale`` = Periodenlänge / Jahr (Stufen gelten je Jahr)."""
+    if not seg.tiers:
+        return [(qty, seg.work_price)]
+    tiers = sorted(seg.tiers, key=lambda t: math.inf if t.upto is None else t.upto)
+    if seg.tier_mode == "total":
+        ref = (total if total is not None else before + qty) / max(scale, 1e-9)
+        tier = next((t for t in tiers if t.upto is None or ref <= t.upto), tiers[-1])
+        return [(qty, tier.work_price)]
+    out: list[tuple[float, float]] = []
+    lo, rest = before, qty
+    for t in tiers:
+        cap = math.inf if t.upto is None else t.upto * scale
+        if rest <= 0:
+            break
+        if lo >= cap:
+            continue
+        part = min(rest, cap - lo)
+        out.append((part, t.work_price))
+        lo += part
+        rest -= part
+    if rest > 0:  # über der letzten Stufe ohne „darüber“: der Arbeitspreis des Abschnitts
+        out.append((rest, seg.work_price))
+    return out
+
+
 def calculate_costs(
     contract: Contract,
     segments: list[PriceSegment],
@@ -359,14 +406,23 @@ def calculate_costs(
     tz: tzinfo,
     quantities_are_billing_unit: bool = False,
     wastewater: Mapping[date, float] | None = None,
+    tier_before: float = 0.0,
+    tier_total: float | None = None,
+    tier_scale: float = 1.0,
 ) -> CostBreakdown:
     """Kosten tagesgenau je Preisabschnitt.
 
     ``quantities``: Menge je Tag in der Zählereinheit (oder schon in kWh, wenn ``quantities_are_billing_unit``).
     Grund-, Mess-, Leistungspreis und feste Jahresbeträge laufen anteilig über die Zeit von ``base_from`` bis ``base_to``.
+    Staffel (1.1): ``tier_before`` = Menge der Periode vor dem ersten Tag, ``tier_total`` = Menge der ganzen Periode,
+    ``tier_scale`` = Periodenlänge in Jahren. Rundung (1.1) je Preisabschnitt: Menge je Stufe und Betrag je Position.
     """
     segs = [s for s in segments if s.contract_id == contract.contract_id]
     cb = CostBreakdown()
+    # Menge je (Abschnitt, Preis): gerundet wird je Position wie auf der Rechnung
+    buckets: dict[tuple[int, float], float] = {}
+    seg_of: dict[int, PriceSegment] = {}
+    cum = tier_before
     for day, q in sorted(quantities.items()):
         seg = segment_on(segs, day)
         if seg is None:
@@ -377,13 +433,29 @@ def calculate_costs(
         if factor is None:
             cb.flags.append("brennwert_fehlt")
             continue
-        cb.quantity += q * factor
-        cb.energy += q * factor * seg.work_price
+        qb = q * factor
+        cb.quantity += qb
+        if seg.tiers and seg.tier_mode == "total" and tier_total is None:
+            # Gesamtstaffel ohne Menge der ganzen Periode (keine Prognose): Stufe unbekannt → Kosten nicht vollständig
+            cb.flags.append("staffel_ohne_gesamtmenge")
+        for part, price in tier_split(seg, qb, cum, tier_total, tier_scale):
+            buckets[(id(seg), price)] = buckets.get((id(seg), price), 0.0) + part
+        seg_of[id(seg)] = seg
+        cum += qb
+    for (sid, price), qty in buckets.items():
+        r = seg_of[sid].rounding
+        if r and r.quantity_decimals is not None:
+            qty = round(qty, r.quantity_decimals)
+        amount = qty * price
+        if r and r.money_decimals is not None:
+            amount = round(amount, r.money_decimals)
+        cb.energy += amount
     for day, q in sorted((wastewater or {}).items()):
         seg = segment_on(segs, day)
         if seg and seg.wastewater_price:
             cb.wastewater += q * seg.wastewater_price
-    # zeitanteilige Bestandteile, tageweise mit Bruchteilen an den Rändern
+    # zeitanteilige Bestandteile, tageweise mit Bruchteilen an den Rändern, je Abschnitt gesammelt (Rundung je Position)
+    timed: dict[int, list[float]] = {}
     t = base_from.astimezone(UTC)
     end = base_to.astimezone(UTC)
     while t < end:
@@ -397,11 +469,21 @@ def calculate_costs(
         if seg is None:
             cb.flags.append("kein_preis")
         else:
-            cb.base += frac * ((seg.base_price or 0.0) + (seg.metering_price or 0.0)) * 12 / DAYS_PER_YEAR
-            cb.fixed += frac * (seg.fixed_yearly or 0.0) / DAYS_PER_YEAR
+            acc = timed.setdefault(id(seg), [0.0, 0.0, 0.0])
+            seg_of[id(seg)] = seg
+            dpy = _days_per_year(seg.rounding, local_day)
+            acc[0] += frac * _base_per_day(seg, local_day)
+            acc[1] += frac * (seg.fixed_yearly or 0.0) / dpy
             if seg.demand_price and seg.demand_kw:
-                cb.demand += frac * seg.demand_price * seg.demand_kw / DAYS_PER_YEAR
+                acc[2] += frac * seg.demand_price * seg.demand_kw / dpy
         t = stop
+    for sid, (base, fixed, demand) in timed.items():
+        r = seg_of[sid].rounding
+        if r and r.money_decimals is not None:
+            base, fixed, demand = (round(x, r.money_decimals) for x in (base, fixed, demand))
+        cb.base += base
+        cb.fixed += fixed
+        cb.demand += demand
     cb.flags = sorted(set(cb.flags))
     cb.total = cb.energy + cb.wastewater + cb.base + cb.fixed + cb.demand
     cb.gross = cb.total * (1 + contract.vat_rate / 100) if contract.vat_mode == VatMode.NET else cb.total

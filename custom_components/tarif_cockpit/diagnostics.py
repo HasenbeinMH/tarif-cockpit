@@ -1,5 +1,5 @@
 """Diagnose-Download für Fehlerberichte (1.0): Haushalt, Zähler, Verträge, Perioden mit Archiv, Preise, Pläne, Zahlungen,
-Schnappschüsse, Ergebnisse, Erzeuger und Abgleich. Entitäts-IDs, Namen und Lieferanten werden geschwärzt."""
+Schnappschüsse, Ergebnisse, Erzeuger und Abgleich; ab 1.1 Rechnungen, Kalibrierungen, Prognosegüte und Heizlast. Entitäts-IDs, Namen und Lieferanten werden geschwärzt."""
 
 from __future__ import annotations
 
@@ -53,6 +53,10 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: TarifCo
             "prices": [to_dict(p) for p in ds.prices if p.contract_id in ids],
             "plans": [to_dict(p) for p in ds.advance_plans if p.contract_id in ids],
             "payments": [to_dict(p) for p in ds.payments if p.contract_id in ids],
+            "invoices": [to_dict(i) for i in rt.invoices(meter_id)],  # 1.1
+            "calibrations": [to_dict(c) for c in ds.calibrations if c.meter_id == meter_id],
+            "invoice_checks": [c.as_dict() for c in coord.invoice_checks.get(meter_id, [])] if coord is not None else [],
+            "accuracy": coord.accuracy.get(meter_id) if coord is not None else None,
             "readings_last_10": [to_dict(r) for r in rt.readings(meter_id)[-10:]],
             "daily_count": len(daily),
             "daily_by_quality": {q.value: sum(1 for d in daily if d.quality == q) for q in Quality},
@@ -64,7 +68,8 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: TarifCo
                                "deviation_pct": i.deviation_pct, "applied": i.applied, "flags": i.flags} for i in rec.intervals[-5:]],
             },
         }
-    generators = {gid: {"generator": to_dict(g), "result": to_dict(coord.gen_results[gid]) if coord is not None and gid in coord.gen_results else None}
+    generators = {gid: {"generator": to_dict(g), "result": to_dict(coord.gen_results[gid]) if coord is not None and gid in coord.gen_results else None,
+                        "heat_load": (coord.heat_loads[gid].as_dict() if coord is not None and coord.heat_loads.get(gid) else None)}
                   for gid, g in rt.generators.items()}
     data = {
         "household": to_dict(rt.household),

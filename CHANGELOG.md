@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.1.0 – 2026-11-15
+
+### Neu
+- **Jahresabrechnung erfassen:** am Zähler unter Neu konfigurieren → „Rechnung erfassen“ oder mit `add_rechnung`. Erfasst werden Zeitraum und Betrag, optional Menge, kWh, Anfangs- und Endstand, Brennwert, Zustandszahl, Kosten von Arbeits- und Grundpreis sowie die gezahlten Abschläge. Die Stände werden Ablesungen (Quelle „Rechnung“), ohne Doppel. Auch **alte Rechnungen vor dem Vertragsbeginn** lassen sich erfassen; sie hängen am Zähler und dienen als Lerndaten.
+- **Rechnung gegen Integration:** Die Integration vergleicht Menge je Quelle, Brennwert und Kosten je Position. Abweichungen erscheinen unter Reparaturen. Brennwert laut Rechnung und Faktor für die Ersatzquelle werden als **Vorschlag mit Knopf** angeboten und erst nach „OK“ übernommen. Preisabweichungen erscheinen nur als Hinweis. Dazu das Event `tarif_cockpit_rechnung_abweichung`.
+- **Lerndaten:** Bei Zählern ohne Sensor zählen jetzt Ableseperioden der letzten drei Jahre, auch vor dem Vertrag, dazu Rechnungen mit Menge. Die Gradtage dafür werden bis dahin zurück geholt.
+- **Preisstaffeln und Rundung:** Staffel mit bis zu drei Stufen im Dialog, beliebig viele über `set_preis`. Rundungsregeln: Tage je Jahr (365,25, 365 oder die echten Tage), Grundpreis je Tag oder je Monat, Menge und Beträge auf n Stellen. „Preis ändern“ ohne Haken behält Staffel und Rundung des laufenden Preises.
+- **Prognosegüte über mehrere Jahre:** je Vorlauf die mittlere Abweichung von Kosten und Menge über alle abgeschlossenen Perioden (Attribut `prognoseguete`, Tabelle in der Auswertungskarte). „Prognose gegen Realität“ vergleicht jetzt auch die Menge.
+- **Heizlast:** neuer Sensor am Gaskessel und an der Fernwärme. Er zeigt die Heizlast bei Normaußentemperatur (neues Feld im Haushalt, Standard −12 °C), das Verhältnis zur Nennleistung mit Einordnung, die Taktgrenze und den Anteil der Takttage. Mit Impulszähler kommt die höchste gemessene Brennerleistung dazu, die jetzt je Tag gespeichert wird.
+- **Auswertungskarte:** neue Abschnitte „Rechnung gegen Integration“, „Prognosegüte“ und „Heizlast“, ausblendbar mit `rechnung: false`, `archiv: false` und `heizlast: false`.
+- Speicher 1.5: Rechnungen hängen zusätzlich am Zähler, dazu die neue Liste der übernommenen Kalibrierungen. Die Diagnose enthält Rechnungen, Kalibrierungen, Vergleiche, Prognosegüte und Heizlast.
+
+### Geändert
+- **Wärmemodell bei Zählern ohne Sensor:** Es lernt jetzt aus Ableseperioden der letzten drei Jahre statt eines Jahres. Kennwert und Qualität können sich nach dem Update deshalb etwas verschieben. Die Tage vor dem Vertrag werden nur geholt, wenn es dort Ablesungen oder Rechnungen gibt.
+- **Startwert bei Zählern mit Sensor:** Liegen die Ablesungen um den Periodenbeginn mehr als zwei Tage auseinander, kommt er aus der Statistik statt aus einer Geraden zwischen den Ablesungen.
+- **Höchste gemessene Brennerleistung** nur an Heiztagen (Warmwasser im Sommer läuft mit voller Leistung).
+- Bei gleichem Beginn zweier Preisabschnitte gilt der zuletzt angelegte. Das betrifft nur die Überlagerung mit dem Brennwert laut Rechnung; gespeicherte Preise haben nie denselben Beginn.
+
 ## 1.0.3 – 2026-11-15
 
 ### Behoben

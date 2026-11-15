@@ -23,14 +23,16 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, EVENT_NOTICE, EVENT_VERDICT, ISSUE_NOTICE, NOTICE_WARN_DAYS, signal_updated
+from .const import DOMAIN, EVENT_INVOICE, EVENT_NOTICE, EVENT_VERDICT, ISSUE_INVOICE, ISSUE_NOTICE, NOTICE_WARN_DAYS, signal_updated
 from collections import deque
 
 from .engine import billing
 from .engine.balance import HEAT_MEDIA, MeterResult, PowerHeat, evaluate_meter
 from .engine.burner import current_power, max_gap_for
 from .engine.pulses import offset_at, unit_per_pulse
-from .engine.archive import build_archive, close_criteria
+from .engine.archive import build_archive, close_criteria, forecast_accuracy
+from .engine.heatload import HeatLoad, heat_load
+from .engine.invoice import InvoiceCheck, calibrated_daily, calibrated_prices, compare_invoice, factor_on
 from .engine.degree_days import degree_days
 from .engine.reconcile import Reconciliation, reconcile
 from .engine.generators import ON_POWER_KINDS, GeneratorResult, evaluate_generator, stove_relief_per_hour
@@ -52,6 +54,9 @@ class TarifCoordinator:
         self.results: dict[str, MeterResult] = {}
         self.gen_results: dict[str, GeneratorResult] = {}
         self.reconciliations: dict[str, Reconciliation] = {}
+        self.invoice_checks: dict[str, list[InvoiceCheck]] = {}  # 1.1: Rechnung gegen Integration je Zähler
+        self.heat_loads: dict[str, HeatLoad | None] = {}  # 1.1: Heizlast je Wärmeerzeuger
+        self.accuracy: dict[str, dict] = {}  # 1.1: Prognosegüte über die abgeschlossenen Perioden je Zähler
         self.forecast_dd: dict = {}  # Gradtage aus der Wettervorhersage (Datum → Kd)
         self._forecast_at: datetime | None = None
         self._pulses: dict[str, deque] = {}  # letzte Zählerstand-Wechsel je Impulszähler (Momentanleistung)
@@ -88,6 +93,7 @@ class TarifCoordinator:
         # nach einem Neustart: Perioden, die während der Pause geendet haben, und Kündigungsfristen gleich prüfen
         self.archive_ended()
         self.check_notice()
+        self.check_invoices()
 
     @callback
     def _on_state(self, event: Event[EventStateChangedData]) -> None:
@@ -266,6 +272,19 @@ class TarifCoordinator:
                 kw["power_heat"] = PowerHeat(measured=self._gen_series(on_power, "energy_input") if measured else None)
         return kw
 
+    def inputs(self, meter_id: str) -> tuple[dict, list]:
+        """Tageswerte und Preise mit den übernommenen Rechnungs-Vorschlägen (1.1): Faktor der Ersatzquelle, Brennwert."""
+        rt = self.rt
+        cals = self.calibrations()
+        daily = calibrated_daily(rt.daily(meter_id), cals, meter_id)
+        prices = calibrated_prices(rt.data.prices, cals, meter_id, {c.contract_id for c in rt.contracts(meter_id)})
+        return daily, prices
+
+    def calibrations(self) -> list:
+        """Übernommene Kalibrierungen, ohne die von korrigierten Rechnungen (eine Korrektur nimmt sie zurück)."""
+        corrected = {i.corrects_invoice_id for i in self.rt.data.invoices if i.corrects_invoice_id}
+        return [c for c in self.rt.data.calibrations if c.invoice_id not in corrected]
+
     def hot_water_on(self, meter: Meter) -> bool:
         """Läuft Warmwasser über die Heizung dieses Zählers? Ohne Antwort (Haushalt aus 0.6) wie bisher: ja.
         Solarthermie unterstützt nur, das Warmwasser kommt dann weiterhin auch über die Heizung."""
@@ -293,6 +312,15 @@ class TarifCoordinator:
                 self.gen_results[gid] = evaluate_generator(gen, rt.generator_daily(gid), start, today, model)
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("Tarif-Cockpit: Auswertung des Wärmeerzeugers %s fehlgeschlagen", gen.name or gid)
+            if gen.kind in (GeneratorKind.GAS_BOILER, GeneratorKind.DISTRICT_HEATING):
+                mid = gen.meter_id if gen.meter_id in rt.meters else heat_id
+                daily = rt.daily(mid) if mid else {}
+                hh = rt.household
+                self.heat_loads[gid] = heat_load(
+                    self._models.get(mid) if mid else None, gen, hh.indoor_ref, hh.heating_limit, hh.design_temp,
+                    {d: v.outdoor_temperature for d, v in daily.items()}, today,
+                    {d: v.mean_power_kw for d, v in daily.items() if v.mean_power_kw is not None} or None,
+                )
 
     @callback
     def _refresh(self) -> None:
@@ -316,14 +344,17 @@ class TarifCoordinator:
                 rec = reconcile(meter, rt.data.readings, rt.daily(meter_id), rt.tz)
                 self.reconciliations[meter_id] = rec
             try:
+                daily, prices = self.inputs(meter_id)
                 res = evaluate_meter(
-                    meter, rt.contracts(meter_id), rt.data.prices, rt.data.advance_plans, rt.data.payments,
-                    rt.readings(meter_id), rt.daily(meter_id), now, rt.tz, self._current(meter_id),
+                    meter, rt.contracts(meter_id), prices, rt.data.advance_plans, rt.data.payments,
+                    rt.readings(meter_id), daily, now, rt.tz, self._current(meter_id),
                     rt.household.tolerance_pct, rt.actual_ends(meter_id), sub_daily=wallbox, garden_daily=garden,
                     heat_model_override=None if refit else self._models.get(meter_id),
                     **self._heat_inputs(meter),
                     sensor_offset=rec.offset if rec is not None else None,
+                    invoices=rt.invoices(meter_id),
                 )
+                self.accuracy[meter_id] = forecast_accuracy((p.archive for p in rt.stored_periods(meter_id) if p.archive), rt.tz)
             except Exception:  # noqa: BLE001 - ein Fehler in einem Zähler darf die anderen nicht stoppen
                 _LOGGER.exception("Tarif-Cockpit: Auswertung von Zähler %s fehlgeschlagen", meter.name or meter_id)
                 continue
@@ -389,6 +420,7 @@ class TarifCoordinator:
         self.mark(None, ALL)
         self.archive_ended()
         self.check_notice()
+        self.check_invoices()
 
     # ------------------------------------------------------------ Archiv (1.0)
 
@@ -434,14 +466,16 @@ class TarifCoordinator:
                 current = (end_dt, d.end_value)  # end_value ist schon durchlaufend (Neustarts eingerechnet)
         rec = reconcile(meter, rt.data.readings, rt.daily(meter_id), rt.tz) if meter.entity and rt.readings(meter_id) else None
         subs = [m for m in rt.meters.values() if m.parent_meter_id == meter_id]
+        daily, prices = self.inputs(meter_id)
         return evaluate_meter(
-            meter, rt.contracts(meter_id), rt.data.prices, rt.data.advance_plans, rt.data.payments, rt.readings(meter_id),
-            rt.daily(meter_id), (current[0] if until else end_dt) - timedelta(seconds=1), rt.tz, current, rt.household.tolerance_pct,
+            meter, rt.contracts(meter_id), prices, rt.data.advance_plans, rt.data.payments, rt.readings(meter_id),
+            daily, (current[0] if until else end_dt) - timedelta(seconds=1), rt.tz, current, rt.household.tolerance_pct,
             rt.actual_ends(meter_id),
             sub_daily=next((rt.daily(m.meter_id) for m in subs if m.role == "wallbox"), None),
             garden_daily=next((rt.daily(m.meter_id) for m in subs if m.role == "garden"), None),
             **{k: v for k, v in self._heat_inputs(meter).items() if k != "forecast_dd"},
             sensor_offset=rec.offset if rec is not None else None,
+            invoices=rt.invoices(meter_id),
         ), until
 
     def _archive_period(self, meter_id: str, period_id: str, res: MeterResult | None = None) -> bool:
@@ -514,4 +548,80 @@ class TarifCoordinator:
                                                             "vertragsende": end.isoformat() if end else None, "tage": days})
             else:
                 ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+
+    # ------------------------------------------------------------ Rechnung gegen Integration (1.1)
+
+    @callback
+    def check_invoices(self) -> None:
+        """Alle Rechnungen mit den eigenen Daten vergleichen. Mit Vorschlag: Hinweis unter Reparaturen mit Knopf
+        „Übernehmen“ (repairs.py); nur Preis-/Mengenhinweise: Hinweis ohne Knopf. Event je Rechnung einmal."""
+        from homeassistant.helpers import issue_registry as ir  # noqa: PLC0415
+
+        rt = self.rt
+        reg = ir.async_get(self.hass)
+        seen: set[str] = set()
+        for meter_id, meter in rt.meters.items():
+            if meter.role != "main":
+                continue
+            _daily, prices = self.inputs(meter_id)
+            raw = rt.daily(meter_id)  # Faktor der Ersatzquelle absolut gegen die unveränderten Tageswerte
+            cals = [c for c in self.calibrations() if c.meter_id == meter_id]
+            checks = []
+            for inv in rt.invoices(meter_id):
+                contract = next((c for c in rt.contracts(meter_id) if c.contract_id == inv.contract_id), None)
+                try:
+                    chk = compare_invoice(inv, meter, contract, prices, raw, rt.tz, rt.household.tolerance_pct,
+                                          active_factor=factor_on(cals, inv.period_to))
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("Tarif-Cockpit: Rechnung %s nicht vergleichbar", inv.invoice_id)
+                    continue
+                # schon übernommene Vorschläge dieser Rechnung nicht erneut anbieten (z. B. Brennwert einer Rechnung vor dem
+                # Vertrag: dort gibt es keinen Preisabschnitt, den die Kalibrierung sichtbar ändern könnte)
+                done = {(c.kind, round(c.value, 6)) for c in cals if c.invoice_id == inv.invoice_id}
+                chk.proposals = [p for p in chk.proposals if (p["art"], round(float(p["wert"]), 6)) not in done]
+                checks.append(chk)
+                issue_id = f"{ISSUE_INVOICE}_{inv.invoice_id}"
+                seen.add(issue_id)
+                if not chk.needs_attention:
+                    ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+                    continue
+                ir.async_create_issue(
+                    self.hass, DOMAIN, issue_id, is_fixable=bool(chk.proposals), severity=ir.IssueSeverity.WARNING,
+                    translation_key=ISSUE_INVOICE + ("" if chk.proposals else "_hinweis"),
+                    translation_placeholders=invoice_placeholders(meter, chk),
+                    data={"invoice_id": inv.invoice_id, "meter_id": meter_id},
+                )
+                key = f"rechnung:{inv.invoice_id}"
+                if key not in rt.data.notices_sent:
+                    rt.data.notices_sent.append(key)
+                    rt.store.schedule_save(rt.data)
+                    self.hass.bus.async_fire(EVENT_INVOICE, {
+                        "zaehler": meter_id, "device_id": self._device_id(meter_id), "name": meter.name,
+                        "rechnung": inv.invoice_id, "von": inv.period_from.isoformat(), "bis": inv.period_to.isoformat(),
+                        "abweichung_pct": None if chk.deviation_pct is None else round(chk.deviation_pct, 1),
+                        "vorschlaege": chk.proposals, "hinweise": chk.hints,
+                    })
+            self.invoice_checks[meter_id] = checks
+        for domain, issue_id in list(reg.issues):
+            if domain == DOMAIN and issue_id.startswith(f"{ISSUE_INVOICE}_") and issue_id not in seen:
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)  # Rechnung oder Zähler entfernt
+
+
+def _num(v: float | None, digits: int = 1) -> str:
+    return "–" if v is None else f"{v:.{digits}f}".replace(".", ",")
+
+
+def invoice_placeholders(meter: Meter, chk: InvoiceCheck) -> dict[str, str]:
+    """Platzhalter für den Reparaturhinweis (deutsche Zahlen; Begriffe in beiden Sprachen verständlich)."""
+    names = {"brennwert": "Brennwert", "zustandszahl": "Zustandszahl", "faktor_ersatzquelle": "Faktor Ersatzquelle"}
+    props = "; ".join(f"{names.get(p['art'], p['art'])} {_num(p.get('bisher'), 4)} → {_num(p['wert'], 4)}" for p in chk.proposals)
+    hint_names = {"arbeitspreis_pruefen": "Arbeitspreis prüfen", "grundpreis_pruefen": "Grundpreis prüfen",
+                  "betrag_pruefen": "Rechnungsbetrag prüfen", "menge_weicht_ab": "Ablesungen prüfen",
+                  "menge_weicht_stark_ab": "Menge weicht stark ab"}
+    return {
+        "meter": meter.name or meter.meter_id, "von": chk.period_from.strftime("%d.%m.%Y"), "bis": chk.period_to.strftime("%d.%m.%Y"),
+        "menge_rechnung": _num(chk.quantity_invoice), "menge_eigen": _num(chk.quantity_own), "einheit": meter.unit,
+        "abweichung": _num(chk.deviation_pct), "vorschlaege": props or "–",
+        "hinweise": ", ".join(hint_names.get(h, h) for h in chk.hints) or "–",
+    }
 

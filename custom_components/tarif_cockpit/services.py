@@ -20,7 +20,9 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .engine import billing
-from .engine.model import BillingRule, Contract, Medium, PaymentStatus, PaymentType, PeriodSpan, ReadingSource, VatMode, new_id, to_dict
+from .engine.model import (
+    BillingRule, Contract, Medium, PaymentStatus, PaymentType, PeriodSpan, PriceTier, ReadingSource, Rounding, VatMode, new_id, to_dict,
+)
 from .engine.quality import Quality
 from .runtime import TarifRuntime
 
@@ -203,6 +205,16 @@ SCHEMA_PRICE = vol.Schema({
     vol.Optional("fest_jahr"): vol.All(vol.Coerce(float), vol.Range(min=0)),
     vol.Optional("leistungspreis"): vol.All(vol.Coerce(float), vol.Range(min=0)),
     vol.Optional("anschlussleistung"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    # 1.1: Staffel und Rundung
+    vol.Optional("staffel"): vol.All(cv.ensure_list, [vol.Schema({
+        vol.Optional("bis"): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0))),
+        vol.Required("preis"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    })]),
+    vol.Optional("staffel_art"): vol.In(["block", "total"]),
+    vol.Optional("rundung_tage"): vol.In(["365.25", "365", "actual"]),
+    vol.Optional("rundung_grundpreis"): vol.In(["day", "month"]),
+    vol.Optional("rundung_menge_stellen"): vol.All(vol.Coerce(int), vol.Range(min=0, max=6)),
+    vol.Optional("rundung_betrag_stellen"): vol.All(vol.Coerce(int), vol.Range(min=0, max=6)),
 })
 SCHEMA_ADVANCE = vol.Schema({
     vol.Required(ATTR_METER): cv.string,
@@ -226,7 +238,39 @@ SCHEMA_INVOICE = vol.Schema({
     vol.Required("bis"): cv.date,
     vol.Required("betrag"): vol.Coerce(float),
     vol.Optional("korrigiert"): cv.string,
+    # 1.1: Jahresabrechnung mit Menge, Ständen und Positionen (alles optional)
+    vol.Optional("menge"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("menge_kwh"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("stand_anfang"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("stand_ende"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("staende_geschaetzt", default=False): cv.boolean,
+    vol.Optional("brennwert"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("zustandszahl"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("arbeitspreis_kosten"): vol.Coerce(float),
+    vol.Optional("grundpreis_kosten"): vol.Coerce(float),
+    vol.Optional("abschlaege_bezahlt"): vol.Coerce(float),
+    vol.Optional("notiz"): cv.string,
 })
+INVOICE_FIELDS = {
+    "menge": "quantity", "menge_kwh": "quantity_kwh", "stand_anfang": "start_reading", "stand_ende": "end_reading",
+    "staende_geschaetzt": "readings_estimated", "brennwert": "calorific", "zustandszahl": "z_factor",
+    "arbeitspreis_kosten": "work_cost", "grundpreis_kosten": "base_cost", "abschlaege_bezahlt": "advances_paid", "notiz": "note",
+}
+
+
+def price_extras(data: dict) -> dict:
+    """Staffel und Rundung (1.1) aus Aktions- bzw. Formularfeldern."""
+    out: dict = {}
+    if data.get("staffel"):
+        out["tiers"] = [PriceTier(t.get("bis"), float(t["preis"])) for t in data["staffel"]]
+        out["tier_mode"] = data.get("staffel_art") or "block"
+    keys = ("rundung_tage", "rundung_grundpreis", "rundung_menge_stellen", "rundung_betrag_stellen")
+    if any(data.get(k) is not None for k in keys):
+        out["rounding"] = Rounding(
+            days_per_year=data.get("rundung_tage") or "365.25", base_by=data.get("rundung_grundpreis") or "day",
+            quantity_decimals=data.get("rundung_menge_stellen"), money_decimals=data.get("rundung_betrag_stellen"),
+        )
+    return out
 
 PRICE_FIELDS = {
     "arbeitspreis": "work_price", "grundpreis": "base_price", "messpreis": "metering_price", "brennwert": "calorific",
@@ -240,6 +284,7 @@ def async_setup_services_06(hass: HomeAssistant) -> None:
     async def set_price(call: ServiceCall) -> ServiceResponse:
         rt, meter_id = _resolve(hass, call.data[ATTR_METER])
         values = {PRICE_FIELDS[k]: v for k, v in call.data.items() if k in PRICE_FIELDS}
+        values.update(price_extras(call.data))
         try:
             seg = rt.set_price(meter_id, call.data["ab"], **values)
         except billing.BillingError as err:
@@ -270,14 +315,15 @@ def async_setup_services_06(hass: HomeAssistant) -> None:
         rt, meter_id = _resolve(hass, call.data[ATTR_METER])
         if call.data["bis"] < call.data["von"]:
             raise _billing_error(billing.BillingError("'bis' liegt vor 'von'"), "period_invalid")
+        details = {INVOICE_FIELDS[k]: v for k, v in call.data.items() if k in INVOICE_FIELDS}
         try:
-            inv = rt.add_invoice(meter_id, call.data["datum"], call.data["von"], call.data["bis"], call.data["betrag"], call.data.get("korrigiert"))
+            inv, added = rt.add_invoice(meter_id, call.data["datum"], call.data["von"], call.data["bis"], call.data["betrag"],
+                                        call.data.get("korrigiert"), **details)  # wirft BillingError bei unpassenden Ständen
         except billing.BillingError as err:
             raise _billing_error(err, "period_invalid") from err
         except KeyError as err:
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key="unknown_invoice", translation_placeholders={"id": str(err.args[0])}) from err
-        rt.changed(meter_id=meter_id, flags=set())
-        return {"rechnung_id": inv.invoice_id}
+        return await invoice_added(rt, meter_id, inv, added)
 
     def reg(domain: str, name: str, func: Any, schema: Any, supports_response: SupportsResponse = SupportsResponse.NONE) -> None:
         # Schreibende Aktionen nur für Administratoren; Automationen und Skripte laufen ohne Benutzer und sind nicht betroffen
@@ -407,3 +453,20 @@ def async_setup_service_v03(hass: HomeAssistant) -> None:
         return {"uebernommen": taken, "uebersprungen": skipped, "ab": start.isoformat()}
 
     async_register_admin_service(hass, DOMAIN, "uebernahme_v03", take_over, SCHEMA_V03, SupportsResponse.OPTIONAL)
+
+
+async def invoice_added(rt: TarifRuntime, meter_id: str, inv: Any, added: list[str]) -> dict:
+    """Nach einer neuen Rechnung: Ablesungen daraus verarbeiten, speichern, vergleichen (Hinweis unter Reparaturen)."""
+    if added:
+        await rt.after_readings_changed(meter_id)
+    else:
+        rt.changed(meter_id=meter_id, flags={"forecast"})  # Rechnung als Lerndaten für das Wärmemodell
+    rt.store.schedule_save(rt.data)
+    out: dict = {"rechnung_id": inv.invoice_id, "ablesungen": added}
+    if rt.coordinator is not None:
+        rt.coordinator.check_invoices()
+        chk = next((c for c in rt.coordinator.invoice_checks.get(meter_id, []) if c.invoice_id == inv.invoice_id), None)
+        if chk is not None:
+            out["vergleich"] = chk.as_dict()
+    return out
+

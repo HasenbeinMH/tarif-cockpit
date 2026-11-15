@@ -134,9 +134,19 @@ def ws_archive(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
         if meter_id is None:
             continue
         periods = sorted(rt.stored_periods(meter_id), key=lambda p: p.start_date, reverse=True)
-        connection.send_result(msg["id"], {"zaehler_id": meter_id, "waehrung": hass.config.currency, "perioden": [
-            {"beginn": p.start_date.isoformat(), "ende": p.end_date.isoformat(), "status": p.status.value, "archiv": p.archive}
-            for p in periods if p.archive
-        ]})
+        coord = rt.coordinator
+        connection.send_result(msg["id"], {"zaehler_id": meter_id, "waehrung": hass.config.currency, "einheit": rt.meters[meter_id].unit,
+            "perioden": [
+                {"beginn": p.start_date.isoformat(), "ende": p.end_date.isoformat(), "status": p.status.value, "archiv": p.archive}
+                for p in periods if p.archive
+            ],
+            # 1.1
+            "prognoseguete": coord.accuracy.get(meter_id) if coord is not None else None,
+            "rechnungen": [c.as_dict() for c in (coord.invoice_checks.get(meter_id, []) if coord is not None else [])],
+            "kalibrierungen": [{"art": c.kind, "wert": c.value, "rechnung": c.invoice_id,
+                                "von": c.valid_from.isoformat() if c.valid_from else None,
+                                "bis": c.valid_to.isoformat() if c.valid_to else None}
+                               for c in rt.data.calibrations if c.meter_id == meter_id],
+        })
         return
     connection.send_error(msg["id"], "not_found", "Zähler nicht gefunden")

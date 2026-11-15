@@ -107,6 +107,57 @@ Die Regression ist ab 0.8 allgemein (kleinste Quadrate mit beliebig vielen Regre
 - Mit unvollständigen Ist-Kosten bleibt die Abweichung leer; die Karte kennzeichnet die Ist-Kosten als unvollständig.
 - **Prognose gegen Realität:** je Schnappschuss `Abweichung = Prognose Kosten − tatsächliche Kosten` in € und %. Positiv = zu teuer geschätzt.
 
+## Jahresabrechnung und Kalibrieren (1.1)
+
+Eine Rechnung erfasst du am Zähler unter **Neu konfigurieren → Rechnung erfassen** oder mit `tarif_cockpit.add_rechnung`. Pflicht sind Zeitraum und Betrag (Gesamtkosten brutto). Alles Weitere ist optional und hilft beim Vergleich: Anfangs- und Endstand, Menge (Zählereinheit oder kWh), Brennwert, Zustandszahl, Kosten von Arbeits- und Grundpreis, gezahlte Abschläge.
+
+- **Stände werden Ablesungen** mit der Quelle „Rechnung“: Anfangsstand zum Beginn, Endstand zum Ende des Zeitraums (24 Uhr), echt oder geschätzt. Ein gleicher Stand am selben Tag wird nicht doppelt angelegt.
+- **Alte Rechnungen vor dem Vertragsbeginn** hängen nur am Zähler. Sie haben keine Kosten im Vergleich, dienen aber als Lerndaten und prüfen die Ersatzquelle.
+- **Vergleich:** Menge der eigenen Tageswerte im Rechnungszeitraum, getrennt nach Quelle (Zählersensor, Ersatzquelle, Ablesungen). Verglichen wird ab 90 % Abdeckung; fehlende Tage werden hochgerechnet (nie als 0), ein Vorschlag für die Ersatzquelle kommt erst ab 98 %. Die Kosten werden mit der Menge der Rechnung und den eigenen Preisen gerechnet (bei einer Gesamtstaffel mit der Menge der Rechnung), damit Preisfehler und Mengenfehler getrennt sichtbar werden.
+- **Stände prüfen:** Endstand unter Anfangsstand und ein Endstand zu einem Rechnungsende in der Zukunft werden abgelehnt. Liegt am selben Tag schon eine echte Ablesung, wird ein geschätzter Rechnungsstand nicht angelegt.
+- **Startwert bei Zählern mit Sensor:** Eine Ablesung am Periodenbeginn (oder zwischen Ablesungen, die höchstens zwei Tage auseinander liegen) gilt. Liegen die Ablesungen weiter auseinander (z. B. Endstand einer alten Rechnung und eine Ablesung Monate später), kommt der Startwert aus der Statistik statt aus einer Geraden.
+- **Vorschläge**, die du unter **Einstellungen → Reparaturen** mit „OK“ übernimmst:
+
+| Vorschlag | Wann | Wirkung nach dem Übernehmen |
+|---|---|---|
+| Brennwert, Zustandszahl | Gas in m³, Wert der Rechnung weicht um mehr als 0,5 % ab | gilt für genau den Rechnungszeitraum, vor dem Preisabschnitt und dem Zähler |
+| Faktor Ersatzquelle | die Ersatzquelle trägt mindestens die Hälfte der Menge und die Menge weicht mehr als die Toleranz ab | `Faktor = (Rechnung − Zähler − Ablesungen) / Ersatzquelle` gegen die unveränderten Werte, begrenzt auf 0,8 … 1,25; gilt für Tageswerte der Ersatzquelle ab dem Rechnungsbeginn bis zum Beginn der nächsten übernommenen Rechnung (Ist-Menge, Vorjahr, Prognose) |
+
+- Weicht nur der Preis ab (Arbeitspreis, Grundpreis oder Gesamtbetrag über 1 € und über der Toleranz), erscheint ein **Hinweis ohne Knopf**. Preise änderst du selbst unter „Preis ändern“, auch Staffel und Rundung. Weicht die Menge bei Zählersensor oder Ablesungen ab, lautet der Hinweis „Ablesungen prüfen“ (der Abgleich aus 0.9 gleicht den Sensor an echte Ablesungen an).
+- **Abgeschlossene Perioden** bleiben unverändert (Regel 4); Kalibrierungen wirken auf laufende und vorläufig archivierte Perioden. Eine Korrektur-Rechnung (`korrigiert`) nimmt die Kalibrierungen der korrigierten Rechnung zurück.
+- Brennwert-Vorschläge gibt es nur für Rechnungen mit Vertrag (vorher gibt es keinen Preis, den der Brennwert ändern würde).
+- Event `tarif_cockpit_rechnung_abweichung` je Rechnung einmal, mit `vorschlaege` und `hinweise`.
+
+**Lerndaten:** Bei Zählern ohne Sensor ist jede Ableseperiode der letzten **3 Jahre** eine Stichprobe des Wärmemodells, auch vor dem Vertragsbeginn. Rechnungen mit Menge, aber ohne Stände, zählen als eigener Zeitraum (bei Gas in m³ mit dem Brennwert der Rechnung umgerechnet). Ein Zeitraum, der sich mit Ableseperioden überschneidet, zählt nicht doppelt. Die Gradtage dafür holt die Aggregation bis zum frühesten Rechnungs- bzw. Ablesebeginn, höchstens 3 Jahre und soweit die Statistik der Außentemperatur reicht.
+
+## Staffel und Rundung (1.1)
+
+- **Staffel:** bis zu drei Stufen je Jahr (im Dialog), beliebig viele über `set_preis` (`staffel: [{bis: 1000, preis: 0.32}, {preis: 0.29}]`). Ein Rumpfjahr bekommt die Grenzen anteilig (Tage ÷ 365). Bezug ist die Menge der Periode.
+  - `block`: jede Stufe zum eigenen Preis. Die Menge vor dem Rest der Periode zählt mit, die Prognose setzt also dort fort, wo der bisherige Verbrauch steht.
+  - `total`: die ganze Menge zum Preis der erreichten Stufe, gemessen an der Prognose der ganzen Periode.
+- **Rundung** je Preisabschnitt:
+  - Tage je Jahr 365,25 (wie bisher), 365 oder die echten Tage (365/366),
+  - Grundpreis je Tag (`Monatspreis × 12 ÷ Tage je Jahr`) oder je Monat (`Monatspreis ÷ Tage des Monats` je Tag, ein voller Monat ist genau ein Monatspreis),
+  - Menge je Preisstufe auf n Stellen,
+  - Beträge je Position auf n Stellen (2 = Cent).
+- Beispiel (Test): 3.342 kWh zu 31,54 ct, Grundpreis 13,09 € je Monat, Menge auf ganze kWh, Beträge auf Cent, Grundpreis je Monat → 1.054,07 € + 157,08 € = 1.211,15 €.
+- Über der letzten Stufe ohne „darüber“ gilt der Arbeitspreis des Abschnitts. Eine Gesamtstaffel braucht die Menge der ganzen Periode; ohne Prognose gelten die Kosten als unvollständig (`staffel_ohne_gesamtmenge`).
+- „Preis ändern“ ohne Haken übernimmt die Rundung des laufenden Preises; hat er eine Staffel, folgt der Staffel-Schritt immer (vorbelegt), weil die Stufenpreise den Arbeitspreis bestimmen. Die Aktion `set_preis` legt den Abschnitt so an, wie sie aufgerufen wird (ohne `staffel` keine Staffel).
+
+## Prognosegüte (1.1)
+
+Aus den abgeschlossenen Archiven: je Vorlauf (Monate vor dem Periodenende) die **mittlere absolute Abweichung** der Prognose von den tatsächlichen Kosten und der tatsächlichen Menge, über alle abgeschlossenen Perioden. Mit einer Periode „vorläufig“, ab zwei „gut“. Attribut `prognoseguete` am Sensor Prognose-Qualität, Tabelle in der Auswertungskarte.
+
+## Heizlast (1.1)
+
+Aus dem gelernten Kennwert k (kWh je Gradtag, bei Gas Brennwert Hs) und dem Wirkungsgrad η des Kessels:
+
+- `Heizlast = k × Hi/Hs × η × (Innenbezug − Normaußentemperatur) / 24 h` (Hi/Hs = 0,901 bei Gas, Fernwärme ohne Umrechnung). Warmwasser gehört nicht dazu.
+- `Verhältnis = Nennleistung ÷ Heizlast`: bis 1,2 passend, bis 1,8 etwas groß, darüber überdimensioniert. Eine Nennleistung als „Belastung“ wird mit η auf Wärme umgerechnet.
+- `Taktgrenze = Innenbezug − kleinste Leistung × 24 / (k × Hi/Hs × η)`: Über dieser Außentemperatur liegt der Bedarf unter der kleinsten Leistung, der Kessel muss takten. **Takttage** = Anteil der Heiztage (unter der Heizgrenze) im letzten Jahr, die wärmer waren.
+- Mit Impulszähler zusätzlich die höchste gemessene Brennerleistung im Tagesmittel.
+- Ohne Kennwert ab „vorläufig“ gibt es keine Aussage. Beispiel: k = 5 kWh/Kd, η 0,97, 20 °C, −12 °C → 5,8 kW Heizlast; ein Kessel mit 19,5 kW ist 3,3-fach überdimensioniert, mit 4,7 kW kleinster Leistung liegt die Taktgrenze bei −5,8 °C.
+
 ## Kündigungsfrist (1.0)
 
 - Mit festem Vertragsende: letzter Kündigungstag = Vertragsende − Kündigungsfrist (Wochen).

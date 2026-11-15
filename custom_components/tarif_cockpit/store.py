@@ -66,6 +66,15 @@ class TarifStore(Store[dict[str, Any]]):
             if "reaggregated_meters" in data:  # fehlt der Schlüssel, ist die Liste ohnehin leer
                 data["reaggregated_meters"] = []
             _LOGGER.info("Tarif-Cockpit: Store auf 1.4 migriert, Tageswerte werden einmal neu berechnet")
+        if old_major_version == 1 and old_minor_version < 5:
+            # 1.4 → 1.5 (1.1): Rechnungen hängen zusätzlich am Zähler (aus dem Vertrag); neue Felder bleiben leer
+            meter_of = {c.get("contract_id"): c.get("meter_id") for c in data.get("contracts", []) if isinstance(c, dict)}
+            if "invoices" in data:
+                data["invoices"] = [
+                    dict(inv, meter_id=inv.get("meter_id") or meter_of.get(inv.get("contract_id"))) if isinstance(inv, dict) else inv
+                    for inv in data["invoices"]
+                ]
+            _LOGGER.info("Tarif-Cockpit: Store auf 1.5 migriert")
         return data
 
     def schedule_save(self, dataset: Dataset) -> None:

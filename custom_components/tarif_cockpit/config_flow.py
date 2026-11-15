@@ -15,7 +15,7 @@ Store, danach gilt der Store (Entscheidung E). Änderungen danach gehen über di
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 import voluptuous as vol
@@ -117,6 +117,8 @@ def _climate_schema(defaults: dict[str, Any]) -> vol.Schema:
             selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", device_class="temperature", multiple=True)),
         vol.Required("heating_limit", default=defaults.get("heating_limit", 15.0)): _number(5, 25, 0.5, "°C"),
         vol.Required("indoor_ref", default=defaults.get("indoor_ref", 20.0)): _number(15, 25, 0.5, "°C"),
+        # 1.1: Normaußentemperatur für die Heizlast
+        vol.Required("design_temp", default=defaults.get("design_temp", -12.0)): _number(-25, 0, 0.5, "°C"),
     })
 
 
@@ -128,7 +130,8 @@ def _situation_from(user_input: dict[str, Any]) -> dict[str, Any]:
 def _climate_from(user_input: dict[str, Any]) -> dict[str, Any]:
     return {"outdoor_temp_entity": user_input.get("outdoor_temp_entity"), "weather_entity": user_input.get("weather_entity"),
             "rooms": [{"entity": e} for e in user_input.get("rooms", []) or []],
-            "heating_limit": float(user_input["heating_limit"]), "indoor_ref": float(user_input["indoor_ref"])}
+            "heating_limit": float(user_input["heating_limit"]), "indoor_ref": float(user_input["indoor_ref"]),
+            "design_temp": float(user_input.get("design_temp", -12.0))}
 
 
 class TarifCockpitConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -582,7 +585,7 @@ class MeterSubentryFlow(ConfigSubentryFlow):
         meter = sub.data.get(CONF_METER, {})
         options = ["stammdaten"]
         if meter.get("role", "main") == "main" and self._runtime() is not None:
-            options += ["anbieterwechsel", "vertrag_aendern", "preis_aendern", "abschlag_aendern"]
+            options += ["anbieterwechsel", "vertrag_aendern", "preis_aendern", "abschlag_aendern", "rechnung_erfassen"]
         return self.async_show_menu(step_id="reconfigure", menu_options=options)
 
     async def async_step_stammdaten(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
@@ -699,19 +702,158 @@ class MeterSubentryFlow(ConfigSubentryFlow):
         rt = self._runtime()
         if rt is None:
             return self.async_abort(reason="not_loaded")
+        current = current_price(rt, meter_id)
         if user_input is not None:
             errors = _price_errors(user_input, _cents(self.hass, medium))
         if user_input is not None and not errors:
+            price = _price_from(user_input, _cents(self.hass, medium))
+            if user_input.get("tiers_rounding") or (current is not None and current.tiers):
+                # mit Staffel bestimmen die Stufenpreise den Arbeitspreis: Stufen immer zeigen, nie still übernehmen
+                self._pending_price = (date.fromisoformat(user_input["valid_from"]), price)
+                return await self.async_step_staffel_rundung()
+            # Staffel und Rundung des laufenden Preises bleiben, wenn sie nicht geändert werden (nichts geht still verloren)
+            if current is not None:
+                price.update(tiers=list(current.tiers), tier_mode=current.tier_mode, rounding=current.rounding)
             try:
-                rt.set_price(meter_id, date.fromisoformat(user_input["valid_from"]), **_price_from(user_input, _cents(self.hass, medium)))
+                rt.set_price(meter_id, date.fromisoformat(user_input["valid_from"]), **price)
             except billing.BillingError as err:
                 errors["base"] = "billing_error"
                 placeholders["error"] = str(err)
             else:
                 rt.changed(meter_id=meter_id, flags={"costs"})
                 return self.async_abort(reason="price_saved")
-        return self.async_show_form(step_id="preis_aendern", data_schema=_price_schema(self.hass, medium, with_date=True, current=current_price(rt, meter_id)),
-                                    errors=errors, description_placeholders=placeholders)
+        schema = _price_schema(self.hass, medium, with_date=True, current=current).extend(
+            {vol.Optional("tiers_rounding", default=False): selector.BooleanSelector()})
+        return self.async_show_form(step_id="preis_aendern", data_schema=schema, errors=errors, description_placeholders=placeholders)
+
+    async def async_step_staffel_rundung(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Staffel (bis zu drei Stufen, je Jahr) und Rundungsregeln des Versorgers (1.1)."""
+        from .engine.model import PriceTier, Rounding  # noqa: PLC0415
+
+        meter_id, medium = self._meter_id_and_medium()
+        rt = self._runtime()
+        if rt is None:
+            return self.async_abort(reason="not_loaded")
+        cents = _cents(self.hass, medium)
+        scale = 100 if cents else 1
+        valid_from, price = self._pending_price
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            tiers = []
+            for i in (1, 2):
+                upto, p = user_input.get(f"tier{i}_upto"), user_input.get(f"tier{i}_price")
+                if (upto is None) != (p is None):
+                    errors[f"tier{i}_price" if p is None else f"tier{i}_upto"] = "tier_incomplete"
+                elif upto is not None:
+                    tiers.append(PriceTier(float(upto), float(p) / scale))
+            if user_input.get("tier3_price") is not None:
+                if tiers:
+                    tiers.append(PriceTier(None, float(user_input["tier3_price"]) / scale))
+                else:
+                    errors["tier3_price"] = "tier_incomplete"
+            if tiers and [t.upto for t in tiers if t.upto is not None] != sorted(t.upto for t in tiers if t.upto is not None):
+                errors["tier2_upto"] = "tiers_order"
+            if not errors:
+                qd, md = user_input.get("quantity_decimals"), user_input.get("money_decimals")
+                rounding = Rounding(days_per_year=user_input["days_per_year"], base_by=user_input["base_by"],
+                                    quantity_decimals=int(qd) if qd is not None else None, money_decimals=int(md) if md is not None else None)
+                default = rounding == Rounding()
+                try:
+                    rt.set_price(meter_id, valid_from, **price, tiers=tiers, tier_mode=user_input["tier_mode"],
+                                 rounding=None if default else rounding)
+                except billing.BillingError as err:
+                    return self.async_abort(reason="price_not_saved", description_placeholders={"error": str(err)})
+                rt.changed(meter_id=meter_id, flags={"costs"})
+                return self.async_abort(reason="price_saved")
+        cur = current_price(rt, meter_id)
+        r = cur.rounding if cur is not None and cur.rounding else Rounding()
+        t = list(cur.tiers) if cur is not None else []
+
+        def sv(key: str, value: Any) -> vol.Optional:
+            return vol.Optional(key, description={"suggested_value": value}) if value is not None else vol.Optional(key)
+
+        unit = "ct/kWh" if cents else f"{self.hass.config.currency}/{'m³' if medium == Medium.WASSER else 'kWh'}"
+        qty_unit = "m³" if medium == Medium.WASSER else "kWh"
+        bounded = [x for x in t if x.upto is not None]
+        top = next((x for x in t if x.upto is None), None)
+        schema = vol.Schema({
+            sv("tier1_upto", bounded[0].upto if len(bounded) > 0 else None): _number(0, 10000000, "any", f"{qty_unit}/Jahr"),
+            sv("tier1_price", bounded[0].work_price * scale if len(bounded) > 0 else None): _number(0, 10000, "any", unit),
+            sv("tier2_upto", bounded[1].upto if len(bounded) > 1 else None): _number(0, 10000000, "any", f"{qty_unit}/Jahr"),
+            sv("tier2_price", bounded[1].work_price * scale if len(bounded) > 1 else None): _number(0, 10000, "any", unit),
+            sv("tier3_price", top.work_price * scale if top else None): _number(0, 10000, "any", unit),
+            vol.Required("tier_mode", default=cur.tier_mode if cur is not None else "block"): _select(["block", "total"], "tier_mode"),
+            vol.Required("days_per_year", default=r.days_per_year): _select(["365.25", "365", "actual"], "days_per_year"),
+            vol.Required("base_by", default=r.base_by): _select(["day", "month"], "base_by"),
+            sv("quantity_decimals", r.quantity_decimals): _number(0, 6, 1),
+            sv("money_decimals", r.money_decimals): _number(0, 6, 1),
+        })
+        if user_input is not None:
+            schema = self.add_suggested_values_to_schema(schema, user_input)
+        return self.async_show_form(step_id="staffel_rundung", data_schema=schema, errors=errors)
+
+    async def async_step_rechnung_erfassen(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Jahresabrechnung erfassen (1.1): Zeitraum, Betrag, optional Menge, Stände, Brennwert, Positionen."""
+        from .services import invoice_added  # noqa: PLC0415
+
+        meter_id, medium = self._meter_id_and_medium()
+        rt = self._runtime()
+        if rt is None:
+            return self.async_abort(reason="not_loaded")
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            p_from, p_to = date.fromisoformat(user_input["period_from"]), date.fromisoformat(user_input["period_to"])
+            if p_to < p_from:
+                errors["period_to"] = "period_order"
+            else:
+                keys = {"quantity": float, "quantity_kwh": float, "start_reading": float, "end_reading": float, "calorific": float,
+                        "z_factor": float, "work_cost": float, "base_cost": float, "advances_paid": float}
+                details = {k: conv(user_input[k]) for k, conv in keys.items() if user_input.get(k) is not None}
+                details["readings_estimated"] = bool(user_input.get("readings_estimated"))
+                try:
+                    inv, added = rt.add_invoice(meter_id, date.fromisoformat(user_input["invoice_date"]), p_from, p_to,
+                                                float(user_input["amount"]), **details)
+                except billing.BillingError as err:
+                    return self.async_abort(reason="invoice_not_saved", description_placeholders={"error": str(err)})
+                out = await invoice_added(rt, meter_id, inv, added)
+                v = out.get("vergleich") or {}
+                dev = v.get("abweichung_pct")
+                return self.async_abort(reason="invoice_saved", description_placeholders={
+                    "abweichung": "–" if dev is None else f"{dev:+.1f} %".replace(".", ","),
+                    "ablesungen": str(len(added)),
+                    "vorschlaege": str(len(v.get("vorschlaege") or [])),
+                })
+        per = "m³" if medium == Medium.WASSER else "kWh"
+        unit = rt.meters[meter_id].unit if meter_id in rt.meters else per
+        cur = self.hass.config.currency
+        # vorbelegt: letzte beendete Periode, sonst die zwölf Monate bis gestern (typisch die alte Jahresrechnung)
+        ended = sorted(rt.stored_periods(meter_id), key=lambda p: p.end_date)
+        today = rt.today()
+        p_from, p_to = (ended[-1].start_date, ended[-1].end_date) if ended else (billing.add_years(today, -1), today - timedelta(days=1))
+        fields: dict[Any, Any] = {
+            vol.Required("invoice_date", default=today.isoformat()): selector.DateSelector(),
+            vol.Required("period_from", default=p_from.isoformat()): selector.DateSelector(),
+            vol.Required("period_to", default=p_to.isoformat()): selector.DateSelector(),
+            vol.Required("amount"): _number(-100000, 100000, "any", cur),
+            vol.Optional("start_reading"): _number(0, 100000000, "any", unit),
+            vol.Optional("end_reading"): _number(0, 100000000, "any", unit),
+            vol.Optional("readings_estimated", default=False): selector.BooleanSelector(),
+            vol.Optional("quantity"): _number(0, 100000000, "any", unit),
+        }
+        if medium in (Medium.GAS, Medium.FERNWAERME):
+            fields[vol.Optional("quantity_kwh")] = _number(0, 100000000, "any", "kWh")
+        if medium == Medium.GAS:
+            fields[vol.Optional("calorific")] = _number(8, 13, "any", "kWh/m³")
+            fields[vol.Optional("z_factor")] = _number(0.8, 1.1, "any")
+        fields.update({
+            vol.Optional("work_cost"): _number(-100000, 100000, "any", cur),
+            vol.Optional("base_cost"): _number(-100000, 100000, "any", cur),
+            vol.Optional("advances_paid"): _number(-100000, 100000, "any", cur),
+        })
+        schema = vol.Schema(fields)
+        if user_input is not None:
+            schema = self.add_suggested_values_to_schema(schema, user_input)
+        return self.async_show_form(step_id="rechnung_erfassen", data_schema=schema, errors=errors)
 
     async def async_step_abschlag_aendern(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         meter_id, _ = self._meter_id_and_medium()

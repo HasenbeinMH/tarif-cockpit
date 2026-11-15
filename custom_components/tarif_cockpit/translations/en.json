@@ -21,12 +21,14 @@
           "weather_entity": "Weather entity",
           "rooms": "Room temperatures",
           "heating_limit": "Heating limit",
-          "indoor_ref": "Indoor reference for degree days"
+          "indoor_ref": "Indoor reference for degree days",
+          "design_temp": "Design outdoor temperature"
         },
         "data_description": {
           "outdoor_temp_entity": "For degree days and the learned coefficient. Without an outdoor temperature there is no heating forecast.",
           "heating_limit": "Days with a mean below this count as heating days (usually 15 °C).",
-          "indoor_ref": "Usually 20 °C (degree days G20/15)."
+          "indoor_ref": "Usually 20 °C (degree days G20/15).",
+          "design_temp": "For the heat load: the coldest design temperature of your region (Germany about −10 to −16 °C, often −12 °C)."
         }
       },
       "abschluss": {
@@ -109,7 +111,8 @@
             "fixed_yearly": "Fixed amounts per year (e.g. rainwater)",
             "demand_price": "Demand charge per kW and year",
             "demand_kw": "Connected load",
-            "price_unit": "Unit price per"
+            "price_unit": "Unit price per",
+            "tiers_rounding": "Set tiers or rounding"
           },
           "data_description": {
             "price_unit": "District heating is often billed per MWh; internally it is calculated per kWh.",
@@ -180,7 +183,8 @@
             "anbieterwechsel": "Change supplier",
             "preis_aendern": "Change price",
             "abschlag_aendern": "Change advance payment",
-            "vertrag_aendern": "Change contract (tariff, billing, term, notice period)"
+            "vertrag_aendern": "Change contract (tariff, billing, term, notice period)",
+            "rechnung_erfassen": "Enter invoice (annual bill)"
           }
         },
         "zusammenfassung": {
@@ -201,10 +205,12 @@
             "fixed_yearly": "Fixed amounts per year (e.g. rainwater)",
             "demand_price": "Demand charge per kW and year",
             "demand_kw": "Connected load",
-            "price_unit": "Unit price per"
+            "price_unit": "Unit price per",
+            "tiers_rounding": "Set tiers or rounding"
           },
           "data_description": {
-            "work_price": "In cents per kWh as on contract and bill, e.g. 31.54. Water in euros per m³, district heating per MWh in euros."
+            "work_price": "In cents per kWh as on contract and bill, e.g. 31.54. Water in euros per m³, district heating per MWh in euros.",
+            "tiers_rounding": "Only needed if the supplier bills by quantity tiers or rounds differently. Unticked, the rounding of the current price is kept; with tiers the step always follows."
           }
         },
         "abschlag_aendern": {
@@ -286,6 +292,50 @@
             "notice_period_weeks": "How many weeks before the contract end must you cancel? (6 weeks ≈ 1.5 months)",
             "fixed_day": "Only for “fixed day”: first day of the new period, e.g. 01.07. if the bill ends on 30.06."
           }
+        },
+        "rechnung_erfassen": {
+          "title": "Enter invoice",
+          "description": "Values from the annual bill. Period and amount (total gross costs) are required; everything else helps the comparison. Start and end readings become readings. Older bills from before the contract start are welcome: they serve as learning data and check the fallback source. If the bill differs, a suggestion to apply appears under Repairs.",
+          "data": {
+            "invoice_date": "Invoice date",
+            "period_from": "Period from",
+            "period_to": "Period to",
+            "amount": "Total costs (gross)",
+            "start_reading": "Start reading",
+            "end_reading": "End reading",
+            "readings_estimated": "Readings estimated by the supplier",
+            "quantity": "Consumption (meter unit)",
+            "quantity_kwh": "Consumption in kWh",
+            "calorific": "Calorific value",
+            "z_factor": "Conversion factor",
+            "work_cost": "Unit price costs (gross)",
+            "base_cost": "Standing and metering charge (gross)",
+            "advances_paid": "Advances paid"
+          },
+          "data_description": {
+            "amount": "Total costs of the period, not the balance due.",
+            "quantity": "Only needed if the bill shows no readings."
+          }
+        },
+        "staffel_rundung": {
+          "title": "Tiers and rounding",
+          "description": "Tiers: unit price up to a quantity per year (a short year pro rata), above that the next price. Leave empty for a single price. Rounding: as on the bill so the comparison adds up. Without “above”, the unit price from before applies above the last tier.",
+          "data": {
+            "tier1_upto": "Tier 1 up to",
+            "tier1_price": "Tier 1 unit price",
+            "tier2_upto": "Tier 2 up to",
+            "tier2_price": "Tier 2 unit price",
+            "tier3_price": "Above that unit price",
+            "tier_mode": "Tier billing",
+            "days_per_year": "Days per year for the standing charge",
+            "base_by": "Standing charge",
+            "quantity_decimals": "Round quantity to decimals",
+            "money_decimals": "Round amounts to decimals"
+          },
+          "data_description": {
+            "quantity_decimals": "0 = whole kWh or m³. Empty = no rounding.",
+            "money_decimals": "2 = each item to the cent. Empty = no rounding."
+          }
         }
       },
       "error": {
@@ -300,7 +350,10 @@
         "switch_reading_future": "The switch is in the future: please enter the meter reading after the switch (action “Add reading”).",
         "entity_or_pulses": "Please choose either a meter sensor or a pulse counter, not both.",
         "periods_locked": "A billing period of this contract has already ended, so billing stays as it is.",
-        "work_price_cents": "The unit price is entered in cents per kWh: 31.54 instead of 0.3154."
+        "work_price_cents": "The unit price is entered in cents per kWh: 31.54 instead of 0.3154.",
+        "period_order": "“Period to” is before “Period from”.",
+        "tiers_order": "Tiers must ascend (tier 2 limit above tier 1 limit).",
+        "tier_incomplete": "Give quantity and price per tier; “above” only with at least one tier."
       },
       "abort": {
         "reconfigure_successful": "The meter was changed.",
@@ -309,7 +362,10 @@
         "switch_saved": "The supplier change was saved.",
         "not_loaded": "The integration is not loaded right now. Please check and reload it under Settings → Devices & services.",
         "contract_saved": "The contract was saved.",
-        "no_contract": "This meter has no contract yet."
+        "no_contract": "This meter has no contract yet.",
+        "invoice_saved": "Invoice saved. Quantity deviation: {abweichung}, new readings: {ablesungen}, suggestions: {vorschlaege} (see Settings → Repairs).",
+        "price_not_saved": "Price not saved: {error}",
+        "invoice_not_saved": "Invoice not saved: {error}"
       }
     },
     "waermeerzeuger": {
@@ -614,6 +670,25 @@
         "per_unit": "Pulses per unit (e.g. 100 imp/m³)",
         "per_pulse": "Unit per pulse (e.g. 0.01 m³/imp)"
       }
+    },
+    "tier_mode": {
+      "options": {
+        "block": "Each tier at its own price",
+        "total": "Whole quantity at the price of the tier reached"
+      }
+    },
+    "days_per_year": {
+      "options": {
+        "365.25": "365.25 (average)",
+        "365": "365",
+        "actual": "Actual days (365 or 366)"
+      }
+    },
+    "base_by": {
+      "options": {
+        "day": "Per day (monthly price × 12 ÷ days per year)",
+        "month": "Per month, pro rata by days of the month"
+      }
     }
   },
   "entity": {
@@ -716,6 +791,9 @@
       },
       "brennerstarts": {
         "name": "Burner starts"
+      },
+      "heizlast": {
+        "name": "Heat load"
       }
     }
   },
@@ -897,6 +975,30 @@
         "anschlussleistung": {
           "name": "Connected load",
           "description": "District heating, kW."
+        },
+        "staffel": {
+          "name": "Tiers",
+          "description": "List of tiers {bis, preis} per year in euros per kWh or m³; the last tier without “bis”, e.g. [{bis: 1000, preis: 0.32}, {preis: 0.29}]."
+        },
+        "staffel_art": {
+          "name": "Tier billing",
+          "description": "block: per tier; total: whole quantity at the tier reached."
+        },
+        "rundung_tage": {
+          "name": "Days per year",
+          "description": "For standing charge and yearly amounts."
+        },
+        "rundung_grundpreis": {
+          "name": "Standing charge per",
+          "description": "day or month (pro rata by days of the month)."
+        },
+        "rundung_menge_stellen": {
+          "name": "Round quantity",
+          "description": "Decimals of the quantity per tier."
+        },
+        "rundung_betrag_stellen": {
+          "name": "Round amounts",
+          "description": "Decimals per item (2 = cents)."
         }
       }
     },
@@ -978,11 +1080,55 @@
         },
         "betrag": {
           "name": "Amount",
-          "description": "Invoice amount."
+          "description": "Total costs of the period (gross), not the balance due."
         },
         "korrigiert": {
           "name": "Corrects",
           "description": "ID of the corrected invoice."
+        },
+        "menge": {
+          "name": "Consumption",
+          "description": "Quantity in the meter unit (m³, kWh)."
+        },
+        "menge_kwh": {
+          "name": "Consumption in kWh",
+          "description": "Billed kWh (gas after calorific value and conversion factor)."
+        },
+        "stand_anfang": {
+          "name": "Start reading",
+          "description": "Becomes a reading at the start of the period."
+        },
+        "stand_ende": {
+          "name": "End reading",
+          "description": "Becomes a reading at the end of the period."
+        },
+        "staende_geschaetzt": {
+          "name": "Readings estimated",
+          "description": "The readings on the bill are estimated."
+        },
+        "brennwert": {
+          "name": "Calorific value",
+          "description": "As on the bill, kWh/m³."
+        },
+        "zustandszahl": {
+          "name": "Conversion factor",
+          "description": "As on the bill."
+        },
+        "arbeitspreis_kosten": {
+          "name": "Unit price costs",
+          "description": "Gross, in euros."
+        },
+        "grundpreis_kosten": {
+          "name": "Standing charge costs",
+          "description": "Gross, in euros."
+        },
+        "abschlaege_bezahlt": {
+          "name": "Advances paid",
+          "description": "Total as on the bill."
+        },
+        "notiz": {
+          "name": "Note",
+          "description": "Free text."
         }
       }
     },
@@ -1079,6 +1225,24 @@
     "kuendigungsfrist": {
       "title": "{meter}: notice period ends soon",
       "description": "The contract with {lieferant} ends on {ende}. To switch, cancel by {bis} ({tage} days left). The notice disappears after the deadline or when you adjust term or notice period under “Change contract”."
+    },
+    "rechnung_abweichung": {
+      "title": "{meter}: invoice {von}–{bis} differs",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Apply suggestion from the invoice",
+            "description": "Invoice {von}–{bis}: {menge_rechnung} {einheit}, own data: {menge_eigen} {einheit} (deviation {abweichung} %).\n\nSuggestion: {vorschlaege}\n\nNotes: {hinweise}\n\n“OK” applies the suggestion (calorific value for the invoice period, the factor for the fallback source). Closed periods stay unchanged."
+          }
+        },
+        "abort": {
+          "invoice_gone": "The invoice now matches or was removed."
+        }
+      }
+    },
+    "rechnung_abweichung_hinweis": {
+      "title": "{meter}: check invoice {von}–{bis}",
+      "description": "Invoice {von}–{bis}: {menge_rechnung} {einheit}, own data: {menge_eigen} {einheit} (deviation {abweichung} %). Notes: {hinweise}. Change prices under “Change price” (also tiers and rounding), readings with “Add reading”."
     }
   },
   "exceptions": {
@@ -1120,12 +1284,14 @@
           "rooms": "Room temperatures",
           "heating_limit": "Heating limit",
           "indoor_ref": "Indoor reference for degree days",
-          "tolerance_pct": "Tolerance for “on track”"
+          "tolerance_pct": "Tolerance for “on track”",
+          "design_temp": "Design outdoor temperature"
         },
         "data_description": {
           "outdoor_temp_entity": "For degree days and the learned coefficient. Without an outdoor temperature there is no heating forecast.",
           "heating_limit": "Days with a mean below this count as heating days (usually 15 °C).",
-          "indoor_ref": "Usually 20 °C (degree days G20/15)."
+          "indoor_ref": "Usually 20 °C (degree days G20/15).",
+          "design_temp": "For the heat load: the coldest design temperature of your region (Germany about −10 to −16 °C, often −12 °C)."
         }
       }
     }

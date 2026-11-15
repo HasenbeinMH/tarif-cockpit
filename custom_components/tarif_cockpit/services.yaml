@@ -210,6 +210,43 @@ set_preis:
           max: 1000000
           step: any
           mode: box
+    staffel:
+      selector:
+        object:
+    staffel_art:
+      selector:
+        select:
+          translation_key: tier_mode
+          options:
+            - block
+            - total
+    rundung_tage:
+      selector:
+        select:
+          translation_key: days_per_year
+          options:
+            - "365.25"
+            - "365"
+            - actual
+    rundung_grundpreis:
+      selector:
+        select:
+          translation_key: base_by
+          options:
+            - day
+            - month
+    rundung_menge_stellen:
+      selector:
+        number:
+          min: 0
+          max: 6
+          mode: box
+    rundung_betrag_stellen:
+      selector:
+        number:
+          min: 0
+          max: 6
+          mode: box
 set_abschlag:
   fields:
     zaehler:
@@ -318,6 +355,75 @@ add_rechnung:
           step: any
           mode: box
     korrigiert:
+      selector:
+        text:
+    menge:
+      selector:
+        number:
+          min: 0
+          max: 100000000
+          step: any
+          mode: box
+    menge_kwh:
+      selector:
+        number:
+          min: 0
+          max: 100000000
+          step: any
+          mode: box
+    stand_anfang:
+      selector:
+        number:
+          min: 0
+          max: 100000000
+          step: any
+          mode: box
+    stand_ende:
+      selector:
+        number:
+          min: 0
+          max: 100000000
+          step: any
+          mode: box
+    staende_geschaetzt:
+      selector:
+        boolean:
+    brennwert:
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: any
+          mode: box
+    zustandszahl:
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: any
+          mode: box
+    arbeitspreis_kosten:
+      selector:
+        number:
+          min: -1000000
+          max: 1000000
+          step: any
+          mode: box
+    grundpreis_kosten:
+      selector:
+        number:
+          min: -1000000
+          max: 1000000
+          step: any
+          mode: box
+    abschlaege_bezahlt:
+      selector:
+        number:
+          min: -1000000
+          max: 1000000
+          step: any
+          mode: box
+    notiz:
       selector:
         text:
 recalculate:

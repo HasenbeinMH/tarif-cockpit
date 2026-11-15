@@ -21,12 +21,14 @@
           "weather_entity": "Wetter-Entität",
           "rooms": "Raumtemperaturen",
           "heating_limit": "Heizgrenze",
-          "indoor_ref": "Innentemperatur für Gradtage"
+          "indoor_ref": "Innentemperatur für Gradtage",
+          "design_temp": "Normaußentemperatur"
         },
         "data_description": {
           "outdoor_temp_entity": "Für Gradtage und den gelernten Kennwert. Ohne Außentemperatur gibt es keine Heizprognose.",
           "heating_limit": "Tage mit einem Tagesmittel darunter zählen als Heiztage (üblich 15 °C).",
-          "indoor_ref": "Üblich 20 °C (Gradtagzahl G20/15)."
+          "indoor_ref": "Üblich 20 °C (Gradtagzahl G20/15).",
+          "design_temp": "Für die Heizlast: kälteste Auslegungstemperatur deiner Region (Deutschland etwa −10 bis −16 °C, oft −12 °C)."
         }
       },
       "abschluss": {
@@ -109,7 +111,8 @@
             "fixed_yearly": "Feste Beträge je Jahr (z. B. Niederschlagswasser)",
             "demand_price": "Leistungspreis je kW und Jahr",
             "demand_kw": "Anschlussleistung",
-            "price_unit": "Arbeitspreis je"
+            "price_unit": "Arbeitspreis je",
+            "tiers_rounding": "Staffel oder Rundung festlegen"
           },
           "data_description": {
             "price_unit": "Fernwärme wird oft je MWh abgerechnet; gerechnet wird intern je kWh.",
@@ -180,7 +183,8 @@
             "anbieterwechsel": "Anbieter wechseln",
             "preis_aendern": "Preis ändern",
             "abschlag_aendern": "Abschlag ändern",
-            "vertrag_aendern": "Vertrag ändern (Tarif, Abrechnung, Laufzeit, Kündigungsfrist)"
+            "vertrag_aendern": "Vertrag ändern (Tarif, Abrechnung, Laufzeit, Kündigungsfrist)",
+            "rechnung_erfassen": "Rechnung erfassen (Jahresabrechnung)"
           }
         },
         "zusammenfassung": {
@@ -201,10 +205,12 @@
             "fixed_yearly": "Feste Beträge je Jahr (z. B. Niederschlagswasser)",
             "demand_price": "Leistungspreis je kW und Jahr",
             "demand_kw": "Anschlussleistung",
-            "price_unit": "Arbeitspreis je"
+            "price_unit": "Arbeitspreis je",
+            "tiers_rounding": "Staffel oder Rundung festlegen"
           },
           "data_description": {
-            "work_price": "In Cent je kWh wie auf Vertrag und Rechnung, z. B. 31,54. Wasser in Euro je m³, Fernwärme je MWh in Euro."
+            "work_price": "In Cent je kWh wie auf Vertrag und Rechnung, z. B. 31,54. Wasser in Euro je m³, Fernwärme je MWh in Euro.",
+            "tiers_rounding": "Nur nötig, wenn der Versorger nach Mengenstufen abrechnet oder anders rundet. Ohne Haken bleibt die Rundung des laufenden Preises; hat er eine Staffel, folgt der Schritt immer."
           }
         },
         "abschlag_aendern": {
@@ -286,6 +292,50 @@
             "notice_period_weeks": "Wie viele Wochen vor Vertragsende muss gekündigt werden? (6 Wochen ≈ 1,5 Monate)",
             "fixed_day": "Nur bei „fester Stichtag“: erster Tag des neuen Zeitraums, z. B. 01.07. bei Abrechnung zum 30.06."
           }
+        },
+        "rechnung_erfassen": {
+          "title": "Rechnung erfassen",
+          "description": "Werte von der Jahresabrechnung. Pflicht sind Zeitraum und Betrag (Gesamtkosten brutto); alles andere hilft beim Vergleich. Anfangs- und Endstand werden Ablesungen. Auch ältere Rechnungen vor dem Vertragsbeginn sind willkommen: Sie dienen als Lerndaten und prüfen die Ersatzquelle. Weicht die Rechnung ab, steht unter Reparaturen ein Vorschlag zum Übernehmen.",
+          "data": {
+            "invoice_date": "Rechnungsdatum",
+            "period_from": "Zeitraum von",
+            "period_to": "Zeitraum bis",
+            "amount": "Gesamtkosten (brutto)",
+            "start_reading": "Anfangsstand",
+            "end_reading": "Endstand",
+            "readings_estimated": "Stände laut Rechnung geschätzt",
+            "quantity": "Verbrauch (Zählereinheit)",
+            "quantity_kwh": "Verbrauch in kWh",
+            "calorific": "Brennwert",
+            "z_factor": "Zustandszahl",
+            "work_cost": "Kosten Arbeitspreis (brutto)",
+            "base_cost": "Kosten Grund- und Messpreis (brutto)",
+            "advances_paid": "Gezahlte Abschläge"
+          },
+          "data_description": {
+            "amount": "Gesamtkosten des Zeitraums, nicht die Nachzahlung.",
+            "quantity": "Nur nötig, wenn keine Stände auf der Rechnung stehen."
+          }
+        },
+        "staffel_rundung": {
+          "title": "Staffel und Rundung",
+          "description": "Staffel: Arbeitspreis bis zu einer Menge je Jahr (ein Rumpfjahr anteilig), darüber der nächste Preis (ohne „darüber“ der Arbeitspreis von vorher). Leer lassen für einen einheitlichen Preis. Rundung: wie auf der Rechnung, damit der Vergleich aufgeht.",
+          "data": {
+            "tier1_upto": "Stufe 1 bis",
+            "tier1_price": "Stufe 1 Arbeitspreis",
+            "tier2_upto": "Stufe 2 bis",
+            "tier2_price": "Stufe 2 Arbeitspreis",
+            "tier3_price": "darüber Arbeitspreis",
+            "tier_mode": "Abrechnung der Staffel",
+            "days_per_year": "Tage je Jahr für den Grundpreis",
+            "base_by": "Grundpreis",
+            "quantity_decimals": "Menge runden auf Stellen",
+            "money_decimals": "Beträge runden auf Stellen"
+          },
+          "data_description": {
+            "quantity_decimals": "0 = ganze kWh bzw. m³. Leer = nicht runden.",
+            "money_decimals": "2 = je Position auf Cent. Leer = nicht runden."
+          }
         }
       },
       "error": {
@@ -300,7 +350,10 @@
         "switch_reading_future": "Der Wechsel liegt in der Zukunft: den Zählerstand bitte erst nach dem Wechsel eintragen (Aktion „Ablesung hinzufügen“).",
         "entity_or_pulses": "Bitte entweder einen Zählerstand-Sensor oder einen Impulszähler wählen, nicht beides.",
         "periods_locked": "Von diesem Vertrag ist schon ein Abrechnungszeitraum beendet; die Abrechnung bleibt deshalb, wie sie ist.",
-        "work_price_cents": "Der Arbeitspreis wird in Cent je kWh eingegeben: 31,54 statt 0,3154."
+        "work_price_cents": "Der Arbeitspreis wird in Cent je kWh eingegeben: 31,54 statt 0,3154.",
+        "period_order": "„Zeitraum bis“ liegt vor „Zeitraum von“.",
+        "tiers_order": "Die Stufen müssen aufsteigen (Stufe 2 bis über Stufe 1 bis).",
+        "tier_incomplete": "Je Stufe Menge und Preis angeben; „darüber“ nur mit mindestens einer Stufe."
       },
       "abort": {
         "reconfigure_successful": "Der Zähler wurde geändert.",
@@ -309,7 +362,10 @@
         "switch_saved": "Der Anbieterwechsel wurde gespeichert.",
         "not_loaded": "Die Integration ist gerade nicht geladen. Bitte unter Einstellungen → Geräte & Dienste prüfen und neu laden.",
         "contract_saved": "Der Vertrag wurde gespeichert.",
-        "no_contract": "Für diesen Zähler gibt es noch keinen Vertrag."
+        "no_contract": "Für diesen Zähler gibt es noch keinen Vertrag.",
+        "invoice_saved": "Rechnung gespeichert. Abweichung der Menge: {abweichung}, neue Ablesungen: {ablesungen}, Vorschläge: {vorschlaege} (stehen unter Einstellungen → Reparaturen).",
+        "price_not_saved": "Preis nicht gespeichert: {error}",
+        "invoice_not_saved": "Rechnung nicht gespeichert: {error}"
       }
     },
     "waermeerzeuger": {
@@ -614,6 +670,25 @@
         "per_unit": "Impulse je Einheit (z. B. 100 Imp/m³)",
         "per_pulse": "Einheit je Impuls (z. B. 0,01 m³/Imp)"
       }
+    },
+    "tier_mode": {
+      "options": {
+        "block": "Je Stufe zum eigenen Preis",
+        "total": "Ganze Menge zum Preis der erreichten Stufe"
+      }
+    },
+    "days_per_year": {
+      "options": {
+        "365.25": "365,25 (Mittel)",
+        "365": "365",
+        "actual": "Tatsächliche Tage (365 oder 366)"
+      }
+    },
+    "base_by": {
+      "options": {
+        "day": "Je Tag (Monatspreis × 12 ÷ Tage je Jahr)",
+        "month": "Je Monat anteilig nach Tagen des Monats"
+      }
     }
   },
   "entity": {
@@ -716,6 +791,9 @@
       },
       "brennerstarts": {
         "name": "Brennerstarts"
+      },
+      "heizlast": {
+        "name": "Heizlast"
       }
     }
   },
@@ -897,6 +975,30 @@
         "anschlussleistung": {
           "name": "Anschlussleistung",
           "description": "Fernwärme, kW."
+        },
+        "staffel": {
+          "name": "Staffel",
+          "description": "Liste von Stufen {bis, preis} je Jahr in Euro je kWh bzw. m³; die letzte Stufe ohne „bis“, z. B. [{bis: 1000, preis: 0.32}, {preis: 0.29}]."
+        },
+        "staffel_art": {
+          "name": "Abrechnung der Staffel",
+          "description": "block: je Stufe; total: ganze Menge zum Preis der erreichten Stufe."
+        },
+        "rundung_tage": {
+          "name": "Tage je Jahr",
+          "description": "Für Grundpreis und Jahresbeträge."
+        },
+        "rundung_grundpreis": {
+          "name": "Grundpreis je",
+          "description": "day oder month (anteilig nach Tagen des Monats)."
+        },
+        "rundung_menge_stellen": {
+          "name": "Menge runden",
+          "description": "Nachkommastellen der Menge je Preisstufe."
+        },
+        "rundung_betrag_stellen": {
+          "name": "Beträge runden",
+          "description": "Nachkommastellen je Position (2 = Cent)."
         }
       }
     },
@@ -978,11 +1080,55 @@
         },
         "betrag": {
           "name": "Betrag",
-          "description": "Rechnungsbetrag."
+          "description": "Gesamtkosten des Zeitraums (brutto), nicht die Nachzahlung."
         },
         "korrigiert": {
           "name": "Korrigiert",
           "description": "ID der korrigierten Rechnung."
+        },
+        "menge": {
+          "name": "Verbrauch",
+          "description": "Menge in der Zählereinheit (m³, kWh)."
+        },
+        "menge_kwh": {
+          "name": "Verbrauch in kWh",
+          "description": "Abgerechnete kWh (Gas nach Brennwert und Zustandszahl)."
+        },
+        "stand_anfang": {
+          "name": "Anfangsstand",
+          "description": "Wird eine Ablesung zum Beginn des Zeitraums."
+        },
+        "stand_ende": {
+          "name": "Endstand",
+          "description": "Wird eine Ablesung zum Ende des Zeitraums."
+        },
+        "staende_geschaetzt": {
+          "name": "Stände geschätzt",
+          "description": "Die Stände der Rechnung sind geschätzt."
+        },
+        "brennwert": {
+          "name": "Brennwert",
+          "description": "Laut Rechnung, kWh/m³."
+        },
+        "zustandszahl": {
+          "name": "Zustandszahl",
+          "description": "Laut Rechnung."
+        },
+        "arbeitspreis_kosten": {
+          "name": "Kosten Arbeitspreis",
+          "description": "Brutto, in Euro."
+        },
+        "grundpreis_kosten": {
+          "name": "Kosten Grund- und Messpreis",
+          "description": "Brutto, in Euro."
+        },
+        "abschlaege_bezahlt": {
+          "name": "Gezahlte Abschläge",
+          "description": "Summe laut Rechnung."
+        },
+        "notiz": {
+          "name": "Notiz",
+          "description": "Freitext."
         }
       }
     },
@@ -1079,6 +1225,24 @@
     "kuendigungsfrist": {
       "title": "{meter}: Kündigungsfrist endet bald",
       "description": "Der Vertrag bei {lieferant} endet am {ende}. Wer wechseln möchte, muss bis {bis} kündigen (noch {tage} Tage). Der Hinweis verschwindet nach Ablauf der Frist oder wenn du Laufzeit bzw. Frist unter „Vertrag ändern“ anpasst."
+    },
+    "rechnung_abweichung": {
+      "title": "{meter}: Rechnung {von}–{bis} weicht ab",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Vorschlag aus der Rechnung übernehmen",
+            "description": "Rechnung {von}–{bis}: {menge_rechnung} {einheit}, eigene Daten: {menge_eigen} {einheit} (Abweichung {abweichung} %).\n\nVorschlag: {vorschlaege}\n\nHinweise: {hinweise}\n\n„OK“ übernimmt den Vorschlag (Brennwert gilt für den Rechnungszeitraum, der Faktor für die Ersatzquelle). Abgeschlossene Perioden bleiben unverändert."
+          }
+        },
+        "abort": {
+          "invoice_gone": "Die Rechnung passt inzwischen oder wurde entfernt."
+        }
+      }
+    },
+    "rechnung_abweichung_hinweis": {
+      "title": "{meter}: Rechnung {von}–{bis} prüfen",
+      "description": "Rechnung {von}–{bis}: {menge_rechnung} {einheit}, eigene Daten: {menge_eigen} {einheit} (Abweichung {abweichung} %). Hinweise: {hinweise}. Preise änderst du unter „Preis ändern“ (auch Staffel und Rundung), Ablesungen mit „Ablesung hinzufügen“."
     }
   },
   "exceptions": {
@@ -1120,12 +1284,14 @@
           "rooms": "Raumtemperaturen",
           "heating_limit": "Heizgrenze",
           "indoor_ref": "Innentemperatur für Gradtage",
-          "tolerance_pct": "Toleranz für „Passt“"
+          "tolerance_pct": "Toleranz für „Passt“",
+          "design_temp": "Normaußentemperatur"
         },
         "data_description": {
           "outdoor_temp_entity": "Für Gradtage und den gelernten Kennwert. Ohne Außentemperatur gibt es keine Heizprognose.",
           "heating_limit": "Tage mit einem Tagesmittel darunter zählen als Heiztage (üblich 15 °C).",
-          "indoor_ref": "Üblich 20 °C (Gradtagzahl G20/15)."
+          "indoor_ref": "Üblich 20 °C (Gradtagzahl G20/15).",
+          "design_temp": "Für die Heizlast: kälteste Auslegungstemperatur deiner Region (Deutschland etwa −10 bis −16 °C, oft −12 °C)."
         }
       }
     }

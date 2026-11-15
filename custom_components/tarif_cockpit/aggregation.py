@@ -33,6 +33,8 @@ from .engine.model import DailyConsumption, GeneratorDaily, GeneratorKind, HeatG
 from .engine.quality import Quality, usable
 from .runtime import TarifRuntime
 
+READINGS_BACKFILL_DAYS = 3 * 365  # Zähler ohne Sensor: Tage vor dem Vertrag für ältere Ablesungen/Rechnungen
+
 _LOGGER = logging.getLogger(__name__)
 
 Series = dict[datetime, float]
@@ -89,8 +91,14 @@ class Aggregator:
         if meter.entity:
             # Zähler mit Sensor: auch vor Vertragsbeginn, denn die Prognose braucht das Vorjahr
             first = horizon
-        elif chain:
-            first = max(chain[0].start_date, horizon)
+        elif chain or self.rt.readings(meter.meter_id):
+            # nur Ablesungen: ab Vertragsbeginn, mit älteren Ablesungen oder Rechnungen (1.1) auch davor (Gradtage für die
+            # Lerndaten), höchstens 3 Jahre
+            old = [r.timestamp.astimezone(self.rt.tz).date() for r in self.rt.readings(meter.meter_id)]
+            old += [i.period_from for i in self.rt.invoices(meter.meter_id)]
+            first = max(chain[0].start_date, horizon) if chain else min(old)
+            if old and min(old) < first:  # ältere Ablesungen/Rechnungen: Gradtage auch davor, höchstens 3 Jahre
+                first = max(min(old), self.rt.today() - timedelta(days=READINGS_BACKFILL_DAYS))
         else:
             return None
         lo, hi = max(start or first, first), min(end or yesterday, yesterday)
@@ -259,7 +267,8 @@ class Aggregator:
                 # Verbrauch, aber keine Impulse im Verlauf (Lücke): fehlend, nicht 0 (Regel 5)
                 out.append(v)
                 continue
-            out.append(replace(v, heating_hours=bd.hours, burner_starts=bd.starts, cycling=bd.cycling))
+            out.append(replace(v, heating_hours=bd.hours, burner_starts=bd.starts, cycling=bd.cycling,
+                               mean_power_kw=round(bd.mean_power_kw, 3) if bd.mean_power_kw is not None else None))
         return out
 
     async def _numeric_changes(self, entity_id: str, start: datetime, end: datetime) -> list:

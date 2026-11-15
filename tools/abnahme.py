@@ -11,7 +11,7 @@ Vorbereitung (Beispiel, Port 8124):
     -v <leerer-ordner>:/config -v <repo>/custom_components/tarif_cockpit:/config/custom_components/tarif_cockpit:ro \
     ghcr.io/home-assistant/home-assistant:2026.11.1
 Aufruf:
-  python tools/abnahme.py <leerer-ordner> [http://127.0.0.1:8124] [alles|haushalt|zaehler|karte|dialog|waermeerzeuger|analyse|impulse|uebernahme]
+  python tools/abnahme.py <leerer-ordner> [http://127.0.0.1:8124] [alles|haushalt|zaehler|karte|dialog|waermeerzeuger|analyse|impulse|uebernahme|rechnung]
 """
 from __future__ import annotations
 
@@ -175,8 +175,8 @@ def step_zaehler(page: Page, base: str) -> None:
     # Vertrag: Beginn heute (vorbelegt), fester Stichtag 30.07.
     tb(page, "Lieferant").fill("Stadtwerke")
     choose(page, "Abrechnung", "Fester Stichtag")
-    tb(page, "Stichtag").fill("30.07")
-    tb(page, "Stichtag").press("Tab")
+    tb(page, "Beginn des Abrechnungszeitraums").fill("30.07")
+    tb(page, "Beginn des Abrechnungszeitraums").press("Tab")
     page.wait_for_timeout(600)
     shot(page, "7-zaehler-vertrag")
     ok(page)
@@ -414,6 +414,49 @@ def step_uebernahme(page: Page, base: str) -> None:
     print("Abschlag-Sensor:", adv)
 
 
+def step_rechnung(page: Page, base: str) -> None:
+    """Jahresabrechnung (1.1): über den Dialog „Rechnung erfassen“ (Ablauf des Untereintrags), Brennwert weicht ab →
+    Reparatur mit Knopf in der Oberfläche übernehmen, danach ist die Kalibrierung gespeichert und der Hinweis weg."""
+    flow = page.evaluate(f"""async () => {{
+        const h = {HASS};
+        const entry = (await h.callWS({{type: 'config_entries/get', domain: 'tarif_cockpit'}}))[0].entry_id;
+        const subs = await h.callWS({{type: 'config_entries/subentries/list', entry_id: entry}});
+        const gas = subs.find((s) => s.title === 'Gas');
+        let r = await h.callApi('POST', 'config/config_entries/subentries/flow', {{handler: [entry, 'zaehler'], source: 'reconfigure', subentry_id: gas.subentry_id}});
+        r = await h.callApi('POST', `config/config_entries/subentries/flow/${{r.flow_id}}`, {{next_step_id: 'rechnung_erfassen'}});
+        const fields = r.data_schema.map((f) => f.name);
+        const iso = (d) => d.toISOString().slice(0, 10);
+        // Zeitraum im Vertrag (der Vertrag des Testzählers beginnt heute); Brennwert weicht vom Zähler (11,2) ab
+        const today = new Date(); const d = iso(new Date(today.getTime() - today.getTimezoneOffset() * 6e4));
+        r = await h.callApi('POST', `config/config_entries/subentries/flow/${{r.flow_id}}`, {{invoice_date: d, period_from: d,
+            period_to: d, amount: 2, quantity: 0.6, calorific: 11.4, z_factor: 0.95}});
+        return {{fields, result: r}};
+    }}""")
+    print("Rechnung erfassen:", flow["result"].get("reason"), flow["result"].get("description_placeholders"))
+    assert "calorific" in flow["fields"] and flow["result"].get("reason") == "invoice_saved", flow
+    page.goto(f"{base}/config/repairs")
+    page.wait_for_timeout(2500)
+    items = page.get_by_text(re.compile("Gas: Rechnung .* weicht ab"))
+    item = items.first
+    expect(item).to_be_visible()
+    before = items.count()
+    shot(page, "29-rechnung-reparatur", "ha-config-repairs-dashboard")
+    item.click()
+    page.wait_for_timeout(1500)
+    expect(dialog(page)).to_contain_text("Brennwert")
+    shot(page, "30-rechnung-uebernehmen")
+    ok(page)
+    page.wait_for_timeout(2000)
+    arch = page.evaluate(f"""async () => {{ const h = {HASS};
+        const dev = (await h.callWS({{type: 'config/device_registry/list'}})).find((d) => d.name === 'Gas' && d.manufacturer === 'Tarif-Cockpit').id;
+        return await h.callWS({{type: 'tarif_cockpit/archiv', zaehler: dev}}); }}""")
+    print("Kalibrierungen:", arch["kalibrierungen"])
+    assert any(k["art"] == "brennwert" and abs(k["wert"] - 11.4) < 1e-9 for k in arch["kalibrierungen"]), arch
+    page.goto(f"{base}/config/repairs")
+    page.wait_for_timeout(2000)
+    expect(page.get_by_text(re.compile("Gas: Rechnung .* weicht ab"))).to_have_count(before - 1)  # übernommen → Hinweis weg
+
+
 def pick_entity(page: Page, label: str, name: str) -> None:
     """Entitätsauswahl im Dialog: Feld öffnen, Namen suchen, Treffer wählen."""
     d = dialog(page)
@@ -433,10 +476,10 @@ def click_center(page: Page, loc) -> None:
 
 
 def step_alles(page: Page, base: str) -> None:
-    for name in ("haushalt", "zaehler", "karte", "dialog", "waermeerzeuger", "analyse", "impulse", "uebernahme"):
+    for name in ("haushalt", "zaehler", "karte", "dialog", "waermeerzeuger", "analyse", "impulse", "uebernahme", "rechnung"):
         print("Schritt", name)
         globals()[f"step_{name}"](page, base)
-    print("Abnahme bestanden: Einrichtung ohne YAML bis zur Karte, Abschlag über den Dialog, Wärmeerzeuger, Auswertungskarte, Impulszähler, Übernahme aus 0.3.")
+    print("Abnahme bestanden: Einrichtung ohne YAML bis zur Karte, Abschlag über den Dialog, Wärmeerzeuger, Auswertungskarte, Impulszähler, Übernahme aus 0.3, Rechnung mit Reparatur „Übernehmen“.")
 
 
 def tb(page: Page, label: str):

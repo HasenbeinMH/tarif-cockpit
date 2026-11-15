@@ -60,6 +60,10 @@ JOBS = [
     ('overview.html', 'archiv-uebersicht', 'scene=archiv', 1100, CARD),
     ('analyse.html', 'archiv-analyse', 'scene=archiv', 1100, CARD),
     ('analyse.html', 'archiv-analyse-hell', 'scene=archiv&theme=hell', 1100, CARD),
+    # Rechnung, Prognosegüte, Heizlast (1.1)
+    ('analyse.html', 'rechnung-analyse', 'scene=rechnung', 1100, CARD),
+    ('analyse.html', 'rechnung-analyse-hell', 'scene=rechnung&theme=hell', 1100, CARD),
+    ('analyse.html', 'rechnung-analyse-schmal', 'scene=rechnung&narrow', 420, CARD),
 ]
 
 

@@ -30,6 +30,13 @@
     'in.notice': 'Wer zum Vertragsende wechseln will, muss bis {d} kündigen (noch {n} Tage).',
     'ar.title': 'Prognose gegen Realität', 'ar.prelim': 'vorläufig', 'ar.final': 'abgeschlossen',
     'ar.actual': 'Tatsächlich {v} · Saldo {s}', 'ar.partial': 'Ist-Kosten unvollständig (Tageswerte bis {d})', 'ar.date': 'Stand', 'ar.fc': 'Prognose', 'ar.dev': 'Abweichung',
+    'rv.title': 'Rechnung gegen Integration', 'rv.period': 'Zeitraum', 'rv.inv': 'Rechnung', 'rv.own': 'Eigene Daten', 'rv.cal': 'Brennwert',
+    'rv.applied': 'übernommen', 'rv.proposal': 'Vorschlag unter Reparaturen', 'rv.check': 'prüfen', 'rv.ok': 'passt', 'rv.few': 'zu wenig Tageswerte',
+    'pg.title': 'Prognosegüte', 'pg.lead': 'Vorlauf', 'pg.months': '{m} Monate vorher', 'pg.month1': '1 Monat vorher', 'pg.end': 'zum Ende',
+    'pg.cost': 'Kosten', 'pg.qty': 'Menge', 'pg.n': 'Perioden', 'pg.note': 'Mittlere Abweichung der Prognose über {n} abgeschlossene Perioden ({q}).',
+    'hl.title': 'Heizlast', 'hl.load': 'Heizlast bei {t}', 'hl.nominal': 'Nennleistung', 'hl.ratio': '{r}-fach',
+    'hl.passend': 'passend', 'hl.gross': 'etwas groß', 'hl.ueberdimensioniert': 'überdimensioniert', 'hl.cycle': 'Taktgrenze',
+    'hl.cycle_note': 'Über {t} liegt der Bedarf unter der kleinsten Leistung: {p} der Heiztage im letzten Jahr.', 'hl.peak': 'Höchste Tagesleistung (gemessen)',
     'in.burner_h': 'Brennerlaufzeit', 'in.burner_n': 'Brennerstarts', 'in.gas_kw': 'Gasleistung',
     'in.cycling': 'Der Brenner hat gestern getaktet: Die Heizlast lag unter der kleinsten Modulationsstufe.',
     'in.kw_indoor': 'Kennwert temperaturbereinigt', 'in.pct_k': '{p} % je Kelvin Raumtemperatur',
@@ -67,6 +74,13 @@
     'in.notice': 'To switch at the end of the contract, cancel by {d} ({n} days left).',
     'ar.title': 'Forecast vs. reality', 'ar.prelim': 'provisional', 'ar.final': 'final',
     'ar.actual': 'Actual {v} · balance {s}', 'ar.partial': 'Actual costs incomplete (daily values until {d})', 'ar.date': 'As of', 'ar.fc': 'Forecast', 'ar.dev': 'Deviation',
+    'rv.title': 'Invoice vs. integration', 'rv.period': 'Period', 'rv.inv': 'Invoice', 'rv.own': 'Own data', 'rv.cal': 'Calorific value',
+    'rv.applied': 'applied', 'rv.proposal': 'suggestion under Repairs', 'rv.check': 'check', 'rv.ok': 'matches', 'rv.few': 'too few daily values',
+    'pg.title': 'Forecast accuracy', 'pg.lead': 'Lead time', 'pg.months': '{m} months before', 'pg.month1': '1 month before', 'pg.end': 'at the end',
+    'pg.cost': 'Costs', 'pg.qty': 'Quantity', 'pg.n': 'Periods', 'pg.note': 'Mean forecast deviation over {n} closed periods ({q}).',
+    'hl.title': 'Heat load', 'hl.load': 'Heat load at {t}', 'hl.nominal': 'Rated output', 'hl.ratio': '{r}×',
+    'hl.passend': 'fits', 'hl.gross': 'somewhat large', 'hl.ueberdimensioniert': 'oversized', 'hl.cycle': 'Cycling limit',
+    'hl.cycle_note': 'Above {t} the demand is below the minimum output: {p} of heating days in the last year.', 'hl.peak': 'Highest daily output (measured)',
     'in.burner_h': 'Burner run time', 'in.burner_n': 'Burner starts', 'in.gas_kw': 'Gas power',
     'in.cycling': 'The burner cycled yesterday: the heat load was below the lowest modulation level.',
     'in.kw_indoor': 'Heat coefficient (indoor-adjusted)', 'in.pct_k': '{p} % per kelvin room temperature',
@@ -324,7 +338,7 @@
     return head(`<small>${esc(m.name)}</small>`) + TC.analysisHtml(a, h, card._hist, t('an.kennwert'), '')
       + `<div class="qual">${esc(facts.join(' · '))}</div>`
       + hints.map((x) => `<div class="hint">${x}</div>`).join('')
-      + I.seriesHtml(card, m) + I.archiveHtml(card, m) + I.genHtml(card);
+      + I.seriesHtml(card, m) + I.archiveHtml(card, m) + I.invoiceHtml(card, m) + I.accuracyHtml(card, m) + I.heatLoadHtml(card) + I.genHtml(card);
   };
 
   // Reihen für die Diagramme (Streudiagramm, Kostenverlauf): gedrosselt wie die Zuordnung
@@ -353,7 +367,7 @@
   // Archiv beendeter Perioden (Prognose gegen Realität), selten: alle 30 Minuten
   I.loadArchive = async (card, deviceId) => {
     const h = card._h;
-    if (!h || typeof h.callWS !== 'function' || card._archLoading || card._c.archiv === false) return;
+    if (!h || typeof h.callWS !== 'function' || card._archLoading || (card._c.archiv === false && card._c.rechnung === false)) return;
     if (card._archAt && card._archKey === deviceId && Date.now() - card._archAt < (card._archErr ? 60e3 : 1800e3)) return;
     card._archLoading = true;
     card._archKey = deviceId;
@@ -386,6 +400,69 @@
       ${rows.map((x) => `<tr><td>${esc(dd(x.datum))}</td><td>${money(x.prognose_kosten)}</td><td>${dev(x)}</td></tr>`).join('')}
       </tbody></table><div class="qual">${esc(t('ar.actual', { v: TC.eur(a.kosten.gesamt) + ' ' + TC.cur(), s: saldo }))}</div>`
       + (a.tageswerte_bis || !a.kosten.vollstaendig ? `<div class="hint">${esc(t('ar.partial', { d: dd(a.tageswerte_bis || a.ende) }))}</div>` : '') + '</div>';
+  };
+
+  const pctTxt = (v) => (typeof v === 'number' ? `${v >= 0 ? '+' : '−'}${TC.nf(Math.abs(v), 1)} %` : '—');
+
+  // 1.1: Rechnung gegen Integration (Daten aus tarif_cockpit/archiv)
+  I.invoiceHtml = (card, m) => {
+    const t = TC.T;
+    const r = card._arch;
+    if (card._c.rechnung === false || !r || r.zaehler_id !== m.zaehler_id || !r.rechnungen || !r.rechnungen.length) return '';
+    const unit = r.einheit || '';
+    const applied = new Set((r.kalibrierungen || []).map((k) => k.rechnung));
+    const qty = (v) => (typeof v === 'number' ? `${TC.nf(v, 0)} ${esc(unit)}` : '—');
+    const rows = r.rechnungen.slice(-4).reverse().map((c) => {
+      let mark = t('rv.ok');
+      if (applied.has(c.rechnung)) mark = t('rv.applied');
+      else if ((c.vorschlaege || []).length) mark = t('rv.proposal');
+      else if ((c.hinweise || []).length) mark = t('rv.check');
+      else if ((c.flags || []).includes('zu_wenig_tageswerte')) mark = t('rv.few');
+      const cal = typeof c.brennwert_rechnung === 'number' ? `${TC.nf(c.brennwert_rechnung, 3)}${typeof c.brennwert_eigen === 'number' ? ` <small>/ ${TC.nf(c.brennwert_eigen, 3)}</small>` : ''}` : '—';
+      return `<tr><td>${esc(dd(c.von))}–${esc(dd(c.bis))}</td><td>${qty(c.menge_rechnung)}</td><td>${qty(c.menge_eigen)} <small>${pctTxt(c.abweichung_pct)}</small></td><td>${cal}</td><td>${esc(mark)}</td></tr>`;
+    }).join('');
+    return `<div class="panel wide arch"><div class="chead"><span class="lbl">${esc(t('rv.title'))}</span></div>
+      <table><thead><tr><th>${esc(t('rv.period'))}</th><th>${esc(t('rv.inv'))}</th><th>${esc(t('rv.own'))}</th><th>${esc(t('rv.cal'))}</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  };
+
+  // 1.1: Prognosegüte über die abgeschlossenen Perioden
+  I.accuracyHtml = (card, m) => {
+    const t = TC.T;
+    const r = card._arch;
+    const g = r && r.zaehler_id === m.zaehler_id ? r.prognoseguete : null;
+    if (card._c.archiv === false || !g || !g.perioden || !(g.vorlauf || []).length) return '';
+    const lead = (n) => (n === 0 ? t('pg.end') : n === 1 ? t('pg.month1') : t('pg.months', { m: n }));
+    const abs = (v) => (typeof v === 'number' ? `± ${TC.nf(v, 1)} %` : '—');
+    const rows = g.vorlauf.filter((x) => x.monate <= 12).map((x) => `<tr><td>${esc(lead(x.monate))}</td><td>${abs(x.kosten_pct)}</td><td>${abs(x.menge_pct)}</td><td>${x.perioden}</td></tr>`).join('');
+    return `<div class="panel wide arch"><div class="chead"><span class="lbl">${esc(t('pg.title'))}</span></div>
+      <table><thead><tr><th>${esc(t('pg.lead'))}</th><th>${esc(t('pg.cost'))}</th><th>${esc(t('pg.qty'))}</th><th>${esc(t('pg.n'))}</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="qual">${esc(t('pg.note', { n: g.perioden, q: t('q.' + (g.qualitaet || 'vorlaeufig')) }))}</div></div>`;
+  };
+
+  // 1.1: Heizlast je Kessel (Sensor „Heizlast“ mit Attributen)
+  I.heatLoadHtml = (card) => {
+    const h = card._h;
+    const t = TC.T;
+    const hh = card._meta && card._meta.haushalte && card._meta.haushalte[0];
+    if (card._c.heizlast === false || !hh) return '';
+    const items = (hh.waermeerzeuger || []).map((g) => {
+      const id = (g.sensoren || {}).heizlast;
+      const kw = val(h, id);
+      if (kw === null) return '';
+      const a = (st(h, id) || {}).attributes || {};
+      const deg = (v) => `${v < 0 ? '−' : ''}${TC.nf(Math.abs(v), 1)} °C`;
+      const rows = [[t('hl.load', { t: deg(a.normaussentemperatur ?? -12) }), `<b>${TC.nf(kw, 1)} kW</b> <small>${esc(t('q.' + (a.qualitaet || 'vorlaeufig')))}</small>`]];
+      if (typeof a.nennleistung_kw === 'number') {
+        rows.push([t('hl.nominal'), `${TC.nf(a.nennleistung_kw, 1)} kW <small>${esc(t('hl.ratio', { r: TC.nf(a.verhaeltnis, 1) }))} · ${esc(t('hl.' + (a.einordnung || 'passend')))}</small>`]);
+      }
+      if (typeof a.taktgrenze_c === 'number') rows.push([t('hl.cycle'), deg(a.taktgrenze_c)]);
+      if (typeof a.gemessen_max_kw === 'number') rows.push([t('hl.peak'), `${TC.nf(a.gemessen_max_kw, 1)} kW`]);
+      const share = typeof a.takttage_anteil === 'number' ? a.takttage_anteil : null;
+      const bar = share === null ? '' : `<div class="hlbar"><i style="width:${Math.round(share * 100)}%"></i></div>
+        <div class="hint">${esc(t('hl.cycle_note', { t: deg(a.taktgrenze_c), p: TC.nf(share * 100, 0) + ' %' }))}</div>`;
+      return `<div class="gen"><div class="gh"><span>${esc(g.name)}</span><small>${esc(t('hl.title'))}</small></div><dl>${rows.map(([x, y]) => `<dt>${esc(x)}</dt><dd>${y}</dd>`).join('')}</dl>${bar}</div>`;
+    }).join('');
+    return items ? `<div class="chead"><span class="lbl">${esc(t('hl.title'))}</span></div><div class="gens">${items}</div>` : '';
   };
 
   I.seriesHtml = (card, m) => {
@@ -521,6 +598,8 @@
 .arch td{text-align:right;padding:5px 6px;border-top:1px solid rgba(var(--ov),.06)}
 .arch th:first-child,.arch td:first-child{text-align:left}
 .arch td small{color:rgb(var(--mut));font-size:.66rem}
+.hlbar{height:6px;border-radius:3px;background:rgba(var(--ov),.08);margin-top:8px;overflow:hidden}
+.hlbar i{display:block;height:100%;background:rgb(245 158 11);border-radius:3px}
 .dlgbg{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:5;border-radius:inherit}
 .dlg{background:var(--panel);color:var(--txt);border:1px solid var(--stroke);border-radius:18px;padding:18px;min-width:260px;max-width:90%;box-shadow:0 10px 40px rgba(0,0,0,.4)}
 .dlgt{font-weight:700;margin-bottom:10px}

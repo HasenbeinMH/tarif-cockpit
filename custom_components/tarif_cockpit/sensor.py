@@ -10,7 +10,7 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
-from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfVolume
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfEnergy, UnitOfPower, UnitOfVolume
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -53,6 +53,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: TarifConfigEntry, async_
         gclasses: list[type[GeneratorSensor]] = [GenInputSensor, GenHeatSensor, GenAvoidedSensor, GenHoursSensor, GenDaysSensor]
         if gen.kind == GeneratorKind.FIREPLACE:
             gclasses += [GenWoodSensor, GenWoodCostSensor]
+        if gen.kind in (GeneratorKind.GAS_BOILER, GeneratorKind.DISTRICT_HEATING):
+            gclasses.append(HeatLoadSensor)  # 1.1
         async_add_entities([cls(rt, gen) for cls in gclasses], config_subentry_id=gen.generator_id)
 
 
@@ -385,6 +387,15 @@ class ForecastQualitySensor(ResultSensor):
         attrs = super().attributes(res)
         if res.heat_model is not None:
             attrs.update(res.heat_model.as_dict())
+        coord = self.rt.coordinator
+        if coord is not None:
+            # 1.1: Prognosegüte über die abgeschlossenen Perioden und der Vergleich mit der letzten Rechnung
+            acc = coord.accuracy.get(self.meter.meter_id)
+            if acc and acc.get("perioden"):
+                attrs["prognoseguete"] = acc
+            checks = coord.invoice_checks.get(self.meter.meter_id) or []
+            if checks:
+                attrs["rechnung_letzte"] = checks[-1].as_dict()
         return attrs
 
 
@@ -718,3 +729,20 @@ class BurnerHoursSensor(_BurnerSensor):
 class BurnerStartsSensor(_BurnerSensor):
     key = "brennerstarts"
     attr = "burner_starts"
+
+
+class HeatLoadSensor(GeneratorSensor):
+    """Heizlast bei Normaußentemperatur aus dem gelernten Kennwert (1.1), mit Verhältnis zur Nennleistung und Taktgrenze."""
+
+    key = "heizlast"
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
+    _attr_suggested_display_precision = 1
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def _update(self) -> None:
+        coord = self.rt.coordinator
+        hl = coord.heat_loads.get(self.gen.generator_id) if coord is not None else None
+        self._attr_native_value = None if hl is None else round(hl.heat_load_kw, 2)
+        self._attr_extra_state_attributes = {"qualitaet": "unzureichend"} if hl is None else hl.as_dict()
+

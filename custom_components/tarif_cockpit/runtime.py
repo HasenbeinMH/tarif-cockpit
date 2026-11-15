@@ -21,7 +21,7 @@ from homeassistant.util import dt as dt_util
 from .const import DOMAIN, ISSUE_RECONCILE, signal_updated
 from .engine import billing
 from .engine.model import (
-    AdvancePlan, AdvanceStep, BillingPeriod, Contract, DailyConsumption, Dataset, GeneratorDaily, HeatGenerator, Household,
+    AdvancePlan, AdvanceStep, BillingPeriod, Calibration, Contract, DailyConsumption, Dataset, GeneratorDaily, HeatGenerator, Household,
     Invoice, Meter, Payment, PaymentStatus, PaymentType, PeriodStatus, PriceSegment, Reading, ReadingSource, SensorReset, new_id,
 )
 from .engine.quality import Quality, usable
@@ -378,7 +378,8 @@ class TarifRuntime:
                     continue  # eigener Wert (Zähler oder Ablesung) bleibt, auch wenn die Statistik dort inzwischen fehlt
                 if v.heating_hours is None and cur.heating_hours is not None:
                     # Brennerdaten älter als der Recorder-Verlauf nicht verlieren
-                    v = replace(v, heating_hours=cur.heating_hours, burner_starts=cur.burner_starts, cycling=cur.cycling)
+                    v = replace(v, heating_hours=cur.heating_hours, burner_starts=cur.burner_starts, cycling=cur.cycling,
+                                mean_power_kw=cur.mean_power_kw)
                 if cur != v:
                     self.data.daily[index[key]] = v
                     changed += 1
@@ -445,12 +446,65 @@ class TarifRuntime:
         self.data.payments.append(p)
         return p
 
+    def invoices(self, meter_id: str) -> list[Invoice]:
+        """Rechnungen eines Zählers (am Zähler oder über seinen Vertrag), ohne korrigierte, nach Zeitraum sortiert."""
+        own = {c.contract_id for c in self.contracts(meter_id)}
+        out = [i for i in self.data.invoices if i.meter_id == meter_id or (i.meter_id is None and i.contract_id in own)]
+        corrected = {i.corrects_invoice_id for i in out if i.corrects_invoice_id}
+        return sorted((i for i in out if i.invoice_id not in corrected), key=lambda i: i.period_from)
+
     def add_invoice(self, meter_id: str, invoice_date: date, period_from: date, period_to: date, amount: float,
-                    corrects: str | None = None) -> Invoice:
-        contract = self._contract_for(meter_id, period_from)
+                    corrects: str | None = None, **details: Any) -> tuple[Invoice, list[str]]:
+        """Rechnung erfassen (1.1: mit Menge, Ständen und Positionen; auch vor dem Vertragsbeginn, dann nur am Zähler).
+        Anfangs- und Endstand werden Ablesungen (Quelle „Rechnung“), ein gleicher Stand zum gleichen Zeitpunkt nicht doppelt.
+        Liefert die Rechnung und die IDs der neuen Ablesungen."""
+        contract = billing.contract_on(self.contracts(meter_id), period_from) or billing.contract_on(self.contracts(meter_id), period_to)
+        if contract is None and any(c.start_date <= period_to for c in self.contracts(meter_id)):
+            # Zeitraum beginnt vor dem Vertrag und reicht hinein: am Vertrag, der im Zeitraum beginnt
+            contract = min((c for c in self.contracts(meter_id) if period_from <= c.start_date <= period_to),
+                           key=lambda c: c.start_date, default=None)
         if corrects and not any(i.invoice_id == corrects for i in self.data.invoices):
             raise KeyError(corrects)
-        inv = Invoice(new_id(), contract.contract_id, invoice_date, period_from, period_to, float(amount),
-                      is_correction=bool(corrects), corrects_invoice_id=corrects)
+        start_r, end_r = details.get("start_reading"), details.get("end_reading")
+        if start_r is not None and end_r is not None and end_r < start_r:
+            raise billing.BillingError("Der Endstand liegt unter dem Anfangsstand")
+        if end_r is not None and period_to >= self.today():
+            raise billing.BillingError("Ein Endstand zum Rechnungsende in der Zukunft ist nicht möglich")
+        inv = Invoice(new_id(), contract.contract_id if contract else None, invoice_date, period_from, period_to, float(amount),
+                      is_correction=bool(corrects), corrects_invoice_id=corrects, meter_id=meter_id, **details)
         self.data.invoices.append(inv)
-        return inv
+        added: list[str] = []
+        quality = Quality.ESTIMATED if inv.readings_estimated else Quality.REAL
+        for value, day in ((inv.start_reading, period_from), (inv.end_reading, period_to + timedelta(days=1))):
+            if value is None:
+                continue
+            ts = datetime.combine(day, datetime.min.time(), tzinfo=self.tz)
+            near = [r for r in self.readings(meter_id) if usable(r.quality) and not r.superseded_by
+                    and abs((r.timestamp - ts).total_seconds()) < 86400]
+            # gleicher Stand: nicht doppelt; eine echte Ablesung am selben Tag geht einer (geschätzten) Rechnungsangabe vor
+            if any(abs(r.value - value) < 1e-6 for r in near) or (quality != Quality.REAL and any(r.quality == Quality.REAL for r in near)):
+                continue
+            added.append(self.add_reading(meter_id, ts, value, quality, ReadingSource.INVOICE, note=f"Rechnung {inv.invoice_id}").reading_id)
+        return inv, added
+
+    def apply_invoice_proposals(self, invoice_id: str, proposals: list[dict]) -> list[Calibration]:
+        """Vorschläge eines Rechnungsvergleichs übernehmen (nach Bestätigung unter Reparaturen)."""
+        inv = next((i for i in self.data.invoices if i.invoice_id == invoice_id), None)
+        if inv is None:
+            raise KeyError(invoice_id)
+        meter_id = inv.meter_id or next((c.meter_id for c in self.data.contracts if c.contract_id == inv.contract_id), None)
+        out: list[Calibration] = []
+        kinds = {"brennwert": "brennwert", "zustandszahl": "zustandszahl", "faktor_ersatzquelle": "faktor_ersatzquelle"}
+        for p in proposals:
+            kind = kinds.get(p.get("art"))
+            if kind is None or meter_id is None:
+                continue
+            # Brennwert gilt für den Rechnungszeitraum; der Faktor der Ersatzquelle ab dem Rechnungsbeginn bis zum nächsten Faktor
+            ranged = kind != "faktor_ersatzquelle"
+            cal = Calibration(new_id(), meter_id, kind, float(p["wert"]), dt_util.utcnow(), invoice_id,
+                              inv.period_from, inv.period_to if ranged else None)
+            # gleiche Art aus derselben Rechnung ersetzt (erneut übernommen)
+            self.data.calibrations = [c for c in self.data.calibrations if not (c.invoice_id == invoice_id and c.kind == kind)]
+            self.data.calibrations.append(cal)
+            out.append(cal)
+        return out

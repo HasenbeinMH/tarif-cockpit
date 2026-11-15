@@ -18,11 +18,12 @@ from .billing import (
 )
 from .consumption import ConsumptionState, calculate_consumption, day_bounds, valid_readings, continuous_value
 from .forecast import Forecast, baseload_forecast, heat_forecast, submeter_forecast
-from .model import AdvancePlan, Contract, DailyConsumption, Medium, Meter, Payment, PriceSegment, Reading
+from .model import AdvancePlan, Contract, DailyConsumption, Invoice, Medium, Meter, Payment, PriceSegment, Reading
 from .quality import usable
 from .regression import HeatModel, ModelQuality, Sample, fit_heat_model
 
 HEAT_MEDIA = (Medium.GAS, Medium.FERNWAERME)
+READINGS_WINDOW_DAYS = 3 * 365  # Ableseperioden und Rechnungen (auch vor dem Vertrag) als Lerndaten, 1.1
 MIN_DD_FOR_RATE = 50.0  # Gradtage, ab denen die Ofenstunden/Klima-Energie je Gradtag der laufenden Periode zählen
 
 
@@ -122,8 +123,10 @@ def _heat_samples(
     stove_hours: Mapping[date, float | None] | None = None,
     stove_relief: float | None = None,
     hp_energy: Mapping[date, float | None] | None = None,
+    invoices: list[Invoice] | None = None,
 ) -> tuple[list[Sample], bool]:
-    """Stichproben für die Regression: Tage (Sensor) oder Ableseperioden (nur Ablesungen). Letzte 365 Tage."""
+    """Stichproben für die Regression: Tage (Sensor, letzte 365 Tage) oder Ableseperioden (nur Ablesungen, letzte 3 Jahre).
+    Ab 1.1 zählen bei Zählern ohne Sensor auch Jahresrechnungen mit Menge (ohne eigene Stände) als ein Zeitraum."""
     first = today - timedelta(days=365)
     if meter.entity:
         out = []
@@ -140,20 +143,43 @@ def _heat_samples(
                 degree_days_indoor=_indoor_dd(d), t_indoor=d.indoor_temperature,
             ))
         return out, False
+    first = today - timedelta(days=READINGS_WINDOW_DAYS)
     rs = [r for r in valid_readings(readings, meter.meter_id) if r.timestamp.astimezone(tz).date() >= first]
     out = []
-    for a, b in zip(rs, rs[1:]):
-        d0, d1 = a.timestamp.astimezone(tz).date(), b.timestamp.astimezone(tz).date()
+    covered: list[tuple[date, date]] = []
+
+    def sample(d0: date, d1: date, cons: float) -> Sample | None:
         days = [d0 + timedelta(days=i) for i in range((d1 - d0).days)]
         dds = [daily[x].degree_days for x in days if x in daily and daily[x].degree_days is not None]
         temps = [daily[x].outdoor_temperature for x in days if x in daily and daily[x].outdoor_temperature is not None]
         if not days or len(dds) < 0.9 * len(days):
-            continue
+            return None
         dd = sum(dds) * len(days) / len(dds)
-        cons = (continuous_value(meter, b, tz) - continuous_value(meter, a, tz)) * factor
         h = sum((stove_hours or {}).get(x) or 0.0 for x in days)
-        out.append(Sample(cons, float(len(days)), dd, sum(temps) / len(temps) if temps else None,
-                          stove_hours=h, stove_assumed=h * (stove_relief or 0.0)))
+        return Sample(cons, float(len(days)), dd, sum(temps) / len(temps) if temps else None,
+                      stove_hours=h, stove_assumed=h * (stove_relief or 0.0))
+
+    for a, b in zip(rs, rs[1:]):
+        d0, d1 = a.timestamp.astimezone(tz).date(), b.timestamp.astimezone(tz).date()
+        smp = sample(d0, d1, (continuous_value(meter, b, tz) - continuous_value(meter, a, tz)) * factor)
+        if smp is not None:
+            out.append(smp)
+            covered.append((d0, d1))
+    for inv in invoices or []:
+        # Rechnungen mit eigenen Ständen sind schon Ablesungen; hier nur Rechnungen mit Menge ohne Stände
+        if inv.start_reading is not None and inv.end_reading is not None or inv.period_from < first:
+            continue
+        q_kwh = inv.quantity_kwh
+        if q_kwh is None and inv.quantity is not None:
+            f = (inv.calorific * inv.z_factor) if inv.calorific and inv.z_factor else factor
+            q_kwh = inv.quantity * f
+        d0, d1 = inv.period_from, inv.period_to + timedelta(days=1)
+        if q_kwh is None or any(d0 < c1 and c0 < d1 for c0, c1 in covered):
+            continue  # keine Menge, oder überlappt Ableseperioden (sonst doppelt gezählt)
+        smp = sample(d0, d1, q_kwh)
+        if smp is not None:
+            out.append(smp)
+            covered.append((d0, d1))
     return out, True
 
 
@@ -202,6 +228,7 @@ def evaluate_meter(
     power_heat: PowerHeat | None = None,
     sensor_offset: float | None = None,
     forecast_dd: Mapping[date, float] | None = None,
+    invoices: list[Invoice] | None = None,
 ) -> MeterResult:
     """Vollständige Auswertung eines Zählers für die laufende Periode.
 
@@ -270,7 +297,7 @@ def evaluate_meter(
         elif heat_model_override is not None:
             model = heat_model_override
         else:
-            samples, per_period = _heat_samples(meter, daily, readings, factor, today, tz, stove_hours, stove_relief, hp_energy)
+            samples, per_period = _heat_samples(meter, daily, readings, factor, today, tz, stove_hours, stove_relief, hp_energy, invoices)
             model = fit_heat_model(samples, per_period, hot_water=hot_water)
             res.samples, res.samples_per_period = samples, per_period
         res.heat_model = model
@@ -335,9 +362,11 @@ def evaluate_meter(
 
     # --- Kosten (Euro) und Zahlungen
     garden = usable_values(garden_daily) if garden_daily else {}
+    # Staffel (1.1): Stufen gelten je Jahr, bezogen auf die ganze Periode (Prognose der Periodenmenge)
+    tiers = {"tier_total": res.forecast_total, "tier_scale": ((spec.end_date - spec.start_date).days + 1) / 365}
     if cons.used is not None:
         ww = {k: max(v - (garden.get(k) or 0.0), 0.0) for k, v in used_by_day.items()} if meter.medium == Medium.WASSER else None
-        res.actual = calculate_costs(contract, prices, meter, used_by_day, start_dt, known_until, tz, wastewater=ww)
+        res.actual = calculate_costs(contract, prices, meter, used_by_day, start_dt, known_until, tz, wastewater=ww, **tiers)
     ww_rest = None
     if fc.available and factor is not None:
         if meter.medium == Medium.WASSER:
@@ -348,7 +377,8 @@ def evaluate_meter(
             if garden and not g_rest:
                 res.flags.append("garten_ohne_prognose")
         res.rest = calculate_costs(contract, prices, meter, fc.rest_by_day, known_until, end_dt, tz,
-                                   quantities_are_billing_unit=rest_billing_unit, wastewater=ww_rest)
+                                   quantities_are_billing_unit=rest_billing_unit, wastewater=ww_rest,
+                                   tier_before=res.used_billing or 0.0, **tiers)
     plan = next((p for p in plans if p.contract_id == contract.contract_id), None)
     res.payments = calculate_payments(plan, [p for p in payments if p.contract_id == contract.contract_id], spec.start_date, spec.end_date, today)
     forecast_cost = None
@@ -359,7 +389,9 @@ def evaluate_meter(
     if forecast_cost is not None and fc.rest and "rest_kalt" in fc.details and ww_rest is None:
         for key, qty in (("cold", fc.details["rest_kalt"]), ("warm", fc.details["rest_warm"])):
             scaled = {d: v * qty / fc.rest for d, v in fc.rest_by_day.items()}
-            band = calculate_costs(contract, prices, meter, scaled, known_until, end_dt, tz, quantities_are_billing_unit=rest_billing_unit)
+            band = calculate_costs(contract, prices, meter, scaled, known_until, end_dt, tz, quantities_are_billing_unit=rest_billing_unit,
+                                   tier_before=res.used_billing or 0.0, tier_scale=tiers["tier_scale"],
+                                   tier_total=(res.used_billing or 0.0) + qty * (1 if rest_billing_unit else (factor or 1.0)))
             if band.complete:
                 cost = round(res.actual.gross + band.gross, 2)
                 setattr(res.balance, f"forecast_cost_{key}", cost)

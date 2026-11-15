@@ -656,6 +656,131 @@ S["config_subentries"]["zaehler"]["step"]["quelle"]["data"].pop("role", None)
 S["config_subentries"]["zaehler"]["step"]["quelle"].get("data_description", {}).pop("role", None)
 
 
+# ---------------------------------------------------------------- 1.1: Jahresabrechnung, Staffel/Rundung, Heizlast
+DESIGN = T("Normaußentemperatur", "Design outdoor temperature")
+DESIGN_DESC = T("Für die Heizlast: kälteste Auslegungstemperatur deiner Region (Deutschland etwa −10 bis −16 °C, oft −12 °C).",
+                "For the heat load: the coldest design temperature of your region (Germany about −10 to −16 °C, often −12 °C).")
+for step in (S["config"]["step"]["klima"], S["options"]["step"]["init"]):
+    step["data"]["design_temp"] = DESIGN
+    step.setdefault("data_description", {})["design_temp"] = DESIGN_DESC
+
+ZS = S["config_subentries"]["zaehler"]
+ZS["step"]["reconfigure"]["menu_options"]["rechnung_erfassen"] = T("Rechnung erfassen (Jahresabrechnung)", "Enter invoice (annual bill)")
+ZS["step"]["rechnung_erfassen"] = {
+    "title": T("Rechnung erfassen", "Enter invoice"),
+    "description": T("Werte von der Jahresabrechnung. Pflicht sind Zeitraum und Betrag (Gesamtkosten brutto); alles andere hilft beim Vergleich. "
+                     "Anfangs- und Endstand werden Ablesungen. Auch ältere Rechnungen vor dem Vertragsbeginn sind willkommen: Sie dienen als Lerndaten "
+                     "und prüfen die Ersatzquelle. Weicht die Rechnung ab, steht unter Reparaturen ein Vorschlag zum Übernehmen.",
+                     "Values from the annual bill. Period and amount (total gross costs) are required; everything else helps the comparison. "
+                     "Start and end readings become readings. Older bills from before the contract start are welcome: they serve as learning data "
+                     "and check the fallback source. If the bill differs, a suggestion to apply appears under Repairs."),
+    "data": {
+        "invoice_date": T("Rechnungsdatum", "Invoice date"), "period_from": T("Zeitraum von", "Period from"),
+        "period_to": T("Zeitraum bis", "Period to"), "amount": T("Gesamtkosten (brutto)", "Total costs (gross)"),
+        "start_reading": T("Anfangsstand", "Start reading"), "end_reading": T("Endstand", "End reading"),
+        "readings_estimated": T("Stände laut Rechnung geschätzt", "Readings estimated by the supplier"),
+        "quantity": T("Verbrauch (Zählereinheit)", "Consumption (meter unit)"), "quantity_kwh": T("Verbrauch in kWh", "Consumption in kWh"),
+        "calorific": T("Brennwert", "Calorific value"), "z_factor": T("Zustandszahl", "Conversion factor"),
+        "work_cost": T("Kosten Arbeitspreis (brutto)", "Unit price costs (gross)"),
+        "base_cost": T("Kosten Grund- und Messpreis (brutto)", "Standing and metering charge (gross)"),
+        "advances_paid": T("Gezahlte Abschläge", "Advances paid"),
+    },
+    "data_description": {
+        "amount": T("Gesamtkosten des Zeitraums, nicht die Nachzahlung.", "Total costs of the period, not the balance due."),
+        "quantity": T("Nur nötig, wenn keine Stände auf der Rechnung stehen.", "Only needed if the bill shows no readings."),
+    },
+}
+ZS["error"]["period_order"] = T("„Zeitraum bis“ liegt vor „Zeitraum von“.", "“Period to” is before “Period from”.")
+ZS["error"]["tiers_order"] = T("Die Stufen müssen aufsteigen (Stufe 2 bis über Stufe 1 bis).", "Tiers must ascend (tier 2 limit above tier 1 limit).")
+ZS["abort"]["invoice_saved"] = T("Rechnung gespeichert. Abweichung der Menge: {abweichung}, neue Ablesungen: {ablesungen}, Vorschläge: {vorschlaege} "
+                                 "(stehen unter Einstellungen → Reparaturen).",
+                                 "Invoice saved. Quantity deviation: {abweichung}, new readings: {ablesungen}, suggestions: {vorschlaege} "
+                                 "(see Settings → Repairs).")
+ZS["abort"]["price_not_saved"] = T("Preis nicht gespeichert: {error}", "Price not saved: {error}")
+ZS["abort"]["invoice_not_saved"] = T("Rechnung nicht gespeichert: {error}", "Invoice not saved: {error}")
+ZS["error"]["tier_incomplete"] = T("Je Stufe Menge und Preis angeben; „darüber“ nur mit mindestens einer Stufe.",
+                                   "Give quantity and price per tier; “above” only with at least one tier.")
+ZS["step"]["preis_aendern"]["data"]["tiers_rounding"] = T("Staffel oder Rundung festlegen", "Set tiers or rounding")
+ZS["step"]["preis_aendern"].setdefault("data_description", {})["tiers_rounding"] = T(
+    "Nur nötig, wenn der Versorger nach Mengenstufen abrechnet oder anders rundet. Ohne Haken bleibt die Rundung des laufenden Preises; hat er eine Staffel, folgt der Schritt immer.",
+    "Only needed if the supplier bills by quantity tiers or rounds differently. Unticked, the rounding of the current price is kept; with tiers the step always follows.")
+ZS["step"]["staffel_rundung"] = {
+    "title": T("Staffel und Rundung", "Tiers and rounding"),
+    "description": T("Staffel: Arbeitspreis bis zu einer Menge je Jahr (ein Rumpfjahr anteilig), darüber der nächste Preis (ohne „darüber“ der Arbeitspreis von vorher). Leer lassen für einen einheitlichen Preis. "
+                     "Rundung: wie auf der Rechnung, damit der Vergleich aufgeht.",
+                     "Tiers: unit price up to a quantity per year (a short year pro rata), above that the next price. Leave empty for a single price. "
+                     "Rounding: as on the bill so the comparison adds up. Without “above”, the unit price from before applies above the last tier."),
+    "data": {
+        "tier1_upto": T("Stufe 1 bis", "Tier 1 up to"), "tier1_price": T("Stufe 1 Arbeitspreis", "Tier 1 unit price"),
+        "tier2_upto": T("Stufe 2 bis", "Tier 2 up to"), "tier2_price": T("Stufe 2 Arbeitspreis", "Tier 2 unit price"),
+        "tier3_price": T("darüber Arbeitspreis", "Above that unit price"), "tier_mode": T("Abrechnung der Staffel", "Tier billing"),
+        "days_per_year": T("Tage je Jahr für den Grundpreis", "Days per year for the standing charge"),
+        "base_by": T("Grundpreis", "Standing charge"),
+        "quantity_decimals": T("Menge runden auf Stellen", "Round quantity to decimals"),
+        "money_decimals": T("Beträge runden auf Stellen", "Round amounts to decimals"),
+    },
+    "data_description": {
+        "quantity_decimals": T("0 = ganze kWh bzw. m³. Leer = nicht runden.", "0 = whole kWh or m³. Empty = no rounding."),
+        "money_decimals": T("2 = je Position auf Cent. Leer = nicht runden.", "2 = each item to the cent. Empty = no rounding."),
+    },
+}
+S["selector"].update({
+    "tier_mode": {"options": {"block": T("Je Stufe zum eigenen Preis", "Each tier at its own price"),
+                              "total": T("Ganze Menge zum Preis der erreichten Stufe", "Whole quantity at the price of the tier reached")}},
+    "days_per_year": {"options": {"365.25": T("365,25 (Mittel)", "365.25 (average)"), "365": T("365", "365"),
+                                  "actual": T("Tatsächliche Tage (365 oder 366)", "Actual days (365 or 366)")}},
+    "base_by": {"options": {"day": T("Je Tag (Monatspreis × 12 ÷ Tage je Jahr)", "Per day (monthly price × 12 ÷ days per year)"),
+                            "month": T("Je Monat anteilig nach Tagen des Monats", "Per month, pro rata by days of the month")}},
+})
+S["entity"]["sensor"]["heizlast"] = {"name": T("Heizlast", "Heat load")}
+S["issues"]["rechnung_abweichung"] = {
+    "title": T("{meter}: Rechnung {von}–{bis} weicht ab", "{meter}: invoice {von}–{bis} differs"),
+    "fix_flow": {
+        "step": {"confirm": {
+            "title": T("Vorschlag aus der Rechnung übernehmen", "Apply suggestion from the invoice"),
+            "description": T("Rechnung {von}–{bis}: {menge_rechnung} {einheit}, eigene Daten: {menge_eigen} {einheit} (Abweichung {abweichung} %).\n\n"
+                             "Vorschlag: {vorschlaege}\n\nHinweise: {hinweise}\n\n„OK“ übernimmt den Vorschlag (Brennwert gilt für den Rechnungszeitraum, "
+                             "der Faktor für die Ersatzquelle). Abgeschlossene Perioden bleiben unverändert.",
+                             "Invoice {von}–{bis}: {menge_rechnung} {einheit}, own data: {menge_eigen} {einheit} (deviation {abweichung} %).\n\n"
+                             "Suggestion: {vorschlaege}\n\nNotes: {hinweise}\n\n“OK” applies the suggestion (calorific value for the invoice period, "
+                             "the factor for the fallback source). Closed periods stay unchanged."),
+        }},
+        "abort": {"invoice_gone": T("Die Rechnung passt inzwischen oder wurde entfernt.", "The invoice now matches or was removed.")},
+    },
+}
+S["issues"]["rechnung_abweichung_hinweis"] = {
+    "title": T("{meter}: Rechnung {von}–{bis} prüfen", "{meter}: check invoice {von}–{bis}"),
+    "description": T("Rechnung {von}–{bis}: {menge_rechnung} {einheit}, eigene Daten: {menge_eigen} {einheit} (Abweichung {abweichung} %). "
+                     "Hinweise: {hinweise}. Preise änderst du unter „Preis ändern“ (auch Staffel und Rundung), Ablesungen mit „Ablesung hinzufügen“.",
+                     "Invoice {von}–{bis}: {menge_rechnung} {einheit}, own data: {menge_eigen} {einheit} (deviation {abweichung} %). "
+                     "Notes: {hinweise}. Change prices under “Change price” (also tiers and rounding), readings with “Add reading”."),
+}
+SV = S["services"]
+SV["add_rechnung"]["fields"].update({
+    "menge": {"name": T("Verbrauch", "Consumption"), "description": T("Menge in der Zählereinheit (m³, kWh).", "Quantity in the meter unit (m³, kWh).")},
+    "menge_kwh": {"name": T("Verbrauch in kWh", "Consumption in kWh"), "description": T("Abgerechnete kWh (Gas nach Brennwert und Zustandszahl).", "Billed kWh (gas after calorific value and conversion factor).")},
+    "stand_anfang": {"name": T("Anfangsstand", "Start reading"), "description": T("Wird eine Ablesung zum Beginn des Zeitraums.", "Becomes a reading at the start of the period.")},
+    "stand_ende": {"name": T("Endstand", "End reading"), "description": T("Wird eine Ablesung zum Ende des Zeitraums.", "Becomes a reading at the end of the period.")},
+    "staende_geschaetzt": {"name": T("Stände geschätzt", "Readings estimated"), "description": T("Die Stände der Rechnung sind geschätzt.", "The readings on the bill are estimated.")},
+    "brennwert": {"name": T("Brennwert", "Calorific value"), "description": T("Laut Rechnung, kWh/m³.", "As on the bill, kWh/m³.")},
+    "zustandszahl": {"name": T("Zustandszahl", "Conversion factor"), "description": T("Laut Rechnung.", "As on the bill.")},
+    "arbeitspreis_kosten": {"name": T("Kosten Arbeitspreis", "Unit price costs"), "description": T("Brutto, in Euro.", "Gross, in euros.")},
+    "grundpreis_kosten": {"name": T("Kosten Grund- und Messpreis", "Standing charge costs"), "description": T("Brutto, in Euro.", "Gross, in euros.")},
+    "abschlaege_bezahlt": {"name": T("Gezahlte Abschläge", "Advances paid"), "description": T("Summe laut Rechnung.", "Total as on the bill.")},
+    "notiz": {"name": T("Notiz", "Note"), "description": T("Freitext.", "Free text.")},
+})
+SV["add_rechnung"]["fields"]["betrag"]["description"] = T("Gesamtkosten des Zeitraums (brutto), nicht die Nachzahlung.", "Total costs of the period (gross), not the balance due.")
+SV["set_preis"]["fields"].update({
+    "staffel": {"name": T("Staffel", "Tiers"), "description": T("Liste von Stufen {bis, preis} je Jahr in Euro je kWh bzw. m³; die letzte Stufe ohne „bis“, z. B. [{bis: 1000, preis: 0.32}, {preis: 0.29}].",
+                                                                "List of tiers {bis, preis} per year in euros per kWh or m³; the last tier without “bis”, e.g. [{bis: 1000, preis: 0.32}, {preis: 0.29}].")},
+    "staffel_art": {"name": T("Abrechnung der Staffel", "Tier billing"), "description": T("block: je Stufe; total: ganze Menge zum Preis der erreichten Stufe.", "block: per tier; total: whole quantity at the tier reached.")},
+    "rundung_tage": {"name": T("Tage je Jahr", "Days per year"), "description": T("Für Grundpreis und Jahresbeträge.", "For standing charge and yearly amounts.")},
+    "rundung_grundpreis": {"name": T("Grundpreis je", "Standing charge per"), "description": T("day oder month (anteilig nach Tagen des Monats).", "day or month (pro rata by days of the month).")},
+    "rundung_menge_stellen": {"name": T("Menge runden", "Round quantity"), "description": T("Nachkommastellen der Menge je Preisstufe.", "Decimals of the quantity per tier.")},
+    "rundung_betrag_stellen": {"name": T("Beträge runden", "Round amounts"), "description": T("Nachkommastellen je Position (2 = Cent).", "Decimals per item (2 = cents).")},
+})
+
+
 def pick(o, i):
     if isinstance(o, tuple):
         return o[i]

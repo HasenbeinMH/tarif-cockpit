@@ -20,7 +20,8 @@ Eine Integration für Home Assistant, die Zähler, Verträge, Abrechnungsperiode
 | Integration `tarif_cockpit` | Haushalt mit Zählern (Strom, Gas, Wasser, Fernwärme), Vertragskette je Zähler, **Abrechnungsperioden** nach der Regel deines Versorgers (Vertragsjahr, Kalenderjahr mit Rumpfjahr, fester Stichtag, von Hand), Anbieterwechsel mit Schlussperiode, Ablesungen mit Qualität, Tageswerte. **Rechnet** Kosten (Preise mit Gültigkeit, brutto/netto, Abwasser), Abschläge und Zahlungen, die Prognose (Strom und Wasser über das Vorjahr, Gas und Fernwärme über einen gelernten Kennwert je Gradtag, Wallbox getrennt) und das Ergebnis mit Qualitätsangabe. Daten liegen in einem eigenen Speicher und überstehen Neustarts und Updates. |
 | Karte `custom:tarif-cockpit-card` | Je Zähler Urteil, Saldo und vier Balken: Kosten bisher, Abschläge bisher (grün), Prognose und Abschläge der Periode, Abschlagsstufen, empfohlener Abschlag, Prognose-Qualität, Anbieterwechsel; Gesamturteil. Abschlag per Tipp ändern. |
 | Wärmeerzeuger (optional) | Gastherme, Wärmepumpe, Split-Klima, Fernwärme, Kaminofen, Elektroheizung: eingesetzte Energie, Wärme, Entlastung, Betriebsstunden; Kaminofen mit Holz und Holzkosten (geschätzt). |
-| Karte `custom:tarif-cockpit-analyse-card` | Heizung: gelernter Kennwert je Gradtag, Warmwasser-Grundlast, temperaturbereinigter Kennwert, Streudiagramm Verbrauch über Gradtage, Kostenverlauf gegen die Abschläge, Wärmeerzeuger. |
+| Karte `custom:tarif-cockpit-analyse-card` | Heizung: gelernter Kennwert je Gradtag, Warmwasser-Grundlast, temperaturbereinigter Kennwert, Streudiagramm Verbrauch über Gradtage, Kostenverlauf gegen die Abschläge, Wärmeerzeuger; ab 1.1 Rechnung gegen Integration, Prognosegüte über mehrere Jahre, Heizlast mit Taktgrenze. |
+| Jahresabrechnung (1.1) | Rechnung mit Menge, Ständen, Brennwert und Positionen erfassen (auch alte Rechnungen vor dem Vertrag als Lerndaten); Vergleich mit den eigenen Daten, Vorschlag unter Reparaturen mit „OK“ übernehmen (Brennwert, Faktor der Ersatzquelle); Preisstaffeln und Rundungsregeln des Versorgers. |
 
 ![Auswertung](docs/img/heizung-analyse.png)
 
@@ -35,7 +36,8 @@ Eine Integration für Home Assistant, die Zähler, Verträge, Abrechnungsperiode
 | Fernwärme | Arbeitspreis (kWh oder MWh), Grundpreis, Leistungspreis, Messpreis |
 | Wasser | Frisch- und Abwasser mit eigenen Preisen, Grundgebühren, Gartenwasser-Abzug, Niederschlagswasser als fester Betrag |
 | Daten | Zählerstand-Sensor, Impulszähler, nur Ablesungen von Hand |
-| Noch nicht | Öl und Pellets (Lieferungen), HT/NT, dynamischer Tarif, § 14a zeitvariabel, Mieter mit Heizkostenverteiler |
+| Preise | Arbeits- und Grundpreis mit Gültigkeit, Staffel (block oder Gesamtmenge), Rundung (Tage je Jahr, Grundpreis je Monat, Menge und Cent je Position) |
+| Noch nicht | HT/NT, dynamischer Tarif, § 14a zeitvariabel, Kühlgradtage, Leckage (geplant in 1.2); Öl und Pellets, Mieter mit Heizkostenverteiler (geplant in 1.3) |
 
 Fehlt etwas, gibt es eine Rückfallebene statt einer falschen Zahl: ohne Vorjahr der Jahresverbrauch laut Rechnung, ohne Sensor die Ablesungen, ohne belastbaren Kennwert keine Wärmeprognose (fehlend ist nie 0).
 
@@ -80,6 +82,7 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 | Tageswerte vollständig | Diagnose: Anteil verwendbarer Tageswerte der letzten 30 Tage |
 | Abgleich mit Ablesung | Diagnose, Zähler mit Sensor: Abweichung des Sensors von der abgelesenen Menge im letzten Intervall (%); Attribute `faktor`, `fehlende_menge`, `angeglichen`, `offset`, `intervalle` |
 | Gasleistung, Brennerlaufzeit, Brennerstarts | Gas mit Impulszähler: Momentanleistung (kW); Laufzeit und Starts der Periode, Attribute `taktet_gestern`, `taktet_tage` |
+| Prognose-Qualität (1.1) | zusätzlich `prognoseguete` (Abweichung je Vorlauf über die abgeschlossenen Perioden) und `rechnung_letzte` (Vergleich mit der letzten Rechnung) |
 
 **Sensoren je Wärmeerzeuger** (eigenes Gerät, Werte der laufenden Periode bis gestern)
 | Sensor | Inhalt |
@@ -89,6 +92,7 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 | Entlastung | kWh, die der Gas-/Fernwärmezähler dadurch weniger braucht; leer, bis sie gelernt ist (Kaminofen vorher als Annahme, Attribut `qualitaet`) |
 | Betriebsstunden, Betriebstage | aus der Betriebszustand-Entität bzw. beim Kaminofen aus dem Temperaturanstieg; ein Tag zählt ab 1 h |
 | Holz (geschätzt), Holzkosten (geschätzt) | nur Kaminofen |
+| Heizlast (1.1) | Gaskessel und Fernwärme: Heizlast bei Normaußentemperatur (kW, Diagnose); Attribute `nennleistung_kw`, `verhaeltnis`, `einordnung`, `taktgrenze_c`, `takttage_anteil`, `qualitaet` |
 
 **Aktionen** (Entwicklerwerkzeuge → Aktionen, oder in Automationen). Alle Aktionen ändern Daten und dürfen deshalb nur von Administratoren aufgerufen werden; Automationen und Skripte sind davon nicht betroffen.
 | Aktion | Wozu |
@@ -98,10 +102,10 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 | `tarif_cockpit.add_folgevertrag` | Anbieterwechsel: alter Vertrag endet am Vortag (Schlussperiode), neuer Vertrag mit eigener Abrechnungsregel; optional `wechselstand`, `mindestlaufzeit` (Monate), `kuendigungsfrist` (Wochen). Ein Wechsel in eine bereits beendete Periode wird abgelehnt. |
 | `tarif_cockpit.set_periodenende` | Der Versorger hat ein paar Tage früher oder später abgelesen: Ende der laufenden oder zuletzt beendeten Periode verschieben (±10 Tage). |
 | `tarif_cockpit.add_periode` | Nur bei Abrechnung „von Hand“: nächste Periode anhängen. |
-| `tarif_cockpit.set_preis` | Preisänderung ab einem Datum; Arbeitspreis hier in **Euro** je kWh (z. B. 0,3154), in den Dialogen in Cent (Arbeits-, Grund-, Messpreis, Brennwert/Zustandszahl, Abwasser, feste Jahresbeträge, Fernwärme-Leistungspreis). Die Verbrauchsprognose bleibt unverändert. |
+| `tarif_cockpit.set_preis` | Preisänderung ab einem Datum; Arbeitspreis hier in **Euro** je kWh (z. B. 0,3154), in den Dialogen in Cent (Arbeits-, Grund-, Messpreis, Brennwert/Zustandszahl, Abwasser, feste Jahresbeträge, Fernwärme-Leistungspreis). Ab 1.1 `staffel`, `staffel_art`, `rundung_tage`, `rundung_grundpreis`, `rundung_menge_stellen`, `rundung_betrag_stellen`. Die Verbrauchsprognose bleibt unverändert. |
 | `tarif_cockpit.set_abschlag` | Neuer Abschlag ab einem Datum, optional Zahltag, Rhythmus (1/2/3 Monate) und Anzahl je Periode (z. B. 11). |
 | `tarif_cockpit.add_zahlung` | Zahlung erfassen: Abschlag (ersetzt den geplanten im selben Monat), Einmalzahlung, Gutschrift, Schlusszahlung, Erstattung; bezahlt, geplant oder storniert. |
-| `tarif_cockpit.add_rechnung` | Rechnung des Versorgers erfassen (getrennt von Zahlungen), auch als Korrektur einer früheren Rechnung. |
+| `tarif_cockpit.add_rechnung` | Rechnung des Versorgers erfassen (getrennt von Zahlungen), auch als Korrektur einer früheren Rechnung. Ab 1.1 optional `menge`, `menge_kwh`, `stand_anfang`, `stand_ende` (werden Ablesungen), `staende_geschaetzt`, `brennwert`, `zustandszahl`, `arbeitspreis_kosten`, `grundpreis_kosten`, `abschlaege_bezahlt`; auch vor dem Vertragsbeginn. Antwort mit `vergleich`. |
 | `tarif_cockpit.recalculate` | Tageswerte neu berechnen (Ablesungen und Verträge bleiben unverändert). |
 | `tarif_cockpit.uebernahme_v03` | Umstieg von der Template-Version 0.3: liest deine Helfer (Abschlag, Zahltag, Arbeits- und Grundpreis, Startstand, Abrechnungsbeginn, Brennwert, Zustandszahl) und trägt sie beim Zähler ein. Antwort: übernommene und übersprungene Werte mit Grund. Anleitung: [docs/MIGRATION.md](docs/MIGRATION.md#von-03-template-sensoren-auf-10). |
 
@@ -110,6 +114,7 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 |---|---|---|
 | `tarif_cockpit_urteil_geaendert` | das Urteil eines Zählers wechselt innerhalb derselben Periode (nicht beim Start) | `zaehler`, `device_id`, `name`, `alt`, `neu`, `saldo`, `prognose_kosten`, `qualitaet`, `abschlag_empfohlen` |
 | `tarif_cockpit_kuendigungsfrist` | 28 Tage vor dem letzten Kündigungstag und an diesem Tag, je Frist nur einmal | `zaehler`, `device_id`, `name`, `lieferant`, `kuendigen_bis`, `vertragsende`, `tage` |
+| `tarif_cockpit_rechnung_abweichung` | eine Rechnung weicht von den eigenen Daten ab (je Rechnung einmal, 1.1) | `zaehler`, `device_id`, `name`, `rechnung`, `von`, `bis`, `abweichung_pct`, `vorschlaege`, `hinweise` |
 
 Ab 28 Tagen vor dem letzten Kündigungstag steht zusätzlich ein Hinweis unter Einstellungen → Reparaturen. Mindestlaufzeit und Kündigungsfrist trägst du im Vertragsschritt ein oder später am Zähler unter **Neu konfigurieren → Vertrag ändern**.
 
