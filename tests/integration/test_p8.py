@@ -137,7 +137,7 @@ async def test_price_tiers_and_rounding(hass: HomeAssistant) -> None:
     r = await flow.async_configure(r["flow_id"], {"valid_from": "2026-11-01", "work_price": 12.0, "base_price": 15.0})
     assert r["step_id"] == "staffel_rundung"
     r = await flow.async_configure(r["flow_id"], {"tier1_upto": 10000, "tier1_price": 12.0, "tier3_price": 9.0, "tier_mode": "block",
-                                                 "days_per_year": "365.25", "base_by": "month", "money_decimals": 2})
+                                                 "days_per_year": "average", "base_by": "month", "money_decimals": 2})
     assert r["reason"] == "price_saved"
     seg = next(p for p in rt.data.prices if p.valid_from == date(2026, 11, 1))
     assert [round(t.work_price, 4) for t in seg.tiers] == [0.12, 0.09] and seg.rounding.base_by == "month"

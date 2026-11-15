@@ -727,7 +727,7 @@ ZS["step"]["staffel_rundung"] = {
 S["selector"].update({
     "tier_mode": {"options": {"block": T("Je Stufe zum eigenen Preis", "Each tier at its own price"),
                               "total": T("Ganze Menge zum Preis der erreichten Stufe", "Whole quantity at the price of the tier reached")}},
-    "days_per_year": {"options": {"365.25": T("365,25 (Mittel)", "365.25 (average)"), "365": T("365", "365"),
+    "days_per_year": {"options": {"average": T("365,25 (Mittel)", "365.25 (average)"), "365": T("365", "365"),
                                   "actual": T("Tatsächliche Tage (365 oder 366)", "Actual days (365 or 366)")}},
     "base_by": {"options": {"day": T("Je Tag (Monatspreis × 12 ÷ Tage je Jahr)", "Per day (monthly price × 12 ÷ days per year)"),
                             "month": T("Je Monat anteilig nach Tagen des Monats", "Per month, pro rata by days of the month")}},
@@ -771,8 +771,8 @@ SV["add_rechnung"]["fields"].update({
 })
 SV["add_rechnung"]["fields"]["betrag"]["description"] = T("Gesamtkosten des Zeitraums (brutto), nicht die Nachzahlung.", "Total costs of the period (gross), not the balance due.")
 SV["set_preis"]["fields"].update({
-    "staffel": {"name": T("Staffel", "Tiers"), "description": T("Liste von Stufen {bis, preis} je Jahr in Euro je kWh bzw. m³; die letzte Stufe ohne „bis“, z. B. [{bis: 1000, preis: 0.32}, {preis: 0.29}].",
-                                                                "List of tiers {bis, preis} per year in euros per kWh or m³; the last tier without “bis”, e.g. [{bis: 1000, preis: 0.32}, {preis: 0.29}].")},
+    "staffel": {"name": T("Staffel", "Tiers"), "description": T("Liste von Stufen mit „bis“ (Menge je Jahr) und „preis“ (Euro je kWh bzw. m³); die letzte Stufe ohne „bis“. Beispiel in YAML: - bis: 1000 / preis: 0.32, dann - preis: 0.29.",
+                                                                "List of tiers with “bis” (quantity per year) and “preis” (euros per kWh or m³); the last tier without “bis”. YAML example: - bis: 1000 / preis: 0.32, then - preis: 0.29.")},
     "staffel_art": {"name": T("Abrechnung der Staffel", "Tier billing"), "description": T("block: je Stufe; total: ganze Menge zum Preis der erreichten Stufe.", "block: per tier; total: whole quantity at the tier reached.")},
     "rundung_tage": {"name": T("Tage je Jahr", "Days per year"), "description": T("Für Grundpreis und Jahresbeträge.", "For standing charge and yearly amounts.")},
     "rundung_grundpreis": {"name": T("Grundpreis je", "Standing charge per"), "description": T("day oder month (anteilig nach Tagen des Monats).", "day or month (pro rata by days of the month).")},

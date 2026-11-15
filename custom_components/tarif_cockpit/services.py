@@ -211,7 +211,7 @@ SCHEMA_PRICE = vol.Schema({
         vol.Required("preis"): vol.All(vol.Coerce(float), vol.Range(min=0)),
     })]),
     vol.Optional("staffel_art"): vol.In(["block", "total"]),
-    vol.Optional("rundung_tage"): vol.In(["365.25", "365", "actual"]),
+    vol.Optional("rundung_tage"): vol.In(["average", "365", "actual"]),
     vol.Optional("rundung_grundpreis"): vol.In(["day", "month"]),
     vol.Optional("rundung_menge_stellen"): vol.All(vol.Coerce(int), vol.Range(min=0, max=6)),
     vol.Optional("rundung_betrag_stellen"): vol.All(vol.Coerce(int), vol.Range(min=0, max=6)),
@@ -267,7 +267,7 @@ def price_extras(data: dict) -> dict:
     keys = ("rundung_tage", "rundung_grundpreis", "rundung_menge_stellen", "rundung_betrag_stellen")
     if any(data.get(k) is not None for k in keys):
         out["rounding"] = Rounding(
-            days_per_year=data.get("rundung_tage") or "365.25", base_by=data.get("rundung_grundpreis") or "day",
+            days_per_year=data.get("rundung_tage") or "average", base_by=data.get("rundung_grundpreis") or "day",
             quantity_decimals=data.get("rundung_menge_stellen"), money_decimals=data.get("rundung_betrag_stellen"),
         )
     return out

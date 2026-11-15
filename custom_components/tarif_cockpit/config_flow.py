@@ -783,7 +783,7 @@ class MeterSubentryFlow(ConfigSubentryFlow):
             sv("tier2_price", bounded[1].work_price * scale if len(bounded) > 1 else None): _number(0, 10000, "any", unit),
             sv("tier3_price", top.work_price * scale if top else None): _number(0, 10000, "any", unit),
             vol.Required("tier_mode", default=cur.tier_mode if cur is not None else "block"): _select(["block", "total"], "tier_mode"),
-            vol.Required("days_per_year", default=r.days_per_year): _select(["365.25", "365", "actual"], "days_per_year"),
+            vol.Required("days_per_year", default=r.days_per_year): _select(["average", "365", "actual"], "days_per_year"),
             vol.Required("base_by", default=r.base_by): _select(["day", "month"], "base_by"),
             sv("quantity_decimals", r.quantity_decimals): _number(0, 6, 1),
             sv("money_decimals", r.money_decimals): _number(0, 6, 1),

@@ -225,7 +225,7 @@ set_preis:
         select:
           translation_key: days_per_year
           options:
-            - "365.25"
+            - average
             - "365"
             - actual
     rundung_grundpreis:

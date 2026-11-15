@@ -679,7 +679,7 @@
     },
     "days_per_year": {
       "options": {
-        "365.25": "365.25 (average)",
+        "average": "365.25 (average)",
         "365": "365",
         "actual": "Actual days (365 or 366)"
       }
@@ -978,7 +978,7 @@
         },
         "staffel": {
           "name": "Tiers",
-          "description": "List of tiers {bis, preis} per year in euros per kWh or m³; the last tier without “bis”, e.g. [{bis: 1000, preis: 0.32}, {preis: 0.29}]."
+          "description": "List of tiers with “bis” (quantity per year) and “preis” (euros per kWh or m³); the last tier without “bis”. YAML example: - bis: 1000 / preis: 0.32, then - preis: 0.29."
         },
         "staffel_art": {
           "name": "Tier billing",

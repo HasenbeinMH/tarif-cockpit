@@ -679,7 +679,7 @@
     },
     "days_per_year": {
       "options": {
-        "365.25": "365,25 (Mittel)",
+        "average": "365,25 (Mittel)",
         "365": "365",
         "actual": "Tatsächliche Tage (365 oder 366)"
       }
@@ -978,7 +978,7 @@
         },
         "staffel": {
           "name": "Staffel",
-          "description": "Liste von Stufen {bis, preis} je Jahr in Euro je kWh bzw. m³; die letzte Stufe ohne „bis“, z. B. [{bis: 1000, preis: 0.32}, {preis: 0.29}]."
+          "description": "Liste von Stufen mit „bis“ (Menge je Jahr) und „preis“ (Euro je kWh bzw. m³); die letzte Stufe ohne „bis“. Beispiel in YAML: - bis: 1000 / preis: 0.32, dann - preis: 0.29."
         },
         "staffel_art": {
           "name": "Abrechnung der Staffel",

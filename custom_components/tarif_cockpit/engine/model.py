@@ -279,7 +279,7 @@ class PriceTier:
 class Rounding:
     """Rundungsregeln des Versorgers (1.1). Ohne Angabe wie bisher: 365,25 Tage, Grundpreis je Tag, keine Rundung."""
 
-    days_per_year: str = "365.25"  # 365.25 | 365 | actual (365 bzw. 366)
+    days_per_year: str = "average"  # average (365,25) | 365 | actual (365 bzw. 366)
     base_by: str = "day"  # day (Monatspreis × 12 / Tage je Jahr) | month (Monatspreis anteilig nach Tagen des Monats)
     quantity_decimals: int | None = None  # Menge je Preisstufe auf so viele Stellen runden
     money_decimals: int | None = None  # jede Position auf so viele Stellen runden (2 = Cent)

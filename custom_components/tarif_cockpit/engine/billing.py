@@ -353,7 +353,7 @@ def energy_factor(meter: Meter, seg: PriceSegment | None) -> float | None:
 
 
 def _days_per_year(rounding: Rounding | None, day: date) -> float:
-    rule = rounding.days_per_year if rounding else "365.25"
+    rule = rounding.days_per_year if rounding else "average"
     if rule == "365":
         return 365.0
     if rule == "actual":
