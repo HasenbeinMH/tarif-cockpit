@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1 – 2026-11-15
+
+### Neu
+- **Logo:** Die Integration bringt ihr Symbol selbst mit (`brand/icon.png`, `icon@2x.png`; ab Home Assistant 2026 ohne Eintrag im Brands-Repository). Es erscheint unter Geräte & Dienste und im Marketplace. Quelle: `tools/brand/icon.svg`.
+
 ## 1.1.0 – 2026-11-15
 
 ### Neu
