@@ -141,3 +141,58 @@ def test_day_with_inner_reading_gets_value():
     total = sum(d.consumption for d in days)
     # 06.01. 00:00 bis 05.03. 00:00: Ablesungsdifferenz abzüglich der Randstücke an den Ablesetagen
     assert abs(total - (59.0 - 14 / 24 * 1.0 - 10 / 24 * 1.0)) < 1e-6
+
+
+
+def _day_series(day_start: datetime, n: int, sum_of, state_of):
+    utc = ZoneInfo("UTC")
+    hours = [(day_start - timedelta(hours=1) + timedelta(hours=i)).astimezone(utc) for i in range(n + 1)]
+    return {h: sum_of(i) for i, h in enumerate(hours)}, {h: state_of(i) for i, h in enumerate(hours)}
+
+
+def test_statistics_jump_uses_meter_state():
+    """1.0.3: Sensor kurz auf 0 und zurück → HA zählt den ganzen Stand (111) noch einmal; abgezogen wird genau das."""
+    sums, states = _day_series(datetime(2026, 11, 13, tzinfo=TZ), 24, lambda i: i + (111.0 if i >= 20 else 0), lambda i: 92.0 + i)
+    v = aggregate_day("m1", date(2026, 11, 13), TZ, sums, states=states)
+    assert v.consumption == 24.0 and "statistik_sprung" in v.quality_flags and v.quality == Quality.REAL
+
+
+def test_statistics_jump_wallbox_case():
+    """Fall aus der Praxis (go-e): Stand steigt 92,342 → 129,905, danach Sprung der Summe um 129,905 bei gleichem Stand."""
+    def state(i):
+        return 92.342 if i < 16 else (129.905 if i >= 19 else 92.342 + (i - 15) * 12.5)
+
+    def total(i):
+        return state(i) + (129.905 if i >= 20 else 0.0)
+
+    sums, states = _day_series(datetime(2026, 11, 13, tzinfo=TZ), 24, total, state)
+    v = aggregate_day("m1", date(2026, 11, 13), TZ, sums, states=states)
+    assert v.consumption == 37.563 and "statistik_sprung" in v.quality_flags
+
+
+def test_daily_reset_sensor_is_not_cut():
+    """Tageszähler (z. B. utility_meter täglich): gestern 8, heute 0 → 24. Die Summe der Statistik gilt."""
+    sums, states = _day_series(datetime(2026, 11, 13, tzinfo=TZ), 24, lambda i: 100.0 + i, lambda i: 8.0 if i == 0 else float(i))
+    v = aggregate_day("m1", date(2026, 11, 13), TZ, sums, states=states)
+    assert v.consumption == 24.0 and "statistik_sprung" not in v.quality_flags
+
+
+def test_session_sensor_is_not_cut():
+    """Ladevorgang-Zähler: alter Vorgang 10, neuer Vorgang 0 → 15 innerhalb des Tages (auch über den alten Stand)."""
+    def state(i):
+        return 10.0 if i < 12 else min(15.0, (i - 11) * 5.0)
+
+    def total(i):
+        return 500.0 if i < 12 else 500.0 + min(15.0, (i - 11) * 5.0)
+
+    sums, states = _day_series(datetime(2026, 11, 13, tzinfo=TZ), 24, total, state)
+    v = aggregate_day("m1", date(2026, 11, 13), TZ, sums, states=states)
+    assert v.consumption == 15.0 and "statistik_sprung" not in v.quality_flags
+
+
+def test_real_reset_keeps_sum():
+    """Echter Neustart: Zählerstand fällt → die Summe der Statistik gilt (wie bisher)."""
+    sums, states = _day_series(datetime(2026, 11, 13, tzinfo=TZ), 24, lambda i: float(i),
+                               lambda i: 500.0 + i if i < 10 else float(i - 10))
+    v = aggregate_day("m1", date(2026, 11, 13), TZ, sums, states=states)
+    assert v.consumption == 24.0 and "statistik_sprung" not in v.quality_flags

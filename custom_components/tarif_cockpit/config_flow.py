@@ -643,25 +643,54 @@ class MeterSubentryFlow(ConfigSubentryFlow):
         current = billing.contract_on(rt.contracts(meter_id), rt.today()) or (rt.contracts(meter_id) or [None])[-1]
         if current is None:
             return self.async_abort(reason="no_contract")
+        from .runtime import ContractLocked  # noqa: PLC0415
+
+        rule_editable = current.billing_rule != BillingRule.MANUAL and not rt.contract_locked(current.contract_id)
+        errors: dict[str, str] = {}
         if user_input is not None:
-            rt.set_contract_terms(meter_id, user_input.get("tariff") or None, _int_or_none(user_input.get("min_term_months")),
-                                  _int_or_none(user_input.get("notice_period_weeks")))
-            rt.store.schedule_save(rt.data)
-            rt.changed(meter_id=meter_id, flags={"payments"})
-            if rt.coordinator is not None:
-                rt.coordinator.check_notice()
-            return self.async_abort(reason="contract_saved")
+            old_rule = (current.billing_rule, current.fixed_day)
+            try:
+                new = rt.set_contract_terms(
+                    meter_id, user_input.get("tariff") or None, _int_or_none(user_input.get("min_term_months")),
+                    _int_or_none(user_input.get("notice_period_weeks")),
+                    billing_rule=user_input.get("billing_rule") if rule_editable else None, fixed_day=user_input.get("fixed_day"),
+                )
+            except ContractLocked:
+                errors["billing_rule"] = "periods_locked"
+            except billing.BillingError:
+                errors["fixed_day" if user_input.get("billing_rule") == BillingRule.FIXED_DAY.value else "billing_rule"] = "invalid_billing"
+            else:
+                rt.store.schedule_save(rt.data)
+                # andere Perioden: alles neu rechnen und die Historie bis zum neuen Vorjahres-Beginn holen
+                if (new.billing_rule, new.fixed_day) != old_rule:
+                    rt.changed(meter_id=meter_id)
+                    if rt.aggregator is not None:
+                        rt.entry.async_create_background_task(self.hass, rt.aggregator.async_run(), "tarif_cockpit_vertrag")
+                else:
+                    rt.changed(meter_id=meter_id, flags={"payments"})
+                if rt.coordinator is not None:
+                    rt.coordinator.check_notice()
+                return self.async_abort(reason="contract_saved")
 
         def opt(key: str, value: Any) -> vol.Optional:
             return vol.Optional(key, description={"suggested_value": value}) if value is not None else vol.Optional(key)
 
-        schema = vol.Schema({
+        fields: dict[Any, Any] = {
             opt("tariff", current.tariff): str,
             opt("min_term_months", current.min_term_months): _number(0, 120, 1),
             opt("notice_period_weeks", current.notice_period_weeks): _number(0, 104, 1),
-        })
-        return self.async_show_form(step_id="vertrag_aendern", data_schema=schema,
-                                    description_placeholders={"lieferant": current.supplier, "beginn": current.start_date.isoformat()})
+        }
+        if rule_editable:
+            rules = [r.value for r in BillingRule if r != BillingRule.MANUAL]
+            fields[vol.Required("billing_rule", default=current.billing_rule.value)] = _select(rules, "billing_rule")
+            fields[opt("fixed_day", current.fixed_day)] = str
+        schema = vol.Schema(fields)
+        if user_input is not None:
+            schema = self.add_suggested_values_to_schema(schema, user_input)
+        spec = rt.current_period(meter_id)
+        return self.async_show_form(step_id="vertrag_aendern", data_schema=schema, errors=errors,
+                                    description_placeholders={"lieferant": current.supplier, "beginn": current.start_date.isoformat(),
+                                                              "periode": f"{spec.start_date:%d.%m.%Y}–{spec.end_date:%d.%m.%Y}" if spec else "–"})
 
     async def async_step_preis_aendern(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         meter_id, medium = self._meter_id_and_medium()

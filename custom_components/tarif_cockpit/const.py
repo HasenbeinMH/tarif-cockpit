@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 DOMAIN: Final = "tarif_cockpit"
-VERSION: Final = "1.0.2"
+VERSION: Final = "1.0.3"
 
 SUBENTRY_METER: Final = "zaehler"
 SUBENTRY_SUBMETER: Final = "unterzaehler"  # Wallbox, Gartenwasser (1.0.2)
@@ -26,7 +26,7 @@ CONF_GENERATOR: Final = "generator"
 
 # Store
 STORAGE_VERSION: Final = 1
-STORAGE_MINOR_VERSION: Final = 3
+STORAGE_MINOR_VERSION: Final = 4
 STORAGE_SAVE_DELAY: Final = 10
 
 # Frontend
@@ -38,6 +38,7 @@ OLD_RESOURCE_PREFIX: Final = "/hacsfiles/tarif-cockpit/"
 AGG_HOUR: Final = 0
 AGG_MINUTE: Final = 5
 BACKFILL_DAYS: Final = 400  # höchstens so weit zurück
+BACKFILL_MAX_DAYS: Final = 800  # weiter zurück nur bis zum Vorjahres-Beginn der laufenden Periode (Prognose nach Vorjahr)
 RETRY_MISSING_DAYS: Final = 7  # fehlende Tage so lange erneut versuchen
 
 # Reparatur-Hinweise

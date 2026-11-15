@@ -129,13 +129,13 @@
         },
         "vertrag": {
           "title": "Vertrag",
-          "description": "Wann rechnet dein Versorger ab? Bei „fester Stichtag“ den ersten Tag der neuen Abrechnungsperiode als TT.MM angeben, z. B. 30.06. (dann endet jede Periode am 29.06.). Bei „von Hand“ das Ende der ersten Periode, weitere Perioden mit der Aktion „Periode anhängen“.",
+          "description": "Wann rechnet dein Versorger ab? Bei „fester Stichtag“ den **ersten Tag** des neuen Abrechnungszeitraums als TT.MM angeben: Endet deine Abrechnung am 30.06., ist das der 01.07. Bei „von Hand“ das Ende der ersten Periode, weitere Perioden mit der Aktion „Periode anhängen“.",
           "data": {
             "supplier": "Lieferant",
             "tariff": "Tarif",
             "start_date": "Vertragsbeginn",
             "billing_rule": "Abrechnung",
-            "fixed_day": "Stichtag (TT.MM)",
+            "fixed_day": "Beginn des Abrechnungszeitraums (TT.MM)",
             "first_period_end": "Ende der ersten Periode",
             "vat_mode": "Preise",
             "vat_rate": "Mehrwertsteuer",
@@ -180,7 +180,7 @@
             "anbieterwechsel": "Anbieter wechseln",
             "preis_aendern": "Preis ändern",
             "abschlag_aendern": "Abschlag ändern",
-            "vertrag_aendern": "Vertrag ändern (Tarif, Laufzeit, Kündigungsfrist)"
+            "vertrag_aendern": "Vertrag ändern (Tarif, Abrechnung, Laufzeit, Kündigungsfrist)"
           }
         },
         "zusammenfassung": {
@@ -235,7 +235,7 @@
             "tariff": "Tarif",
             "start_date": "Vertragsbeginn",
             "billing_rule": "Abrechnung",
-            "fixed_day": "Stichtag (TT.MM)",
+            "fixed_day": "Beginn des Abrechnungszeitraums (TT.MM)",
             "first_period_end": "Ende der ersten Periode",
             "vat_mode": "Preise",
             "vat_rate": "Mehrwertsteuer",
@@ -273,15 +273,18 @@
         },
         "vertrag_aendern": {
           "title": "Vertrag ändern",
-          "description": "Laufender Vertrag bei {lieferant} seit {beginn}. Perioden, Preise und Abschläge bleiben unverändert.",
+          "description": "Laufender Vertrag bei {lieferant} seit {beginn}, laufender Abrechnungszeitraum {periode}. Preise und Abschläge bleiben unverändert. Die Abrechnung lässt sich nur ändern, solange noch kein Zeitraum dieses Vertrags beendet ist.",
           "data": {
             "tariff": "Tarif",
             "min_term_months": "Mindestlaufzeit (Monate)",
-            "notice_period_weeks": "Kündigungsfrist (Wochen)"
+            "notice_period_weeks": "Kündigungsfrist (Wochen)",
+            "billing_rule": "Abrechnung",
+            "fixed_day": "Beginn des Abrechnungszeitraums (TT.MM)"
           },
           "data_description": {
             "min_term_months": "Leer lassen, wenn unbekannt. Ohne Angaben gibt es keine Erinnerung an die Kündigungsfrist.",
-            "notice_period_weeks": "Wie viele Wochen vor Vertragsende muss gekündigt werden? (6 Wochen ≈ 1,5 Monate)"
+            "notice_period_weeks": "Wie viele Wochen vor Vertragsende muss gekündigt werden? (6 Wochen ≈ 1,5 Monate)",
+            "fixed_day": "Nur bei „fester Stichtag“: erster Tag des neuen Zeitraums, z. B. 01.07. bei Abrechnung zum 30.06."
           }
         }
       },
@@ -296,6 +299,7 @@
         "switch_invalid": "Wechsel an diesem Datum nicht möglich, siehe Hinweis oben.",
         "switch_reading_future": "Der Wechsel liegt in der Zukunft: den Zählerstand bitte erst nach dem Wechsel eintragen (Aktion „Ablesung hinzufügen“).",
         "entity_or_pulses": "Bitte entweder einen Zählerstand-Sensor oder einen Impulszähler wählen, nicht beides.",
+        "periods_locked": "Von diesem Vertrag ist schon ein Abrechnungszeitraum beendet; die Abrechnung bleibt deshalb, wie sie ist.",
         "work_price_cents": "Der Arbeitspreis wird in Cent je kWh eingegeben: 31,54 statt 0,3154."
       },
       "abort": {
@@ -790,7 +794,7 @@
         },
         "stichtag": {
           "name": "Stichtag",
-          "description": "Bei „fester Stichtag“: erster Tag der Periode als TT.MM."
+          "description": "Bei „fester Stichtag“: erster Tag der Periode als TT.MM (Abrechnung zum 30.06. → 01.07.)."
         },
         "erste_periode_ende": {
           "name": "Ende der ersten Periode",

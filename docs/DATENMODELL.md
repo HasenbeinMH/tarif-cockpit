@@ -51,7 +51,8 @@ Die Periode ist die zentrale Einheit für Berechnung und Archiv, nicht der Vertr
 | Fester Stichtag (`fixed_day`, z. B. 30.06.) | **15.03.2026–29.06.2026 (Rumpfjahr)**, 30.06.2026–29.06.2027, … |
 | Von Hand (`manual`) | Beginn und Ende je Periode werden eingetragen |
 
-- Der Stichtag ist der **erste Tag** einer Periode. Der 29.02. ist als Stichtag nicht erlaubt.
+- Der Stichtag ist der **erste Tag** einer Periode (Abrechnung zum 30.06. → Stichtag 01.07.). Der 29.02. ist als Stichtag nicht erlaubt.
+- Regel und Stichtag lassen sich unter „Vertrag ändern“ korrigieren, solange von dem Vertrag noch keine Periode beendet ist (danach sind die Perioden eingefroren).
 - Beginnt ein Vertrag am 29.02., endet sein Vertragsjahr am 28.02.
 - Liest der Versorger ein paar Tage früher oder später ab (höchstens ±10 Tage), verschiebt sich nur das Ende dieser einen Periode; die Regel bleibt.
 - **Anbieterwechsel** (`add_folgevertrag`): Der alte Vertrag endet am Vortag des Wechsels, seine letzte Periode wird zur Schlussperiode (oft ein Rumpfjahr). Der neue Vertrag beginnt mit eigenen Perioden nach seiner Regel. Die Vertragskette eines Zählers muss lückenlos sein.

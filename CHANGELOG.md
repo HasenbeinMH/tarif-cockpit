@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.3 – 2026-11-15
+
+### Behoben
+- **Prognose nach Vorjahr bei Strom und Wasser:** Die Integration holte höchstens 400 Tage Historie. Ab gut einem Monat in der Periode fehlte damit der Anfang des Vorjahres, und die Prognose fiel auf den Durchschnitt seit Periodenbeginn zurück (im Herbst mit Sommertagen zu niedrig). Jetzt reicht die Historie bis zum gleichen Tag des Vorjahres wie der Beginn der laufenden Periode (höchstens 800 Tage), auch über die Ersatzquelle.
+- **Sprünge in der HA-Statistik:** Fällt ein Zähler-Sensor kurz auf 0 und kommt mit dem alten Stand zurück, zählt Home Assistant den ganzen Stand noch einmal als Verbrauch (z. B. 130 kWh Wallbox an einem Tag mit 38 kWh Ladung). Geprüft wird je Stunde: Steigt die Summe um bis zu den alten Stand stärker, als der Zählerstand gestiegen ist, und ist der Zählerstand kaum gestiegen, wird der Überschuss abgezogen (Hinweis `statistik_sprung` am Tageswert). Echte Neustarts (Tageszähler, Zähler je Ladevorgang, Zählertausch) bleiben unberührt.
+- Ein eigener Tageswert des Zählers wird nicht mehr durch einen Wert der Ersatzquelle ersetzt, wenn die Statistik des Zählers dort später fehlt (z. B. gelöscht).
+- **Fehlalarm „Zähler ohne Statistik“:** Er entstand, wenn nur alte Lückentage nachgeholt wurden, für die der Sensor noch keine Statistik hatte.
+- Nach dem Update werden alle Tageswerte aus der Statistik **einmal neu berechnet** (Speicher 1.4). Ablesungen, Verträge, Preise, Abschläge und beendete Perioden bleiben unverändert. Die Tagesberechnung ist dafür deutlich schneller geworden (800 Tage in Bruchteilen einer Sekunde statt bis zu einer halben Minute).
+
+### Geändert
+- **Vertrag ändern** nimmt jetzt auch die Abrechnung (Kalenderjahr, Vertragsjahr, fester Stichtag), solange noch kein Abrechnungszeitraum des Vertrags beendet ist und die neue Regel keinen schon beendeten Zeitraum ergäbe. Danach wird das Feld nicht mehr angeboten. Prognose-Schnappschüsse des laufenden Zeitraums werden dabei verworfen, weil sie für das alte Periodenende galten.
+- Das Feld heißt jetzt „Beginn des Abrechnungszeitraums (TT.MM)“. Das Beispiel lautet: Endet die Abrechnung am 30.06., ist das der 01.07. Vorher stand dort 30.06. als Beispiel, was leicht als Ende gelesen wurde.
+
 ## 1.0.2 – 2026-11-15
 
 ### Neu

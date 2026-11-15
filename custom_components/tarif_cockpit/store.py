@@ -60,6 +60,12 @@ class TarifStore(Store[dict[str, Any]]):
             ]
             data["advance_plans"] = [dict(ap, max_per_period=ap.get("max_per_period")) for ap in data.get("advance_plans", [])]
             _LOGGER.info("Tarif-Cockpit: Store auf 1.3 migriert")
+        if old_major_version == 1 and old_minor_version < 4:
+            # 1.3 → 1.4 (1.0.3): Tageswerte aus der Statistik einmal neu holen (Sprünge der Statistik erkannt,
+            # Historie bis zum Vorjahr der laufenden Periode). Ablesungen, Verträge und Perioden bleiben unverändert.
+            if "reaggregated_meters" in data:  # fehlt der Schlüssel, ist die Liste ohnehin leer
+                data["reaggregated_meters"] = []
+            _LOGGER.info("Tarif-Cockpit: Store auf 1.4 migriert, Tageswerte werden einmal neu berechnet")
         return data
 
     def schedule_save(self, dataset: Dataset) -> None:

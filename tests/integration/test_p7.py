@@ -279,3 +279,69 @@ async def test_stale_issues_of_removed_meters_are_cleaned(hass: HomeAssistant) -
     reg = ir.async_get(hass)
     assert reg.async_get_issue(DOMAIN, "zaehler_ohne_statistik_weg") is None
     assert reg.async_get_issue(DOMAIN, "anderes_problem") is not None
+
+
+
+async def _contract_form(hass, entry):
+    from homeassistant.config_entries import SOURCE_RECONFIGURE  # noqa: PLC0415
+
+    flow = hass.config_entries.subentries
+    r = await flow.async_init((entry.entry_id, "zaehler"), context={"source": SOURCE_RECONFIGURE, "subentry_id": "s1"})
+    return flow, await flow.async_configure(r["flow_id"], {"next_step_id": "vertrag_aendern"})
+
+
+async def test_contract_billing_rule_change(hass: HomeAssistant) -> None:
+    """1.0.3: Stichtag nachträglich ändern, solange keine Periode des Vertrags beendet ist (Abrechnung zum 30.06. → 01.07.)."""
+    entry = make_entry(strom(start="2026-07-01"))
+    assert await setup(hass, entry)
+    rt = entry.runtime_data
+    assert rt.current_period("s1").end_date == date(2026, 12, 31)
+    flow, r = await _contract_form(hass, entry)
+    assert "billing_rule" in r["data_schema"].schema
+    r = await flow.async_configure(r["flow_id"], {"billing_rule": "fixed_day", "fixed_day": "31.02"})
+    assert r["errors"] == {"fixed_day": "invalid_billing"}
+    r = await flow.async_configure(r["flow_id"], {"billing_rule": "fixed_day", "fixed_day": "01.07"})
+    assert r["reason"] == "contract_saved"
+    await hass.async_block_till_done()
+    p = rt.current_period("s1")
+    assert (p.start_date, p.end_date) == (date(2026, 7, 1), date(2027, 6, 30))
+    rt.coordinator.async_refresh_now()
+    await hass.async_block_till_done()
+    assert rt.coordinator.results["s1"].period.end_date == date(2027, 6, 30)
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    c = entry.runtime_data.contracts("s1")[0]
+    assert (c.billing_rule.value, c.fixed_day) == ("fixed_day", "01.07")
+
+
+async def test_contract_billing_rule_locked_after_ended_period(hass: HomeAssistant) -> None:
+    entry = make_entry(strom(start="2025-01-01"))
+    assert await setup(hass, entry)
+    assert entry.runtime_data.stored_periods("s1")  # 2025 ist beendet und gespeichert
+    flow, r = await _contract_form(hass, entry)
+    assert "billing_rule" not in r["data_schema"].schema  # gesperrt: Feld gar nicht erst angeboten
+    rt = entry.runtime_data
+    from custom_components.tarif_cockpit.runtime import ContractLocked  # noqa: PLC0415
+
+    with pytest.raises(ContractLocked):
+        rt.set_contract_terms("s1", None, None, None, billing_rule="fixed_day", fixed_day="01.07")
+    # Tarifname usw. bleiben änderbar
+    r = await flow.async_configure(r["flow_id"], {"tariff": "Neu"})
+    assert r["reason"] == "contract_saved"
+    c = entry.runtime_data.contracts("s1")[0]
+    assert (c.billing_rule.value, c.tariff) == ("calendar_year", "Neu")
+
+
+async def test_contract_rule_change_creating_ended_period_is_rejected(hass: HomeAssistant) -> None:
+    """Kalenderjahr seit 01.07. → Stichtag 01.10. ergäbe 01.07.–30.09. als schon beendete Periode: abgelehnt."""
+    entry = make_entry(strom(start="2026-07-01"))
+    assert await setup(hass, entry)
+    flow, r = await _contract_form(hass, entry)
+    r = await flow.async_configure(r["flow_id"], {"billing_rule": "fixed_day", "fixed_day": "01.10"})
+    assert r["errors"] == {"billing_rule": "periods_locked"}
+    assert entry.runtime_data.contracts("s1")[0].billing_rule.value == "calendar_year"
+    # gleiche Regel in anderer Schreibweise ist keine Änderung
+    rt = entry.runtime_data
+    rt.set_contract_terms("s1", None, None, None, billing_rule="fixed_day", fixed_day="01.07.")
+    rt.set_contract_terms("s1", "T", None, None, billing_rule="fixed_day", fixed_day="01.07")
+    assert rt.contracts("s1")[0].tariff == "T"

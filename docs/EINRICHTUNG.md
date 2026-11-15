@@ -37,7 +37,7 @@ Beim Eintrag „Tarif-Cockpit“ → **Zähler hinzufügen**. Für jeden Zähler
 |---|---|---|
 | ![Vertrag](img/abnahme-7-zaehler-vertrag.png) | ![Preise](img/abnahme-8-zaehler-preis.png) | ![Abschläge](img/abnahme-9-zaehler-abschlag.png) |
 
-- **Vertrag:** „Wann rechnet dein Versorger ab?“ Vertragsjahr, Kalenderjahr (erstes Jahr als Rumpfjahr), **fester Stichtag** (erster Tag der neuen Periode als TT.MM) oder von Hand.
+- **Vertrag:** „Wann rechnet dein Versorger ab?“ Vertragsjahr, Kalenderjahr (erstes Jahr als Rumpfjahr), **fester Stichtag** (erster Tag der neuen Periode als TT.MM: endet deine Abrechnung am 30.06., trägst du 01.07. ein) oder von Hand.
 - **Preise:** wie im Vertrag, brutto oder netto. Den Arbeitspreis gibst du in **Cent je kWh** ein (z. B. 31,54); Wasser in Euro je m³, Fernwärme wahlweise in Cent je kWh oder Euro je MWh. Ein Wert unter 1 ct/kWh wird als vermutlich in Euro eingegeben abgelehnt.
 - **Abschläge:** Betrag, Zahltag, Rhythmus. Ohne Betrag gibt es keine Abschläge (z. B. bei Abrechnung über den Vermieter).
 
@@ -58,6 +58,7 @@ Das Stift-Symbol am Zähler öffnet ein Menü:
 | Anbieter wechseln | Wechseldatum, Wechselablesung (echt oder geschätzt), neuer Vertrag mit Abrechnungsregel, Preise und Abschlag des neuen Vertrags. Der alte Vertrag endet am Vortag mit einer Schlussperiode. Ein Wechsel in eine bereits beendete Periode wird gleich im ersten Schritt abgelehnt. Liegt der Wechsel in der Zukunft, trägst du den Zählerstand erst danach ein (Aktion „Ablesung hinzufügen“). |
 | Preis ändern | neue Preise ab einem Datum; vorbelegt mit den laufenden Preisen, damit nichts verloren geht |
 | Abschlag ändern | neuer Abschlag ab einem Datum; Zahltag und Rhythmus sind mit den laufenden Werten vorbelegt |
+| Vertrag ändern | Tarifname, Mindestlaufzeit, Kündigungsfrist und die Abrechnung (Regel, Stichtag). Die Abrechnung nur, solange noch kein Abrechnungszeitraum dieses Vertrags beendet ist; das Formular zeigt den laufenden Zeitraum an. |
 
 Die Formulare rufen dieselbe Logik auf wie die gleichnamigen Aktionen (`set_preis`, `set_abschlag`, `add_folgevertrag`).
 

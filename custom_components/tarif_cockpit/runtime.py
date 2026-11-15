@@ -31,6 +31,10 @@ from .store import TarifStore
 _LOGGER = logging.getLogger(__name__)
 
 
+class ContractLocked(billing.BillingError):
+    """Abrechnungsregel nicht mehr änderbar: eine Periode des Vertrags ist schon gespeichert (beendet)."""
+
+
 @dataclass
 class TarifRuntime:
     hass: HomeAssistant
@@ -205,14 +209,54 @@ class TarifRuntime:
             return False
         return False
 
-    def set_contract_terms(self, meter_id: str, tariff: str | None, min_term_months: int | None, notice_period_weeks: int | None) -> Contract:
-        """Vertragsdaten ohne Einfluss auf die Perioden ändern (Tarifname, Mindestlaufzeit, Kündigungsfrist) des laufenden Vertrags."""
+    def set_contract_terms(
+        self, meter_id: str, tariff: str | None, min_term_months: int | None, notice_period_weeks: int | None,
+        billing_rule: Any = None, fixed_day: str | None = None,
+    ) -> Contract:
+        """Vertragsdaten des laufenden Vertrags ändern: Tarifname, Mindestlaufzeit, Kündigungsfrist und (1.0.3) die
+        Abrechnungsregel mit Stichtag. Die Regel nur, solange von diesem Vertrag noch keine Periode gespeichert ist
+        (beendete Perioden bleiben unverändert, Regel 3/4); sonst ``ContractLocked``."""
+        from .engine.model import BillingRule  # noqa: PLC0415
+
         contract = billing.contract_on(self.contracts(meter_id), self.today()) or (self.contracts(meter_id) or [None])[-1]
         if contract is None:
             raise billing.BillingError("Für diesen Zähler gibt es keinen Vertrag")
         new = replace(contract, tariff=tariff, min_term_months=min_term_months, notice_period_weeks=notice_period_weeks)
+        if billing_rule is not None:
+            rule = BillingRule(billing_rule)
+            fixed = fixed_day.strip() if rule == BillingRule.FIXED_DAY and fixed_day else None
+
+            def key(r: BillingRule, f: str | None) -> tuple:
+                if r != BillingRule.FIXED_DAY:
+                    return (r,)
+                try:
+                    return (r, billing.parse_fixed_day(f))
+                except billing.BillingError:
+                    return (r, f)
+
+            if key(rule, fixed) != key(contract.billing_rule, contract.fixed_day):
+                if rule == BillingRule.MANUAL or contract.billing_rule == BillingRule.MANUAL:
+                    raise billing.BillingError("Perioden von Hand lassen sich hier nicht umstellen")
+                self.sync_periods()  # eine gerade beendete, noch nicht gespeicherte Periode zählt mit
+                if self.contract_locked(contract.contract_id):
+                    raise ContractLocked("Von diesem Vertrag ist schon eine Periode gespeichert")
+                new = replace(new, billing_rule=rule, fixed_day=fixed)
+                if billing.validate_contract(new):
+                    raise billing.BillingError("; ".join(billing.validate_contract(new)))
+                chain = [new if c.contract_id == contract.contract_id else c for c in self.contracts(meter_id)]
+                specs = billing.periods_for_chain(chain, self.today(), self.actual_ends(meter_id))  # wirft BillingError
+                if any(s.contract_id == contract.contract_id and s.end_date < self.today() for s in specs):
+                    # die neue Regel ergäbe eine schon beendete Periode: deren Daten wären nie richtig eingefroren worden
+                    raise ContractLocked("Mit dieser Regel wäre eine Periode schon beendet")
+                # Prognose-Schnappschüsse galten für das alte Periodenende (abgeleitete Daten, nicht vergleichbar)
+                prefix = f"{contract.contract_id}-"
+                self.data.snapshots = [s for s in self.data.snapshots if not s.period_id.startswith(prefix)]
         self.data.contracts = [new if c.contract_id == contract.contract_id else c for c in self.data.contracts]
         return new
+
+    def contract_locked(self, contract_id: str) -> bool:
+        """Regel des Vertrags nicht mehr änderbar: eine seiner Perioden ist gespeichert (beendet)."""
+        return any(p.contract_id == contract_id for p in self.data.periods)
 
     def resets(self, meter_id: str) -> list[tuple[datetime, float]]:
         return [(r.at, r.prev_raw) for r in self.data.sensor_resets if r.meter_id == meter_id]
@@ -330,6 +374,8 @@ class TarifRuntime:
                 cur = self.data.daily[index[key]]
                 if usable(cur.quality) and not usable(v.quality) and v.source != "readings":
                     continue
+                if usable(cur.quality) and "ersatzquelle" in v.quality_flags and "ersatzquelle" not in cur.quality_flags:
+                    continue  # eigener Wert (Zähler oder Ablesung) bleibt, auch wenn die Statistik dort inzwischen fehlt
                 if v.heating_hours is None and cur.heating_hours is not None:
                     # Brennerdaten älter als der Recorder-Verlauf nicht verlieren
                     v = replace(v, heating_hours=cur.heating_hours, burner_starts=cur.burner_starts, cycling=cur.cycling)

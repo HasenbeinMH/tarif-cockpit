@@ -81,7 +81,7 @@ async def test_store_migration_1_1_to_1_2(hass: HomeAssistant, hass_storage) -> 
     assert await setup(hass, entry)
     assert entry.runtime_data.readings("m1")[0].quality == Quality.REAL
     await hass.config_entries.async_unload(entry.entry_id)
-    assert hass_storage[KEY]["minor_version"] == 3
+    assert hass_storage[KEY]["minor_version"] == 4
     assert hass_storage[KEY]["data"]["readings"][0]["quality"] == "real"
 
 
@@ -173,3 +173,17 @@ async def test_store_from_newer_version_is_untouched(hass: HomeAssistant, hass_s
     assert entry.state is ConfigEntryState.SETUP_ERROR
     assert ir.async_get(hass).async_get_issue(DOMAIN, "store_zu_neu_testentry") is not None
     assert hass_storage[KEY] == newer
+
+
+
+async def test_store_migration_1_3_to_1_4_reaggregates(hass: HomeAssistant, hass_storage) -> None:
+    """1.0.3: Store 1.3 → 1.4 setzt die Liste der neu berechneten Zähler zurück (einmal alle Tageswerte neu), sonst nichts."""
+    old = stored(minor=3)
+    old["data"]["reaggregated_meters"] = ["m1"]
+    hass_storage[KEY] = old
+    entry = make_entry(meter_subentry("m1"), store_created=True)
+    assert await setup(hass, entry)
+    assert entry.runtime_data.data.reaggregated_meters == []  # m1 hat keinen Sensor: nichts neu zu holen
+    assert [r.value for r in entry.runtime_data.readings("m1")] == [1000.0]
+    await hass.config_entries.async_unload(entry.entry_id)
+    assert hass_storage[KEY]["minor_version"] == 4

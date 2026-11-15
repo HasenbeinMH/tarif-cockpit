@@ -37,6 +37,45 @@ def _floor_hour(dt: datetime) -> datetime:
     return dt.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
 
 
+def utc_series(series: Mapping[datetime, float] | None) -> Mapping[datetime, float]:
+    """Stundenreihe mit Schlüsseln in UTC. Schon normalisierte Reihen werden unverändert zurückgegeben, damit lange
+    Zeiträume (bis 800 Tage) nicht für jeden Tag neu umgerechnet werden."""
+    if not series:
+        return {}
+    if next(iter(series)).tzinfo is UTC:
+        return series
+    return {k.astimezone(UTC): v for k, v in series.items()}
+
+
+# Sprung der Statistik: Zählerstand in der Stunde höchstens um diesen Anteil des Stands davor gestiegen
+JUMP_MAX_RISE_SHARE = 0.1
+
+
+def _statistics_jump(norm: Mapping[datetime, float], st: Mapping[datetime, float], first: datetime, last: datetime) -> float:
+    """Zu viel gezählte Menge eines Tages durch Sprünge der HA-Statistik.
+
+    Fällt ein Sensor innerhalb einer Stunde kurz auf 0 und kommt mit (fast) dem alten Stand zurück, nimmt der
+    Recorder das als Neustart und zählt den ganzen Stand noch einmal in die Summe. Erkennbar je Stunde: Die Summe
+    steigt deutlich stärker als der Zählerstand am Stundenende, und der Zählerstand ist kaum gestiegen (höchstens
+    10 % des Stands davor). Ein echter Neustart lässt den Stand am Stundenende fallen (Tageszähler, Ladevorgang)
+    oder steigt in der Stunde weit über den alten Stand; beides bleibt unberührt."""
+    excess = 0.0
+    prev_s, prev_st = norm.get(first), st.get(first)
+    h = first + timedelta(hours=1)
+    while h <= last:
+        s = norm.get(h)
+        if s is not None:
+            x = st.get(h)
+            if prev_s is not None and prev_st is not None and x is not None and prev_st > 0:
+                ds, dst = s - prev_s, x - prev_st
+                extra = ds - dst
+                if 0 <= dst <= JUMP_MAX_RISE_SHARE * prev_st and extra > max(1e-3, 0.001 * dst) and extra <= prev_st * 1.001 + 1e-6:
+                    excess += extra
+            prev_s, prev_st = s, x
+        h += timedelta(hours=1)
+    return excess
+
+
 def hours_of_day(day: date, tz: tzinfo) -> int:
     """Anzahl Stunden des lokalen Tags: 23 oder 25 an den Tagen der Zeitumstellung."""
     start, end = day_bounds(day, tz)
@@ -70,9 +109,10 @@ def aggregate_day(
     off_grid = start != _floor_hour(start) or end != _floor_hour(end)
     last_hour = _floor_hour(end) - timedelta(hours=1)
     prev_last = _floor_hour(start) - timedelta(hours=1)
-    norm = {k.astimezone(UTC): v for k, v in sums.items()}
+    norm = utc_series(sums)
     s_end, s_prev = norm.get(last_hour), norm.get(prev_last)
-    end_value = {k.astimezone(UTC): v for k, v in (states or {}).items()}.get(last_hour)
+    st = utc_series(states)
+    end_value = st.get(last_hour)
     consumption: float | None = None
     quality = Quality.MISSING
     if s_end is not None and s_prev is not None:
@@ -84,15 +124,29 @@ def aggregate_day(
             # Zählerstand rückwärts ohne erfassten Zählertausch: nicht verwenden
             consumption, quality = None, Quality.INVALID
             flags.append("rueckwaerts")
+        elif st:
+            excess = _statistics_jump(norm, st, prev_last, last_hour)
+            if excess > 0:
+                consumption = round(max(consumption - excess, 0.0), 6)
+                flags.append("statistik_sprung")
     else:
         flags.append("randwert_fehlt")
 
     n_hours = hours_of_day(day, tz)
+    first_hour = _floor_hour(start)
+    if first_hour < start:
+        first_hour += timedelta(hours=1)
+    day_hours = []
+    h = first_hour
+    while h < end:
+        day_hours.append(h)
+        h += timedelta(hours=1)
 
     def mean(series: Mapping[datetime, float] | None, name: str) -> float | None:
         if not series:
             return None
-        vals = [v for k, v in series.items() if start <= k.astimezone(UTC) < end and v is not None]
+        series = utc_series(series)
+        vals = [v for v in (series.get(k) for k in day_hours) if v is not None]
         if len(vals) < n_hours * MIN_TEMP_HOURS_SHARE:
             flags.append(f"{name}_unvollstaendig")
             return None

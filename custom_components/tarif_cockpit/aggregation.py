@@ -23,9 +23,9 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.start import async_at_started
 
-from .const import AGG_HOUR, AGG_MINUTE, BACKFILL_DAYS, DOMAIN, ISSUE_NO_STATISTICS, RETRY_MISSING_DAYS
+from .const import AGG_HOUR, AGG_MINUTE, BACKFILL_DAYS, BACKFILL_MAX_DAYS, DOMAIN, ISSUE_NO_STATISTICS, RETRY_MISSING_DAYS
 from .engine import billing
-from .engine.consumption import aggregate_day, day_bounds, daily_from_readings
+from .engine.consumption import aggregate_day, day_bounds, daily_from_readings, utc_series
 from .engine.burner import burner_day, max_gap_for
 from .engine.generators import build_generator_day, is_on, on_hours, stove_hours_from_room
 from .engine.pulses import apply_resets, detect_resets, scale, unit_per_pulse
@@ -84,7 +84,7 @@ class Aggregator:
 
     def _range(self, meter: Meter, start: date | None, end: date | None) -> tuple[date, date] | None:
         yesterday = self.rt.today() - timedelta(days=1)
-        horizon = self.rt.today() - timedelta(days=BACKFILL_DAYS)
+        horizon = self.backfill_horizon(meter)
         chain = self.rt.contracts(meter.meter_id)
         if meter.entity:
             # Zähler mit Sensor: auch vor Vertragsbeginn, denn die Prognose braucht das Vorjahr
@@ -95,6 +95,18 @@ class Aggregator:
             return None
         lo, hi = max(start or first, first), min(end or yesterday, yesterday)
         return (lo, hi) if lo <= hi else None
+
+    def backfill_horizon(self, meter: Meter) -> date:
+        """Erster Tag, der aus der Statistik geholt wird: 400 Tage zurück, mindestens aber bis zum gleichen Tag des
+        Vorjahres wie der Beginn der laufenden Periode (sonst fehlt der Prognose nach Vorjahr der Anfang)."""
+        today = self.rt.today()
+        horizon = today - timedelta(days=BACKFILL_DAYS)
+        if meter.entity:
+            # Unterzähler (Wallbox) ohne eigenen Vertrag: Periode des Hauptzählers, damit beide gleich weit zurückreichen
+            period = self.rt.current_period(meter.parent_meter_id or meter.meter_id)
+            if period is not None:
+                horizon = max(min(horizon, billing.add_years(period.start_date, -1)), today - timedelta(days=BACKFILL_MAX_DAYS))
+        return horizon
 
     def _targets(self, meter: Meter, lo: date, hi: date, overwrite: bool) -> list[date]:
         existing = self.rt.daily(meter.meter_id)
@@ -158,6 +170,7 @@ class Aggregator:
         sums: Series = {}
         states: Series = {}
         hist: Series = {}
+        hist_states: Series = {}
         pulse_changes: list = []
         if not readings_based:
             k = unit_per_pulse(meter.pulse_constant, meter.pulse_mode) if meter.pulse_constant else None
@@ -172,7 +185,9 @@ class Aggregator:
                 if hist_start < q_end:
                     raw_changes = {t: v * k for t, v in await self._numeric_changes(meter.entity, hist_start, q_end)}
                 if check:
-                    for at, prev in detect_resets(states) + detect_resets(raw_changes):
+                    # Neustarts nur im bisherigen Fenster suchen: ältere (vor der Einrichtung) würden den Stand verschieben
+                    recent = day_bounds(self.rt.today() - timedelta(days=BACKFILL_DAYS), tz)[0]
+                    for at, prev in detect_resets({t: v for t, v in states.items() if t >= recent}) + detect_resets(raw_changes):
                         self.rt.add_reset(meter.meter_id, at, prev)
                     self._reset_between_runs(meter, days[0], states or raw_changes)
                 resets = self.rt.resets(meter.meter_id)
@@ -183,15 +198,21 @@ class Aggregator:
                     sums = states = _hourly_from_changes(pulse_changes, q_start, q_end)
             if meter.history_entity:
                 hist = (await self._fetch({meter.history_entity}, q_start, q_end, "sum", _unit_class(meter.unit))).get(meter.history_entity, {})
-            if check:
+                hist_states = (await self._fetch({meter.history_entity}, q_start, q_end, "state", _unit_class(meter.unit))).get(
+                    meter.history_entity, {})
+            # Nur prüfen, wenn der gestrige Tag dabei ist: Werden allein alte Lückentage nachgeholt, hat der Sensor dort
+            # oft noch keine Statistik (Fehlalarm „ohne Statistik“, 1.0.3)
+            if check and days[-1] >= self.rt.today() - timedelta(days=1):
                 self._check_statistics(meter, sums)
-        outdoor = temps.get(hh.outdoor_temp_entity or "", {})
-        indoor = [temps[r.entity] for r in hh.rooms if r.entity in temps]
+        # einmal nach UTC umrechnen (sonst je Tag die ganze Reihe: bei 800 Tagen zig Sekunden in der Ereignisschleife)
+        sums, states, hist, hist_states = utc_series(sums), utc_series(states), utc_series(hist), utc_series(hist_states)
+        outdoor = utc_series(temps.get(hh.outdoor_temp_entity or "", {}))
+        indoor = [utc_series(temps[r.entity]) for r in hh.rooms if r.entity in temps]
         values = []
         for d in days:
             v = aggregate_day(meter.meter_id, d, tz, sums, outdoor, indoor, hh.heating_limit, hh.indoor_ref, states)
             if hist and v.consumption is None and v.quality == Quality.MISSING:
-                h = aggregate_day(meter.meter_id, d, tz, hist)
+                h = aggregate_day(meter.meter_id, d, tz, hist, states=hist_states)
                 if h.consumption is not None:
                     # Ersatzquelle: anderer Zähler (z. B. Wechselrichter), daher nur "geschätzt"
                     v = replace(v, consumption=h.consumption, quality=Quality.ESTIMATED,
@@ -447,6 +468,7 @@ def async_setup_aggregation(hass: HomeAssistant, runtime: TarifRuntime) -> None:
         if todo:
             await agg.async_run(meters=todo, overwrite=True)
             runtime.data.reaggregated_meters.extend(todo)
+            runtime.store.schedule_save(runtime.data)  # sonst bei 0 Änderungen nicht gespeichert und bei jedem Start erneut
         await agg.async_run()
         if runtime.coordinator is not None:
             await runtime.coordinator.async_update_weather()

@@ -240,3 +240,109 @@ async def test_counter_helper_raises_no_statistics_issue(hass: HomeAssistant, re
     assert await setup(hass, entry)
     await entry.runtime_data.aggregator.async_run(overwrite=True)
     assert ir.async_get(hass).async_get_issue(DOMAIN, f"{ISSUE_NO_STATISTICS}_g1") is None
+
+
+
+def _meta(statistic_id: str, name: str = "Zähler") -> dict:
+    return {"has_mean": False, "has_sum": True, "mean_type": StatisticMeanType.NONE, "name": name, "source": "recorder",
+            "statistic_id": statistic_id, "unit_class": "energy", "unit_of_measurement": "kWh"}
+
+
+async def test_statistics_jump_is_ignored(hass: HomeAssistant, recorder_mock) -> None:
+    """1.0.3: Sensor kurz auf 0 und zurück → HA zählt den ganzen Stand doppelt in die Summe; es gilt der Zählerstand."""
+    start = datetime(2026, 11, 9, 23, tzinfo=TZ)
+    end = datetime(2026, 11, 12, 23, tzinfo=TZ)
+    rows = []
+    for i, t in enumerate(_hours(start, end)):
+        jump = 500.0 if t >= datetime(2026, 11, 11, 21, tzinfo=TZ) else 0.0
+        rows.append({"start": t, "sum": float(i) + jump, "state": 500.0 + i})
+    async_import_statistics(hass, _meta("sensor.wallbox"), rows)
+    await async_wait_recording_done(hass)
+    contract = {"supplier": "SW", "start_date": "2026-11-10", "billing_rule": "calendar_year"}
+    entry = make_entry(meter_subentry("m1", "Strom", "strom", "kWh", entity="sensor.wallbox", contract=contract))
+    assert await setup(hass, entry)
+    await entry.runtime_data.aggregator.async_run(overwrite=True)
+    daily = entry.runtime_data.daily("m1")
+    d11 = daily[date(2026, 11, 11)]
+    assert d11.consumption == 24.0 and "statistik_sprung" in d11.quality_flags and d11.quality == Quality.REAL
+    d12 = daily[date(2026, 11, 12)]
+    assert d12.consumption == 24.0 and "statistik_sprung" not in d12.quality_flags
+
+
+async def test_backfill_reaches_previous_year_of_period(hass: HomeAssistant, recorder_mock) -> None:
+    """1.0.3: Periode seit 01.07. → Historie bis 01.07. des Vorjahres (mehr als 400 Tage), damit die Prognose nach Vorjahr greift."""
+    start = datetime(2025, 7, 1, 23, tzinfo=TZ)
+    end = datetime(2025, 7, 3, 23, tzinfo=TZ)
+    async_import_statistics(hass, _meta("sensor.wr", "Wechselrichter"),
+                            [{"start": t, "sum": float(i), "state": float(i)} for i, t in enumerate(_hours(start, end))])
+    await async_wait_recording_done(hass)
+    contract = {"supplier": "SW", "start_date": "2026-07-01", "billing_rule": "fixed_day", "fixed_day": "01.07"}
+    sub = meter_subentry("m1", "Strom", "strom", "kWh", entity="sensor.neu", contract=contract)
+    sub["data"]["meter"]["history_entity"] = "sensor.wr"
+    entry = make_entry(sub)
+    assert await setup(hass, entry)
+    rt = entry.runtime_data
+    assert rt.aggregator.backfill_horizon(rt.meters["m1"]) == date(2025, 7, 1)
+    await rt.aggregator.async_run()
+    d = rt.daily("m1")[date(2025, 7, 2)]
+    assert d.consumption == 24.0 and "ersatzquelle" in d.quality_flags
+
+
+async def test_old_retry_days_raise_no_statistics_issue(hass: HomeAssistant, recorder_mock) -> None:
+    """1.0.3: Werden nur alte Lückentage nachgeholt (dort hat der Sensor keine Statistik), entsteht kein Hinweis."""
+    start = datetime(2026, 11, 9, 23, tzinfo=TZ)
+    end = datetime(2026, 11, 12, 23, tzinfo=TZ)
+    async_import_statistics(hass, _meta("sensor.zaehler_neu"),
+                            [{"start": t, "sum": float(i), "state": float(i)} for i, t in enumerate(_hours(start, end))])
+    # Ersatzquelle deckt nur die Wochen davor: noch ältere Tage bleiben fehlend und werden bei jedem Lauf erneut versucht
+    w_start = datetime(2026, 10, 19, 23, tzinfo=TZ)
+    async_import_statistics(hass, _meta("sensor.wr_teil", "Wechselrichter"),
+                            [{"start": t, "sum": float(i), "state": float(i)} for i, t in enumerate(_hours(w_start, end))])
+    await async_wait_recording_done(hass)
+    contract = {"supplier": "SW", "start_date": "2026-10-01", "billing_rule": "calendar_year"}
+    sub = meter_subentry("m1", "Strom", "strom", "kWh", entity="sensor.zaehler_neu", contract=contract)
+    sub["data"]["meter"]["history_entity"] = "sensor.wr_teil"
+    entry = make_entry(sub)
+    assert await setup(hass, entry)
+    agg = entry.runtime_data.aggregator
+    await agg.async_run()
+    await agg.async_run()  # jetzt nur noch alte Lückentage
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"{ISSUE_NO_STATISTICS}_m1") is None
+    assert entry.runtime_data.daily("m1")[date(2026, 10, 1)].consumption is None  # wirklich ein alter Lückentag
+
+
+async def test_submeter_backfill_follows_parent_period(hass: HomeAssistant, recorder_mock) -> None:
+    """1.0.3: Wallbox ohne Vertrag reicht so weit zurück wie ihr Hauptzähler."""
+    contract = {"supplier": "SW", "start_date": "2026-07-01", "billing_rule": "fixed_day", "fixed_day": "01.07"}
+    main = meter_subentry("m1", "Strom", "strom", "kWh", entity="sensor.strom", contract=contract)
+    wb = meter_subentry("wb", "Wallbox", "strom", "kWh", entity="sensor.wallbox")
+    wb["subentry_type"] = "unterzaehler"
+    wb["data"] = {"meter": {**wb["data"]["meter"], "role": "wallbox", "parent_meter_id": "m1"}}
+    entry = make_entry(main, wb)
+    assert await setup(hass, entry)
+    rt = entry.runtime_data
+    assert rt.aggregator.backfill_horizon(rt.meters["wb"]) == date(2025, 7, 1)
+    assert rt.aggregator.backfill_horizon(rt.meters["m1"]) == date(2025, 7, 1)
+
+
+async def test_fallback_value_never_replaces_own_value(hass: HomeAssistant, recorder_mock) -> None:
+    """1.0.3: Fehlt die Statistik des Zählers später (gelöscht), ersetzt die Ersatzquelle einen echten Wert nicht."""
+    start = datetime(2026, 11, 9, 23, tzinfo=TZ)
+    end = datetime(2026, 11, 12, 23, tzinfo=TZ)
+    async_import_statistics(hass, _meta("sensor.wr2", "Wechselrichter"),
+                            [{"start": t, "sum": 2.0 * i, "state": 2.0 * i} for i, t in enumerate(_hours(start, end))])
+    await async_wait_recording_done(hass)
+    contract = {"supplier": "SW", "start_date": "2026-11-10", "billing_rule": "calendar_year"}
+    sub = meter_subentry("m1", "Strom", "strom", "kWh", entity="sensor.ohne", contract=contract)
+    sub["data"]["meter"]["history_entity"] = "sensor.wr2"
+    entry = make_entry(sub)
+    assert await setup(hass, entry)
+    rt = entry.runtime_data
+    from dataclasses import replace  # noqa: PLC0415
+
+    own = replace(rt.daily("m1")[date(2026, 11, 11)], consumption=20.0, quality=Quality.REAL, quality_flags=[])
+    rt.put_daily([own])
+    await rt.aggregator.async_run(overwrite=True)
+    d = rt.daily("m1")[date(2026, 11, 11)]
+    assert d.consumption == 20.0 and d.quality == Quality.REAL
+    assert rt.daily("m1")[date(2026, 11, 12)].consumption == 48.0  # ohne eigenen Wert kommt die Ersatzquelle

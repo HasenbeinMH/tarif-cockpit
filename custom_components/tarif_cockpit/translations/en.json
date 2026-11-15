@@ -129,13 +129,13 @@
         },
         "vertrag": {
           "title": "Contract",
-          "description": "When does your supplier bill? For “fixed day” enter the first day of the new billing period as DD.MM, e.g. 30.06. (each period then ends on 29.06.). For “manual” enter the end of the first period; add further periods with the action “Append period”.",
+          "description": "When does your supplier bill? For “fixed day” enter the **first day** of the new billing period as DD.MM: if your bill ends on 30.06., that is 01.07. For “manual” enter the end of the first period; add further periods with the action “Append period”.",
           "data": {
             "supplier": "Supplier",
             "tariff": "Tariff",
             "start_date": "Contract start",
             "billing_rule": "Billing",
-            "fixed_day": "Fixed day (DD.MM)",
+            "fixed_day": "Start of the billing period (DD.MM)",
             "first_period_end": "End of the first period",
             "vat_mode": "Prices",
             "vat_rate": "VAT",
@@ -180,7 +180,7 @@
             "anbieterwechsel": "Change supplier",
             "preis_aendern": "Change price",
             "abschlag_aendern": "Change advance payment",
-            "vertrag_aendern": "Change contract (tariff, term, notice period)"
+            "vertrag_aendern": "Change contract (tariff, billing, term, notice period)"
           }
         },
         "zusammenfassung": {
@@ -235,7 +235,7 @@
             "tariff": "Tariff",
             "start_date": "Contract start",
             "billing_rule": "Billing",
-            "fixed_day": "Fixed day (DD.MM)",
+            "fixed_day": "Start of the billing period (DD.MM)",
             "first_period_end": "End of the first period",
             "vat_mode": "Prices",
             "vat_rate": "VAT",
@@ -273,15 +273,18 @@
         },
         "vertrag_aendern": {
           "title": "Change contract",
-          "description": "Current contract with {lieferant} since {beginn}. Periods, prices and advances stay unchanged.",
+          "description": "Current contract with {lieferant} since {beginn}, current billing period {periode}. Prices and advances stay unchanged. Billing can only be changed while no period of this contract has ended.",
           "data": {
             "tariff": "Tariff",
             "min_term_months": "Minimum term (months)",
-            "notice_period_weeks": "Notice period (weeks)"
+            "notice_period_weeks": "Notice period (weeks)",
+            "billing_rule": "Billing",
+            "fixed_day": "Start of the billing period (DD.MM)"
           },
           "data_description": {
             "min_term_months": "Leave empty if unknown. Without it there is no notice-period reminder.",
-            "notice_period_weeks": "How many weeks before the contract end must you cancel? (6 weeks ≈ 1.5 months)"
+            "notice_period_weeks": "How many weeks before the contract end must you cancel? (6 weeks ≈ 1.5 months)",
+            "fixed_day": "Only for “fixed day”: first day of the new period, e.g. 01.07. if the bill ends on 30.06."
           }
         }
       },
@@ -296,6 +299,7 @@
         "switch_invalid": "A switch on this date is not possible, see the note above.",
         "switch_reading_future": "The switch is in the future: please enter the meter reading after the switch (action “Add reading”).",
         "entity_or_pulses": "Please choose either a meter sensor or a pulse counter, not both.",
+        "periods_locked": "A billing period of this contract has already ended, so billing stays as it is.",
         "work_price_cents": "The unit price is entered in cents per kWh: 31.54 instead of 0.3154."
       },
       "abort": {
@@ -790,7 +794,7 @@
         },
         "stichtag": {
           "name": "Fixed day",
-          "description": "For “fixed day”: first day of the period as DD.MM."
+          "description": "For “fixed day”: first day of the period as DD.MM (bill ends 30.06. → 01.07.)."
         },
         "erste_periode_ende": {
           "name": "End of the first period",

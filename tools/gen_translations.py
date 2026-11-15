@@ -80,10 +80,10 @@ S = {
                                      "calorific": T("Brennwert", "Calorific value"), "z_factor": T("Zustandszahl", "Conversion factor (Z)")}},
             "vertrag": {
                 "title": T("Vertrag", "Contract"),
-                "description": T("Wann rechnet dein Versorger ab? Bei „fester Stichtag“ den ersten Tag der neuen Abrechnungsperiode als TT.MM angeben, z. B. 30.06. (dann endet jede Periode am 29.06.). Bei „von Hand“ das Ende der ersten Periode, weitere Perioden mit der Aktion „Periode anhängen“.",
-                                 "When does your supplier bill? For “fixed day” enter the first day of the new billing period as DD.MM, e.g. 30.06. (each period then ends on 29.06.). For “manual” enter the end of the first period; add further periods with the action “Append period”."),
+                "description": T("Wann rechnet dein Versorger ab? Bei „fester Stichtag“ den **ersten Tag** des neuen Abrechnungszeitraums als TT.MM angeben: Endet deine Abrechnung am 30.06., ist das der 01.07. Bei „von Hand“ das Ende der ersten Periode, weitere Perioden mit der Aktion „Periode anhängen“.",
+                                 "When does your supplier bill? For “fixed day” enter the **first day** of the new billing period as DD.MM: if your bill ends on 30.06., that is 01.07. For “manual” enter the end of the first period; add further periods with the action “Append period”."),
                 "data": {"supplier": T("Lieferant", "Supplier"), "tariff": T("Tarif", "Tariff"), "start_date": T("Vertragsbeginn", "Contract start"),
-                         "billing_rule": T("Abrechnung", "Billing"), "fixed_day": T("Stichtag (TT.MM)", "Fixed day (DD.MM)"),
+                         "billing_rule": T("Abrechnung", "Billing"), "fixed_day": T("Beginn des Abrechnungszeitraums (TT.MM)", "Start of the billing period (DD.MM)"),
                          "first_period_end": T("Ende der ersten Periode", "End of the first period"), "vat_mode": T("Preise", "Prices"),
                          "vat_rate": T("Mehrwertsteuer", "VAT")},
             },
@@ -172,7 +172,7 @@ S = {
                 "tarif": {"name": T("Tarif", "Tariff"), "description": T("Name des Tarifs.", "Tariff name.")},
                 "beginn": {"name": T("Beginn", "Start"), "description": T("Erster Liefertag.", "First day of supply.")},
                 "abrechnungsregel": {"name": T("Abrechnung", "Billing"), "description": T("Wann rechnet der neue Versorger ab?", "When does the new supplier bill?")},
-                "stichtag": {"name": T("Stichtag", "Fixed day"), "description": T("Bei „fester Stichtag“: erster Tag der Periode als TT.MM.", "For “fixed day”: first day of the period as DD.MM.")},
+                "stichtag": {"name": T("Stichtag", "Fixed day"), "description": T("Bei „fester Stichtag“: erster Tag der Periode als TT.MM (Abrechnung zum 30.06. → 01.07.).", "For “fixed day”: first day of the period as DD.MM (bill ends 30.06. → 01.07.).")},
                 "erste_periode_ende": {"name": T("Ende der ersten Periode", "End of the first period"), "description": T("Nur bei „von Hand“.", "Only for “manual”.")},
                 "vat_mode": {"name": T("Preise", "Prices"), "description": T("Brutto oder netto.", "Gross or net.")},
                 "vat_rate": {"name": T("Mehrwertsteuer", "VAT"), "description": T("In Prozent. Standard: 19 %, Wasser 7 %.", "In percent. Default: 19 %, water 7 %.")},
@@ -572,11 +572,17 @@ TERMS_DESC = {"min_term_months": T("Leer lassen, wenn unbekannt. Ohne Angaben gi
 for step in ("vertrag", "wechsel_vertrag"):
     SUB["step"][step]["data"].update(TERMS)
     SUB["step"][step].setdefault("data_description", {}).update(TERMS_DESC)
-SUB["step"]["reconfigure"]["menu_options"]["vertrag_aendern"] = T("Vertrag ändern (Tarif, Laufzeit, Kündigungsfrist)", "Change contract (tariff, term, notice period)")
+SUB["step"]["reconfigure"]["menu_options"]["vertrag_aendern"] = T("Vertrag ändern (Tarif, Abrechnung, Laufzeit, Kündigungsfrist)",
+                                                                  "Change contract (tariff, billing, term, notice period)")
 SUB["step"]["vertrag_aendern"] = {"title": T("Vertrag ändern", "Change contract"),
-                                  "description": T("Laufender Vertrag bei {lieferant} seit {beginn}. Perioden, Preise und Abschläge bleiben unverändert.",
-                                                   "Current contract with {lieferant} since {beginn}. Periods, prices and advances stay unchanged."),
-                                  "data": {"tariff": T("Tarif", "Tariff"), **TERMS}, "data_description": TERMS_DESC}
+                                  "description": T("Laufender Vertrag bei {lieferant} seit {beginn}, laufender Abrechnungszeitraum {periode}. Preise und Abschläge bleiben unverändert. Die Abrechnung lässt sich nur ändern, solange noch kein Zeitraum dieses Vertrags beendet ist.",
+                                                   "Current contract with {lieferant} since {beginn}, current billing period {periode}. Prices and advances stay unchanged. Billing can only be changed while no period of this contract has ended."),
+                                  "data": {"tariff": T("Tarif", "Tariff"), **TERMS, "billing_rule": T("Abrechnung", "Billing"),
+                                           "fixed_day": T("Beginn des Abrechnungszeitraums (TT.MM)", "Start of the billing period (DD.MM)")},
+                                  "data_description": {**TERMS_DESC, "fixed_day": T("Nur bei „fester Stichtag“: erster Tag des neuen Zeitraums, z. B. 01.07. bei Abrechnung zum 30.06.",
+                                                                                    "Only for “fixed day”: first day of the new period, e.g. 01.07. if the bill ends on 30.06.")}}
+SUB["error"]["periods_locked"] = T("Von diesem Vertrag ist schon ein Abrechnungszeitraum beendet; die Abrechnung bleibt deshalb, wie sie ist.",
+                                   "A billing period of this contract has already ended, so billing stays as it is.")
 SUB["abort"]["contract_saved"] = T("Der Vertrag wurde gespeichert.", "The contract was saved.")
 SUB["abort"]["no_contract"] = T("Für diesen Zähler gibt es noch keinen Vertrag.", "This meter has no contract yet.")
 SV = S["services"]
