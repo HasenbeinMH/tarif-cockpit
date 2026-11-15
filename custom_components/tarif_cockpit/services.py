@@ -21,7 +21,8 @@ from homeassistant.util import dt as dt_util
 from .const import DOMAIN
 from .engine import billing
 from .engine.model import (
-    BillingRule, Contract, Medium, PaymentStatus, PaymentType, PeriodSpan, PriceTier, ReadingSource, Rounding, VatMode, new_id, to_dict,
+    BillingRule, Contract, DynamicPrice, Medium, PaymentStatus, PaymentType, PeriodSpan, PriceTier, PriceWindow, ReadingSource, Rounding,
+    VatMode, new_id, to_dict,
 )
 from .engine.quality import Quality
 from .runtime import TarifRuntime
@@ -215,6 +216,19 @@ SCHEMA_PRICE = vol.Schema({
     vol.Optional("rundung_grundpreis"): vol.In(["day", "month"]),
     vol.Optional("rundung_menge_stellen"): vol.All(vol.Coerce(int), vol.Range(min=0, max=6)),
     vol.Optional("rundung_betrag_stellen"): vol.All(vol.Coerce(int), vol.Range(min=0, max=6)),
+    # 1.2: Zeitfenster, § 14a, dynamischer Tarif
+    vol.Optional("fenster"): vol.All(cv.ensure_list, [vol.Schema({
+        vol.Required("name"): cv.string,
+        vol.Optional("von", default="00:00"): cv.matches_regex(r"^(([01]?\d|2[0-3]):[0-5]\d|24:00)$"),
+        vol.Optional("bis", default="24:00"): cv.matches_regex(r"^(([01]?\d|2[0-3]):[0-5]\d|24:00)$"),
+        vol.Optional("tage", default=[0, 1, 2, 3, 4, 5, 6]): vol.All(cv.ensure_list, [vol.All(vol.Coerce(int), vol.Range(min=0, max=6))]),
+        vol.Optional("monate", default=[]): vol.All(cv.ensure_list, [vol.All(vol.Coerce(int), vol.Range(min=1, max=12))]),
+        vol.Optional("preis"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+        vol.Optional("aufschlag"): vol.Coerce(float),
+    })]),
+    vol.Optional("pauschale_14a"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Optional("dynamisch_entitaet"): cv.entity_id,
+    vol.Optional("dynamisch_aufschlag"): vol.Coerce(float),
 })
 SCHEMA_ADVANCE = vol.Schema({
     vol.Required(ATTR_METER): cv.string,
@@ -264,6 +278,13 @@ def price_extras(data: dict) -> dict:
     if data.get("staffel"):
         out["tiers"] = [PriceTier(t.get("bis"), float(t["preis"])) for t in data["staffel"]]
         out["tier_mode"] = data.get("staffel_art") or "block"
+    if data.get("fenster"):
+        out["windows"] = [PriceWindow(w["name"], w.get("von", "00:00"), w.get("bis", "24:00"), list(w.get("tage", [0, 1, 2, 3, 4, 5, 6])),
+                                      list(w.get("monate", [])), w.get("preis"), w.get("aufschlag")) for w in data["fenster"]]
+    if data.get("pauschale_14a") is not None:
+        out["rebate_yearly"] = float(data["pauschale_14a"])
+    if data.get("dynamisch_entitaet"):
+        out["dynamic"] = DynamicPrice(data["dynamisch_entitaet"], float(data.get("dynamisch_aufschlag") or 0.0))
     keys = ("rundung_tage", "rundung_grundpreis", "rundung_menge_stellen", "rundung_betrag_stellen")
     if any(data.get(k) is not None for k in keys):
         out["rounding"] = Rounding(
@@ -285,11 +306,13 @@ def async_setup_services_06(hass: HomeAssistant) -> None:
         rt, meter_id = _resolve(hass, call.data[ATTR_METER])
         values = {PRICE_FIELDS[k]: v for k, v in call.data.items() if k in PRICE_FIELDS}
         values.update(price_extras(call.data))
+        before = rt.price_kinds(meter_id)
         try:
             seg = rt.set_price(meter_id, call.data["ab"], **values)
         except billing.BillingError as err:
             raise _billing_error(err, "period_invalid") from err
         rt.changed(meter_id=meter_id, flags={"costs"})
+        rt.reload_if_new_kinds(meter_id, before)
         return {"vertrag_id": seg.contract_id, "ab": seg.valid_from.isoformat()}
 
     async def set_advance(call: ServiceCall) -> ServiceResponse:

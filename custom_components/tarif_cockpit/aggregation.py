@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import replace
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import logging
 from typing import Any
 
@@ -29,10 +29,11 @@ from .engine.consumption import aggregate_day, day_bounds, daily_from_readings, 
 from .engine.burner import burner_day, max_gap_for
 from .engine.generators import build_generator_day, is_on, on_hours, stove_hours_from_room
 from .engine.pulses import apply_resets, detect_resets, scale, unit_per_pulse
-from .engine.model import DailyConsumption, GeneratorDaily, GeneratorKind, HeatGenerator, Medium, Meter
+from .engine.model import DailyConsumption, DayIntervals, GeneratorDaily, GeneratorKind, HeatGenerator, Medium, Meter
 from .engine.quality import Quality, usable
 from .runtime import TarifRuntime
 
+INTERVAL_DAYS = 10  # so lange hält der Recorder die 5-Minuten-Statistik und den Verlauf (Standard)
 READINGS_BACKFILL_DAYS = 3 * 365  # Zähler ohne Sensor: Tage vor dem Vertrag für ältere Ablesungen/Rechnungen
 
 _LOGGER = logging.getLogger(__name__)
@@ -218,12 +219,13 @@ class Aggregator:
         indoor = [utc_series(temps[r.entity]) for r in hh.rooms if r.entity in temps]
         values = []
         for d in days:
-            v = aggregate_day(meter.meter_id, d, tz, sums, outdoor, indoor, hh.heating_limit, hh.indoor_ref, states)
+            v = aggregate_day(meter.meter_id, d, tz, sums, outdoor, indoor, hh.heating_limit, hh.indoor_ref, states,
+                              cooling_limit=hh.cooling_limit)
             if hist and v.consumption is None and v.quality == Quality.MISSING:
                 h = aggregate_day(meter.meter_id, d, tz, hist, states=hist_states)
                 if h.consumption is not None:
                     # Ersatzquelle: anderer Zähler (z. B. Wechselrichter), daher nur "geschätzt"
-                    v = replace(v, consumption=h.consumption, quality=Quality.ESTIMATED,
+                    v = replace(v, consumption=h.consumption, quality=Quality.ESTIMATED, hourly=h.hourly,
                                 quality_flags=[f for f in v.quality_flags if f != "randwert_fehlt"] + ["ersatzquelle"])
             values.append(v)
         if readings_based:
@@ -294,6 +296,96 @@ class Aggregator:
             except (TypeError, ValueError):
                 continue
         return out
+
+    # ------------------------------------------------------------ Viertelstunden und Preise (1.2)
+
+    async def async_run_intervals(self, days_back: int = INTERVAL_DAYS) -> int:
+        """Für Zähler mit dynamischem Tarif oder Vergleich: Verbrauch je Viertelstunde aus der 5-Minuten-Statistik und die
+        Preise je Viertelstunde der Preis-Entitäten, je abgeschlossenem Tag der letzten ``days_back`` Tage, einmal."""
+        rt = self.rt
+        meters, ents = rt.interval_needs()
+        if not meters and not ents:
+            return 0
+        today = rt.today()
+        days = [today - timedelta(days=i) for i in range(1, days_back + 1)]
+        changed = 0
+        for mid, m in meters.items():
+            have = rt.day_intervals(mid, "energy")
+            for d in days:
+                if d in have:
+                    continue
+                vals = await self._quarters(m, d)
+                if vals is not None and rt.put_day_interval(DayIntervals(mid, d, "energy", 15, vals, "5minute")):
+                    changed += 1
+        for ent, attr in ents:
+            have = rt.day_intervals(ent, "price")
+            missing = [d for d in days if d not in have]
+            if not missing:
+                continue
+            st = self.hass.states.get(ent)
+            unit_f = price_unit_factor(st.attributes.get("unit_of_measurement") if st is not None else None)
+            from_attr, attr_f = prices_from_attribute(st.attributes if st is not None else {}, attr, self.rt.tz, with_factor=True)
+            for d in missing:
+                vals, src, f = from_attr.get(d), "attribute", attr_f if attr_f is not None else unit_f
+                if vals is None:
+                    vals, src, f = await self._prices_from_history(ent, d), "history", unit_f
+                if vals is None:
+                    vals, src, f = await self._prices_from_statistics(ent, d), "statistics", unit_f
+                if vals is None:
+                    continue
+                vals = [None if v is None else round(v * f, 6) for v in vals]
+                known = sorted(v for v in vals if v is not None)
+                if known and known[len(known) // 2] > 2.0:  # über 2 €/kWh ist unplausibel: Wert war in Cent
+                    vals = [None if v is None else round(v / 100, 6) for v in vals]
+                    src += "_ct"
+                if rt.put_day_interval(DayIntervals(ent, d, "price", 15, vals, src)):
+                    changed += 1
+        if changed:
+            rt.store.schedule_save(rt.data)
+            rt.changed(save=False, flags={"costs"})
+        return changed
+
+    async def _quarters(self, meter: Meter, day: date) -> list[float | None] | None:
+        """Verbrauch je Viertelstunde (Zählereinheit) aus der 5-Minuten-Statistik; None, wenn es sie nicht mehr gibt."""
+        from .engine.windows import slot_starts  # noqa: PLC0415
+
+        tz = self.rt.tz
+        quarters = slot_starts(day, tz, 15)
+        start = quarters[0] - timedelta(minutes=5)
+        end = quarters[-1] + timedelta(minutes=15)
+        sums = utc_series((await self._fetch({meter.entity}, start, end, "sum", _unit_class(meter.unit), period="5minute")).get(meter.entity, {}))
+        if not sums:
+            return None
+        out: list[float | None] = []
+        for q in quarters:
+            a, b = sums.get(q - timedelta(minutes=5)), sums.get(q + timedelta(minutes=10))
+            out.append(None if a is None or b is None or b < a else round(b - a, 6))
+        return out if any(v is not None for v in out) else None
+
+    async def _prices_from_history(self, entity_id: str, day: date) -> list[float | None] | None:
+        from .engine.windows import slot_starts  # noqa: PLC0415
+
+        a, b = day_bounds(day, self.rt.tz)
+        changes = sorted((t.astimezone(UTC), v) for t, v in await self._numeric_changes(entity_id, a, b))
+        if not changes:
+            return None
+        out: list[float | None] = []
+        for q in slot_starts(day, self.rt.tz, 15):
+            # Mitte der Viertelstunde: Preis-Sensoren schalten Sekunden nach der Grenze um
+            mid = q + timedelta(minutes=7, seconds=30)
+            before = [v for t, v in changes if t <= mid]
+            out.append(before[-1] if before else None)
+        return out if all(v is not None for v in out) else None
+
+    async def _prices_from_statistics(self, entity_id: str, day: date) -> list[float | None] | None:
+        from .engine.windows import slot_starts  # noqa: PLC0415
+
+        a, b = day_bounds(day, self.rt.tz)
+        means = utc_series((await self._fetch({entity_id}, a, b, "mean")).get(entity_id, {}))
+        if not means:
+            return None
+        out = [means.get(q.replace(minute=0)) for q in slot_starts(day, self.rt.tz, 15)]
+        return out if sum(1 for v in out if v is not None) >= 0.75 * len(out) else None
 
     # ------------------------------------------------------------ Wärmeerzeuger
 
@@ -479,6 +571,12 @@ def async_setup_aggregation(hass: HomeAssistant, runtime: TarifRuntime) -> None:
             runtime.data.reaggregated_meters.extend(todo)
             runtime.store.schedule_save(runtime.data)  # sonst bei 0 Änderungen nicht gespeichert und bei jedem Start erneut
         await agg.async_run()
+        try:
+            await agg.async_run_intervals()
+        except Exception:  # noqa: BLE001 - Viertelstunden dürfen den Tageslauf nie stoppen
+            _LOGGER.exception("Tarif-Cockpit: Viertelstunden nicht abrufbar")
+        if runtime.trim_history(runtime.today() - timedelta(days=BACKFILL_DAYS)):
+            runtime.store.schedule_save(runtime.data)
         if runtime.coordinator is not None:
             await runtime.coordinator.async_update_weather()
             runtime.coordinator.daily()
@@ -493,3 +591,78 @@ def async_setup_aggregation(hass: HomeAssistant, runtime: TarifRuntime) -> None:
         runtime.entry.async_create_background_task(hass, _run(), "tarif_cockpit_backfill")
     else:
         runtime.unsubs.append(async_at_started(hass, _daily))
+
+
+# ---------------------------------------------------------------- Preise aus Entitäten (1.2)
+
+_START_KEYS = ("start_time", "start", "startsAt", "starts_at", "from", "time")
+_END_KEYS = ("end_time", "end", "endsAt", "ends_at", "to")
+_PRICE_KEYS = ("price_per_kwh", "total", "price", "value", "price_eur_per_kwh", "price_ct_per_kwh")
+_LIST_ATTRS = ("data", "prices", "today", "tomorrow", "raw_today", "raw_tomorrow", "yesterday", "forecast", "prices_today")
+
+
+def price_unit_factor(unit: str | None) -> float:
+    """Preis-Einheit → Euro je kWh: ct/kWh (auch c/kWh, ¢) × 0,01, €/MWh × 0,001."""
+    u = (unit or "").lower().replace(" ", "")
+    if "ct" in u or "cent" in u or "¢" in u or u.startswith("c/"):
+        return 0.01
+    if "mwh" in u:
+        return 0.001
+    return 1.0
+
+
+def _parse_dt(v: Any, tz) -> datetime | None:
+    if isinstance(v, datetime):
+        return v if v.tzinfo else v.replace(tzinfo=tz)
+    if isinstance(v, str):
+        try:
+            d = datetime.fromisoformat(v)
+        except ValueError:
+            return None
+        return d if d.tzinfo else d.replace(tzinfo=tz)
+    return None
+
+
+def prices_from_attribute(attrs: Any, attribute: str | None, tz, with_factor: bool = False):
+    """Viertelstundenpreise vollständiger Tage aus einer Preisliste im Attribut (EPEX ``data``, Tibber ``today``/``prices``
+    u. ä.): Einträge mit Beginn, optional Ende, und Preis. Stundenpreise gelten für alle vier Viertelstunden."""
+    from .engine.windows import slot_starts  # noqa: PLC0415
+
+    items: list[tuple[datetime, datetime | None, float]] = []
+    factor: float | None = None  # aus dem Schlüssel erkennbare Einheit (price_ct_per_kwh), sonst die des Zustands
+    for key in ([attribute] if attribute else list(_LIST_ATTRS)):
+        lst = attrs.get(key) if hasattr(attrs, "get") else None
+        if not isinstance(lst, list):
+            continue
+        for it in lst:
+            if not isinstance(it, dict):
+                continue
+            start = next((_parse_dt(it[k], tz) for k in _START_KEYS if k in it), None)
+            pkey = next((k for k in _PRICE_KEYS if isinstance(it.get(k), (int, float)) and not isinstance(it.get(k), bool)), None)
+            price = it[pkey] if pkey else None
+            if start is None or price is None:
+                continue
+            if pkey == "price_ct_per_kwh":
+                factor = 0.01
+            elif pkey in ("price_per_kwh", "price_eur_per_kwh"):
+                factor = factor or 1.0
+            end = next((_parse_dt(it[k], tz) for k in _END_KEYS if k in it), None)
+            items.append((start.astimezone(UTC), end.astimezone(UTC) if end else None, float(price)))
+    if not items:
+        return ({}, None) if with_factor else {}
+    items.sort(key=lambda x: x[0])
+    filled = []
+    for i, (s, e, p) in enumerate(items):
+        if e is None:
+            e = items[i + 1][0] if i + 1 < len(items) else s + timedelta(minutes=60)
+        filled.append((s, e, p))
+    days = {s.astimezone(tz).date() for s, _, _ in filled}
+    out: dict[date, list[float | None]] = {}
+    for d in days:
+        vals = []
+        for q in slot_starts(d, tz, 15):
+            vals.append(next((p for s, e, p in filled if s <= q < e), None))
+        if all(v is not None for v in vals):
+            out[d] = vals
+    return (out, factor) if with_factor else out
+

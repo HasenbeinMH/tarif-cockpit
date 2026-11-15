@@ -57,6 +57,12 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: TarifCo
             "calibrations": [to_dict(c) for c in ds.calibrations if c.meter_id == meter_id],
             "invoice_checks": [c.as_dict() for c in coord.invoice_checks.get(meter_id, [])] if coord is not None else [],
             "accuracy": coord.accuracy.get(meter_id) if coord is not None else None,
+            "hourly_days": sum(1 for d in daily if d.hourly),  # 1.2
+            "quarter_hour_days": len(rt.day_intervals(meter_id, "energy")),
+            "comparison": (coord.results[meter_id].comparison.as_dict()
+                           if coord is not None and meter_id in coord.results and coord.results[meter_id].comparison else None),
+            "window_usage": coord.results[meter_id].window_usage if coord is not None and meter_id in coord.results else None,
+            "leak": coord.leaks[meter_id].as_dict() if coord is not None and meter_id in coord.leaks else None,
             "readings_last_10": [to_dict(r) for r in rt.readings(meter_id)[-10:]],
             "daily_count": len(daily),
             "daily_by_quality": {q.value: sum(1 for d in daily if d.quality == q) for q in Quality},
@@ -77,6 +83,8 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: TarifCo
         "counts": {k: len(v) for k, v in ds.to_dict().items() if isinstance(v, list)},
         "snapshots_last_12": [to_dict(s) for s in ds.snapshots[-12:]],
         "weather_forecast_days": len(coord.forecast_dd) if coord is not None else 0,
+        # Preis-Entitäten nur gezählt (Entitäts-IDs werden geschwärzt)
+        "price_days": [len(rt.day_intervals(e, "price")) for e, _a in sorted(rt.interval_needs()[1], key=lambda x: x[0])],
         "meters": meters,
         "generators": generators,
     }

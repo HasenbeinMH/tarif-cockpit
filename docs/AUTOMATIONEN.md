@@ -91,3 +91,22 @@ actions:
 ```
 
 `sensor.gas_letzte_ablesung` ist der Sensor „Letzte Ablesung“ deines Zählers (die ID hängt vom Namen ab).
+
+## Leckage-Verdacht melden (1.2)
+
+```yaml
+alias: Wasser – Leckage-Verdacht
+triggers:
+  - trigger: event
+    event_type: tarif_cockpit_leckage
+actions:
+  - action: notify.notify
+    data:
+      title: "Leckage-Verdacht"
+      message: >
+        {{ trigger.event.data.name }}: {{ trigger.event.data.art }} seit {{ trigger.event.data.tage[0] }},
+        kleinster Nachtverbrauch {{ trigger.event.data.nachtminimum_l_h }} L/h.
+```
+
+Alternativ auf den binären Sensor „Leckage-Verdacht“ reagieren (`problem`, an/aus).
+

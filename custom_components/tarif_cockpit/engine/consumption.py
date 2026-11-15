@@ -14,7 +14,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 
-from .degree_days import degree_days
+from .degree_days import cooling_degree_days, degree_days
 from .model import DailyConsumption, Meter, Reading
 from .quality import Quality, usable
 
@@ -59,7 +59,12 @@ def _statistics_jump(norm: Mapping[datetime, float], st: Mapping[datetime, float
     steigt deutlich stärker als der Zählerstand am Stundenende, und der Zählerstand ist kaum gestiegen (höchstens
     10 % des Stands davor). Ein echter Neustart lässt den Stand am Stundenende fallen (Tageszähler, Ladevorgang)
     oder steigt in der Stunde weit über den alten Stand; beides bleibt unberührt."""
-    excess = 0.0
+    return sum(_statistics_jumps(norm, st, first, last).values())
+
+
+def _statistics_jumps(norm: Mapping[datetime, float], st: Mapping[datetime, float], first: datetime, last: datetime) -> dict[datetime, float]:
+    """Zu viel gezählte Menge je Stunde (Schlüssel = Stundenbeginn), Regeln wie ``_statistics_jump``."""
+    out: dict[datetime, float] = {}
     prev_s, prev_st = norm.get(first), st.get(first)
     h = first + timedelta(hours=1)
     while h <= last:
@@ -70,10 +75,10 @@ def _statistics_jump(norm: Mapping[datetime, float], st: Mapping[datetime, float
                 ds, dst = s - prev_s, x - prev_st
                 extra = ds - dst
                 if 0 <= dst <= JUMP_MAX_RISE_SHARE * prev_st and extra > max(1e-3, 0.001 * dst) and extra <= prev_st * 1.001 + 1e-6:
-                    excess += extra
+                    out[h] = extra
             prev_s, prev_st = s, x
         h += timedelta(hours=1)
-    return excess
+    return out
 
 
 def hours_of_day(day: date, tz: tzinfo) -> int:
@@ -92,6 +97,7 @@ def aggregate_day(
     heating_limit: float = 15.0,
     indoor_ref: float = 20.0,
     states: Mapping[datetime, float] | None = None,
+    cooling_limit: float | None = None,
 ) -> DailyConsumption:
     """Tageswert aus Stundenwerten.
 
@@ -115,6 +121,7 @@ def aggregate_day(
     end_value = st.get(last_hour)
     consumption: float | None = None
     quality = Quality.MISSING
+    jumps: dict[datetime, float] = {}
     if s_end is not None and s_prev is not None:
         consumption = round(s_end - s_prev, 6)
         quality = Quality.ESTIMATED if off_grid else Quality.REAL
@@ -125,7 +132,8 @@ def aggregate_day(
             consumption, quality = None, Quality.INVALID
             flags.append("rueckwaerts")
         elif st:
-            excess = _statistics_jump(norm, st, prev_last, last_hour)
+            jumps = _statistics_jumps(norm, st, prev_last, last_hour)
+            excess = sum(jumps.values())
             if excess > 0:
                 consumption = round(max(consumption - excess, 0.0), 6)
                 flags.append("statistik_sprung")
@@ -157,6 +165,16 @@ def aggregate_day(
     t_out = mean(outdoor, "aussen")
     indoor_means = [m for m in (mean(s, "innen") for s in indoor) if m is not None]
     t_in = round(sum(indoor_means) / len(indoor_means), 3) if indoor_means else None
+    # Stundenwerte (1.2): nur auf dem vollen Stundenraster und nur mit Tageswert; Sprünge je Stunde abgezogen
+    hourly: list[float | None] | None = None
+    if consumption is not None and not off_grid and quality != Quality.INVALID:
+        hourly = []
+        for k in day_hours:
+            a, b = norm.get(k - timedelta(hours=1)), norm.get(k)
+            v = None if a is None or b is None else b - a - jumps.get(k, 0.0)
+            hourly.append(None if v is None or v < -1e-9 else round(max(v, 0.0), 6))
+        if all(v is None for v in hourly):
+            hourly = None
     return DailyConsumption(
         meter_id=meter_id,
         date=day,
@@ -168,6 +186,8 @@ def aggregate_day(
         quality=quality,
         quality_flags=flags,
         source="statistics",
+        hourly=hourly,
+        cooling_degree_days=cooling_degree_days(t_out, cooling_limit) if cooling_limit is not None else None,
     )
 
 

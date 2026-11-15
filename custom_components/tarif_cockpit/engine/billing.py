@@ -8,7 +8,7 @@ durch den tatsächlichen Ablesetermin, Prüfung der Vertragskette (0.5); Kosten 
 from __future__ import annotations
 
 import calendar
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta, tzinfo
 import math
@@ -320,6 +320,7 @@ class CostBreakdown:
     base: float = 0.0
     fixed: float = 0.0
     demand: float = 0.0
+    rebate: float = 0.0  # § 14a Modul 1 (1.2), als positiver Betrag; mindert ``total``
     quantity: float = 0.0  # abgerechnete Menge (kWh bei Energie, m³ bei Wasser)
     total: float = 0.0
     gross: float = 0.0
@@ -327,7 +328,7 @@ class CostBreakdown:
 
     @property
     def complete(self) -> bool:
-        return not any(f in self.flags for f in ("kein_preis", "brennwert_fehlt", "staffel_ohne_gesamtmenge"))
+        return not any(f in self.flags for f in ("kein_preis", "brennwert_fehlt", "staffel_ohne_gesamtmenge", "preis_fehlt"))
 
 
 def segment_on(segments: list[PriceSegment], day: date) -> PriceSegment | None:
@@ -409,6 +410,12 @@ def calculate_costs(
     tier_before: float = 0.0,
     tier_total: float | None = None,
     tier_scale: float = 1.0,
+    hourly: Mapping[date, Sequence[float | None]] | None = None,
+    intervals: Mapping[date, Sequence[float | None]] | None = None,
+    prices: Mapping[date, Sequence[float | None]] | None = None,
+    profile: Sequence[float] | None = None,
+    dynamic_mean: float | None = None,
+    estimate_from: date | None = None,
 ) -> CostBreakdown:
     """Kosten tagesgenau je Preisabschnitt.
 
@@ -416,6 +423,9 @@ def calculate_costs(
     Grund-, Mess-, Leistungspreis und feste Jahresbeträge laufen anteilig über die Zeit von ``base_from`` bis ``base_to``.
     Staffel (1.1): ``tier_before`` = Menge der Periode vor dem ersten Tag, ``tier_total`` = Menge der ganzen Periode,
     ``tier_scale`` = Periodenlänge in Jahren. Rundung (1.1) je Preisabschnitt: Menge je Stufe und Betrag je Position.
+    Zeitfenster und dynamischer Tarif (1.2): je Viertelstunde bzw. Stunde (``intervals``/``hourly`` in der Zählereinheit,
+    ``prices`` je Viertelstunde in Euro je kWh); sonst über ``profile`` verteilt und gekennzeichnet. Ohne dynamischen Preis
+    eines Tages gilt ``dynamic_mean`` (Prognose-Rest), gekennzeichnet ``dynamisch_mittel``.
     """
     segs = [s for s in segments if s.contract_id == contract.contract_id]
     cb = CostBreakdown()
@@ -435,6 +445,11 @@ def calculate_costs(
             continue
         qb = q * factor
         cb.quantity += qb
+        if seg.windows or seg.dynamic is not None:
+            _timed_energy(cb, contract, seg, day, qb, tz, buckets, seg_of, hourly, intervals, prices, profile, dynamic_mean,
+                          flag_estimates=estimate_from is None or day < estimate_from)
+            cum += qb
+            continue
         if seg.tiers and seg.tier_mode == "total" and tier_total is None:
             # Gesamtstaffel ohne Menge der ganzen Periode (keine Prognose): Stufe unbekannt → Kosten nicht vollständig
             cb.flags.append("staffel_ohne_gesamtmenge")
@@ -442,11 +457,26 @@ def calculate_costs(
             buckets[(id(seg), price)] = buckets.get((id(seg), price), 0.0) + part
         seg_of[id(seg)] = seg
         cum += qb
+    timed_sum: dict[int, list[float]] = {}
     for (sid, price), qty in buckets.items():
-        r = seg_of[sid].rounding
+        seg_b = seg_of[sid]
+        r = seg_b.rounding
+        if seg_b.windows or seg_b.dynamic is not None:
+            # Zeitscheiben: viele Preise je Abschnitt; gerundet wird einmal je Abschnitt (Menge und Betrag), nicht je Preis
+            acc = timed_sum.setdefault(sid, [0.0, 0.0])
+            acc[0] += qty
+            acc[1] += qty * price
+            continue
         if r and r.quantity_decimals is not None:
             qty = round(qty, r.quantity_decimals)
         amount = qty * price
+        if r and r.money_decimals is not None:
+            amount = round(amount, r.money_decimals)
+        cb.energy += amount
+    for sid, (qty, amount) in timed_sum.items():
+        r = seg_of[sid].rounding
+        if r and r.quantity_decimals is not None and qty:
+            amount = amount * round(qty, r.quantity_decimals) / qty
         if r and r.money_decimals is not None:
             amount = round(amount, r.money_decimals)
         cb.energy += amount
@@ -469,27 +499,70 @@ def calculate_costs(
         if seg is None:
             cb.flags.append("kein_preis")
         else:
-            acc = timed.setdefault(id(seg), [0.0, 0.0, 0.0])
+            acc = timed.setdefault(id(seg), [0.0, 0.0, 0.0, 0.0])
             seg_of[id(seg)] = seg
             dpy = _days_per_year(seg.rounding, local_day)
             acc[0] += frac * _base_per_day(seg, local_day)
             acc[1] += frac * (seg.fixed_yearly or 0.0) / dpy
             if seg.demand_price and seg.demand_kw:
                 acc[2] += frac * seg.demand_price * seg.demand_kw / dpy
+            acc[3] += frac * (seg.rebate_yearly or 0.0) / dpy
         t = stop
-    for sid, (base, fixed, demand) in timed.items():
+    for sid, (base, fixed, demand, rebate) in timed.items():
         r = seg_of[sid].rounding
         if r and r.money_decimals is not None:
-            base, fixed, demand = (round(x, r.money_decimals) for x in (base, fixed, demand))
+            base, fixed, demand, rebate = (round(x, r.money_decimals) for x in (base, fixed, demand, rebate))
         cb.base += base
         cb.fixed += fixed
         cb.demand += demand
+        cb.rebate += rebate
     cb.flags = sorted(set(cb.flags))
-    cb.total = cb.energy + cb.wastewater + cb.base + cb.fixed + cb.demand
+    cb.total = cb.energy + cb.wastewater + cb.base + cb.fixed + cb.demand - cb.rebate
     cb.gross = cb.total * (1 + contract.vat_rate / 100) if contract.vat_mode == VatMode.NET else cb.total
-    for name in ("energy", "wastewater", "base", "fixed", "demand", "quantity", "total", "gross"):
+    for name in ("energy", "wastewater", "base", "fixed", "demand", "rebate", "quantity", "total", "gross"):
         setattr(cb, name, round(getattr(cb, name), 4))
     return cb
+
+
+def _timed_energy(cb: CostBreakdown, contract: Contract, seg: PriceSegment, day: date, qb: float, tz: tzinfo, buckets: dict,
+                  seg_of: dict, hourly, intervals, prices, profile, dynamic_mean, flag_estimates: bool = True) -> None:
+    """Arbeitspreis eines Tages je Zeitscheibe (Fenster, dynamischer Preis); Mengen in Abrechnungseinheiten.
+    ``flag_estimates`` False für heute und die Zukunft (dort gibt es noch keine Stundenwerte, das ist kein Mangel)."""
+    from .windows import day_slots, local_starts, price_at, quarter_index, slot_price  # noqa: PLC0415
+
+    sl = day_slots(day, qb, tz, (hourly or {}).get(day), (intervals or {}).get(day), profile)
+    if flag_estimates and sl.source in ("profil", "gleich") and qb:
+        cb.flags.append("fenster_geschaetzt")
+    day_prices = (prices or {}).get(day) if seg.dynamic is not None else None
+    idx = quarter_index(day, tz)
+    known = [p for p in (day_prices or []) if p is not None]
+    day_mean = sum(known) / len(known) if known else None
+    # MwSt.: Preis der Entität in den Preis-Modus des Vertrags (brutto/netto) bringen; der Aufschlag gilt schon so
+    vat = 1 + contract.vat_rate / 100
+    conv = 1.0
+    if seg.dynamic is not None:
+        if seg.dynamic.net and contract.vat_mode == VatMode.GROSS:
+            conv = vat
+        elif not seg.dynamic.net and contract.vat_mode == VatMode.NET:
+            conv = 1 / vat
+    seg_of[id(seg)] = seg
+    for t, lt, x in zip(sl.starts, local_starts(day, tz, sl.minutes), sl.qty):
+        dyn = None
+        if seg.dynamic is not None:
+            dyn = slot_price(day_prices, t, sl.minutes, idx)
+            if dyn is None and day_mean is not None:
+                dyn, _ = day_mean, cb.flags.append("preis_geschaetzt")
+            elif dyn is None and dynamic_mean is not None:
+                dyn, _ = dynamic_mean, cb.flags.append("dynamisch_mittel") if flag_estimates else None
+            if dyn is not None:
+                dyn *= conv
+        price, _name = price_at(seg, lt, dyn)
+        if price is None:
+            if x:
+                cb.flags.append("preis_fehlt")
+            continue
+        key = (id(seg), round(price, 8))
+        buckets[key] = buckets.get(key, 0.0) + x
 
 
 # ---------------------------------------------------------------- Zahlungen (0.6, Entscheidung K)

@@ -75,6 +75,12 @@ class TarifStore(Store[dict[str, Any]]):
                     for inv in data["invoices"]
                 ]
             _LOGGER.info("Tarif-Cockpit: Store auf 1.5 migriert")
+        if old_major_version == 1 and old_minor_version < 6:
+            # 1.5 → 1.6 (1.2): Stundenwerte je Tag, Viertelstunden, Zeitfenster; neue Felder leer, nichts geht verloren.
+            # Tageswerte einmal neu aus der Statistik, damit Stundenwerte und Kühlgradtage auch für die Vergangenheit da sind
+            if "reaggregated_meters" in data:
+                data["reaggregated_meters"] = []
+            _LOGGER.info("Tarif-Cockpit: Store auf 1.6 migriert")
         return data
 
     def schedule_save(self, dataset: Dataset) -> None:

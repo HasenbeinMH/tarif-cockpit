@@ -152,6 +152,21 @@ Die Auswertungskarte zeigt „Rechnung gegen Integration“, „Prognosegüte“
 
 ![Auswertung 1.1](img/rechnung-analyse.png)
 
+## 9. Zeitfenster, dynamischer Tarif, Vergleich, Leckage (ab 1.2)
+
+- **HT/NT, § 14a, dynamisch:** Zähler → Neu konfigurieren → „Preis ändern“, Haken bei „Zeitfenster, § 14a oder dynamischer Preis“.
+  - Bei HT/NT ist der Arbeitspreis im ersten Schritt der NT, im zweiten Schritt kommen HT-Preis und HT-Zeit.
+  - Beim dynamischen Tarif wählst du die Preis-Entität (z. B. EPEX Spot) und den Aufschlag.
+  - § 14a Modul 1 ist eine Pauschale je Jahr, Modul 3 sind Zu- und Abschläge zu bestimmten Zeiten in gewählten Quartalen.
+  - Danach lädt die Integration neu: Es kommen die Sensoren „Zeitfenster“ bzw. „Mittlerer Strompreis“ dazu.
+- **Vergleich dynamischer Tarif:** Stromzähler → Neu konfigurieren → Stammdaten, „Vergleich dynamisch“ mit Preis-Entität, Aufschlag in ct/kWh und Grundpreis.
+  - Der Sensor „Vergleich dynamischer Tarif“ zeigt, was ein dynamischer Tarif bisher gekostet hätte.
+  - Die Auswertungskarte zeigt Tagesprofil und Vergleichskurve. Ausblenden mit `profil: false` bzw. `vergleich: false`.
+- **Leckage:** für Wasserzähler mit Sensor automatisch. Die Schwelle legst du unter Stammdaten fest.
+- **Kühlgrenze:** im Haushalt (Integration → Konfigurieren), Standard 22 °C.
+
+![Übersicht 1.2](img/dynamisch-uebersicht.png)
+
 ## Hinweise
 
 - Texte, die die Integration selbst einsetzt (z. B. die Zählernamen im Abschluss-Schritt, Zahlen in der Zusammenfassung), folgen der **Systemsprache** von Home Assistant (Einstellungen → System → Allgemein), nicht der Sprache deines Profils.

@@ -23,7 +23,10 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, EVENT_INVOICE, EVENT_NOTICE, EVENT_VERDICT, ISSUE_INVOICE, ISSUE_NOTICE, NOTICE_WARN_DAYS, signal_updated
+from .const import (
+    DOMAIN, EVENT_INVOICE, EVENT_LEAK, EVENT_NOTICE, EVENT_VERDICT, ISSUE_INVOICE, ISSUE_LEAK, ISSUE_NOTICE, NOTICE_WARN_DAYS,
+    signal_updated,
+)
 from collections import deque
 
 from .engine import billing
@@ -32,6 +35,7 @@ from .engine.burner import current_power, max_gap_for
 from .engine.pulses import offset_at, unit_per_pulse
 from .engine.archive import build_archive, close_criteria, forecast_accuracy
 from .engine.heatload import HeatLoad, heat_load
+from .engine.leak import LeakResult, detect_leak
 from .engine.invoice import InvoiceCheck, calibrated_daily, calibrated_prices, compare_invoice, factor_on
 from .engine.degree_days import degree_days
 from .engine.reconcile import Reconciliation, reconcile
@@ -57,6 +61,8 @@ class TarifCoordinator:
         self.invoice_checks: dict[str, list[InvoiceCheck]] = {}  # 1.1: Rechnung gegen Integration je Zähler
         self.heat_loads: dict[str, HeatLoad | None] = {}  # 1.1: Heizlast je Wärmeerzeuger
         self.accuracy: dict[str, dict] = {}  # 1.1: Prognosegüte über die abgeschlossenen Perioden je Zähler
+        self.leaks: dict[str, LeakResult] = {}  # 1.2: Leckage-Verdacht je Wasserzähler
+        self._cmp_cache: dict = {}  # 1.2: Vergleich dynamisch je Zähler (Schlüssel, Ergebnis)
         self.forecast_dd: dict = {}  # Gradtage aus der Wettervorhersage (Datum → Kd)
         self._forecast_at: datetime | None = None
         self._pulses: dict[str, deque] = {}  # letzte Zählerstand-Wechsel je Impulszähler (Momentanleistung)
@@ -94,6 +100,7 @@ class TarifCoordinator:
         self.archive_ended()
         self.check_notice()
         self.check_invoices()
+        self.check_leaks()
 
     @callback
     def _on_state(self, event: Event[EventStateChangedData]) -> None:
@@ -280,6 +287,20 @@ class TarifCoordinator:
         prices = calibrated_prices(rt.data.prices, cals, meter_id, {c.contract_id for c in rt.contracts(meter_id)})
         return daily, prices
 
+    def slot_inputs(self, meter_id: str) -> dict:
+        """Viertelstunden des Zählers und Preise je Entität (1.2) für ``evaluate_meter``."""
+        rt = self.rt
+        _meters, ents = rt.interval_needs()
+        meter = rt.meters.get(meter_id)
+        key = None
+        if meter is not None and meter.comparison is not None:
+            # Vergleich nur neu, wenn sich Tag, Tageswerte, Viertelstunden oder Preise geändert haben
+            key = (rt.today(), len(rt.data.daily), sum(1 for d in rt.data.daily if d.meter_id == meter_id and d.consumption is not None),
+                   len(rt.data.day_intervals), len(rt.data.prices), len(rt.data.calibrations))
+        return {"intervals": rt.day_intervals(meter_id, "energy") or None,
+                "price_series": {e: rt.day_intervals(e, "price") for e, _a in ents} or None,
+                "comparison_cache": self._cmp_cache, "comparison_key": key}
+
     def calibrations(self) -> list:
         """Übernommene Kalibrierungen, ohne die von korrigierten Rechnungen (eine Korrektur nimmt sie zurück)."""
         corrected = {i.corrects_invoice_id for i in self.rt.data.invoices if i.corrects_invoice_id}
@@ -353,6 +374,7 @@ class TarifCoordinator:
                     **self._heat_inputs(meter),
                     sensor_offset=rec.offset if rec is not None else None,
                     invoices=rt.invoices(meter_id),
+                    **self.slot_inputs(meter_id),
                 )
                 self.accuracy[meter_id] = forecast_accuracy((p.archive for p in rt.stored_periods(meter_id) if p.archive), rt.tz)
             except Exception:  # noqa: BLE001 - ein Fehler in einem Zähler darf die anderen nicht stoppen
@@ -421,6 +443,7 @@ class TarifCoordinator:
         self.archive_ended()
         self.check_notice()
         self.check_invoices()
+        self.check_leaks()
 
     # ------------------------------------------------------------ Archiv (1.0)
 
@@ -476,6 +499,7 @@ class TarifCoordinator:
             **{k: v for k, v in self._heat_inputs(meter).items() if k != "forecast_dd"},
             sensor_offset=rec.offset if rec is not None else None,
             invoices=rt.invoices(meter_id),
+            **self.slot_inputs(meter_id),
         ), until
 
     def _archive_period(self, meter_id: str, period_id: str, res: MeterResult | None = None) -> bool:
@@ -570,8 +594,9 @@ class TarifCoordinator:
             for inv in rt.invoices(meter_id):
                 contract = next((c for c in rt.contracts(meter_id) if c.contract_id == inv.contract_id), None)
                 try:
+                    res_m = self.results.get(meter_id)
                     chk = compare_invoice(inv, meter, contract, prices, raw, rt.tz, rt.household.tolerance_pct,
-                                          active_factor=factor_on(cals, inv.period_to))
+                                          active_factor=factor_on(cals, inv.period_to), slot_kw=res_m.slot_kw if res_m else None)
                 except Exception:  # noqa: BLE001
                     _LOGGER.exception("Tarif-Cockpit: Rechnung %s nicht vergleichbar", inv.invoice_id)
                     continue
@@ -607,6 +632,41 @@ class TarifCoordinator:
                 ir.async_delete_issue(self.hass, DOMAIN, issue_id)  # Rechnung oder Zähler entfernt
 
 
+    # ------------------------------------------------------------ Leckage Wasser (1.2)
+
+    @callback
+    def check_leaks(self) -> None:
+        """Wasserzähler mit Sensor: Leckage-Verdacht aus den Stundenwerten von gestern und davor. Hinweis unter Reparaturen
+        solange der Verdacht besteht, Event einmal je Verdacht (erster Tag)."""
+        from homeassistant.helpers import issue_registry as ir  # noqa: PLC0415
+
+        rt = self.rt
+        today = rt.today()
+        for meter_id, meter in rt.meters.items():
+            if meter.medium != Medium.WASSER or not meter.entity or meter.role != "main":
+                continue
+            garden = next((rt.daily(m.meter_id) for m in rt.meters.values() if m.parent_meter_id == meter_id and m.role == "garden"), None)
+            res = detect_leak(rt.daily(meter_id), meter.unit, today, rt.tz, garden, meter.leak_threshold_lph)
+            self.leaks[meter_id] = res
+            issue_id = f"{ISSUE_LEAK}_{meter_id}"
+            if not res.suspect:
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+                if f"{meter_id}:aktiv" in rt.data.leaks_notified:  # Verdacht vorbei: nächster Verdacht meldet wieder
+                    rt.data.leaks_notified.remove(f"{meter_id}:aktiv")
+                    rt.store.schedule_save(rt.data)
+                continue
+            ir.async_create_issue(self.hass, DOMAIN, issue_id, is_fixable=False, severity=ir.IssueSeverity.ERROR,
+                                  translation_key=ISSUE_LEAK, translation_placeholders={
+                                      "meter": meter.name or meter_id, "art": res.kind or "",
+                                      "liter": _num(res.night_min_lph), "seit": res.days[0].strftime("%d.%m.%Y")})
+            key = f"{meter_id}:aktiv"
+            if key not in rt.data.leaks_notified:  # je Verdacht einmal, solange er anhält
+                rt.data.leaks_notified.append(key)
+                rt.store.schedule_save(rt.data)
+                self.hass.bus.async_fire(EVENT_LEAK, {"zaehler": meter_id, "device_id": self._device_id(meter_id), "name": meter.name,
+                                                      **res.as_dict()})
+        async_dispatcher_send(self.hass, signal_updated(rt.entry.entry_id))
+
 def _num(v: float | None, digits: int = 1) -> str:
     return "–" if v is None else f"{v:.{digits}f}".replace(".", ",")
 
@@ -624,4 +684,3 @@ def invoice_placeholders(meter: Meter, chk: InvoiceCheck) -> dict[str, str]:
         "abweichung": _num(chk.deviation_pct), "vorschlaege": props or "–",
         "hinweise": ", ".join(hint_names.get(h, h) for h in chk.hints) or "–",
     }
-

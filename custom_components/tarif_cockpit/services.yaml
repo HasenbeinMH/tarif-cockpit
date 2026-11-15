@@ -247,6 +247,27 @@ set_preis:
           min: 0
           max: 6
           mode: box
+    fenster:
+      selector:
+        object:
+    pauschale_14a:
+      selector:
+        number:
+          min: 0
+          max: 10000
+          step: any
+          mode: box
+    dynamisch_entitaet:
+      selector:
+        entity:
+          domain: sensor
+    dynamisch_aufschlag:
+      selector:
+        number:
+          min: -10
+          max: 10
+          step: any
+          mode: box
 set_abschlag:
   fields:
     zaehler:

@@ -7,18 +7,20 @@ Eine Preisänderung ändert damit nie die Verbrauchsprognose; ein neuer Abschlag
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, tzinfo
 import math
 
+from .compare import Comparison, compare_dynamic
+from .windows import typical_profile, window_usage
 from .billing import (
     CostBreakdown, PaymentState, PeriodSpec, add_years, calculate_costs, calculate_payments, current_period, energy_factor,
     segment_on,
 )
 from .consumption import ConsumptionState, calculate_consumption, day_bounds, valid_readings, continuous_value
 from .forecast import Forecast, baseload_forecast, heat_forecast, submeter_forecast
-from .model import AdvancePlan, Contract, DailyConsumption, Invoice, Medium, Meter, Payment, PriceSegment, Reading
+from .model import AdvancePlan, Contract, DailyConsumption, Invoice, Medium, Meter, Payment, PriceSegment, Reading, VatMode
 from .quality import usable
 from .regression import HeatModel, ModelQuality, Sample, fit_heat_model
 
@@ -103,6 +105,11 @@ class MeterResult:
     samples: list[Sample] = field(default_factory=list)  # Stichproben der Wärme-Regression (Streudiagramm)
     samples_per_period: bool = False
     power_heat_model: HeatModel | None = None  # Strom: witterungsabhängiger Anteil (Heizen am Hausstrom)
+    slot_kw: dict = field(default_factory=dict)  # Zeitscheiben-Eingaben (1.2) für Kostenkurve und Rechnungsvergleich
+    window_usage: dict[str, float] | None = None  # Menge je Zeitfenster der Periode bisher (1.2)
+    window_sources: list[str] = field(default_factory=list)
+    comparison: Comparison | None = None  # Vergleich dynamischer Tarif (1.2)
+    cooling: dict | None = None  # Kühlen am Hausstrom (1.2): Kennwert, Rest
     indoor_split: dict | None = None  # Vergleich zum Vorjahr: Mehrverbrauch gesamt, davon Raumtemperatur, davon Verhalten
 
 
@@ -229,6 +236,10 @@ def evaluate_meter(
     sensor_offset: float | None = None,
     forecast_dd: Mapping[date, float] | None = None,
     invoices: list[Invoice] | None = None,
+    intervals: Mapping[date, Sequence[float | None]] | None = None,
+    price_series: Mapping[str, Mapping[date, Sequence[float | None]]] | None = None,
+    comparison_cache: dict | None = None,
+    comparison_key: tuple | None = None,
 ) -> MeterResult:
     """Vollständige Auswertung eines Zählers für die laufende Periode.
 
@@ -360,13 +371,24 @@ def evaluate_meter(
     if fc.available and res.used_billing is not None and factor is not None:
         res.forecast_total = round(res.used_billing + (fc.rest if rest_billing_unit else fc.rest * factor), 4)
 
+    # --- Zeitscheiben (1.2): Stundenwerte, Viertelstunden, typisches Profil, dynamischer Preis
+    hourly = {k: v.hourly for k, v in daily.items() if v.hourly}
+    profile = typical_profile([(k, v) for k, v in hourly.items() if known_day - timedelta(days=30) <= k < known_day], tz)
+    seg_dyn = segment_on(segs, known_day)
+    seg_dyn = seg_dyn if seg_dyn is not None and seg_dyn.dynamic is not None else None
+    dyn_prices = (price_series or {}).get(seg_dyn.dynamic.entity) if seg_dyn is not None else None
+    dyn_mean = _dynamic_mean(seg_dyn, dyn_prices, used_by_day, hourly, intervals, profile, known_day, meter, contract, tz) if seg_dyn else None
+    slot_kw = {"hourly": hourly, "intervals": intervals, "prices": dyn_prices, "profile": profile, "dynamic_mean": dyn_mean}
+    res.slot_kw = slot_kw
+
     # --- Kosten (Euro) und Zahlungen
     garden = usable_values(garden_daily) if garden_daily else {}
     # Staffel (1.1): Stufen gelten je Jahr, bezogen auf die ganze Periode (Prognose der Periodenmenge)
     tiers = {"tier_total": res.forecast_total, "tier_scale": ((spec.end_date - spec.start_date).days + 1) / 365}
     if cons.used is not None:
         ww = {k: max(v - (garden.get(k) or 0.0), 0.0) for k, v in used_by_day.items()} if meter.medium == Medium.WASSER else None
-        res.actual = calculate_costs(contract, prices, meter, used_by_day, start_dt, known_until, tz, wastewater=ww, **tiers)
+        res.actual = calculate_costs(contract, prices, meter, used_by_day, start_dt, known_until, tz, wastewater=ww, **tiers, **slot_kw,
+                                     estimate_from=known_day)  # heute ist noch unvollständig: keine Stundenwerte zu erwarten
     ww_rest = None
     if fc.available and factor is not None:
         if meter.medium == Medium.WASSER:
@@ -378,7 +400,9 @@ def evaluate_meter(
                 res.flags.append("garten_ohne_prognose")
         res.rest = calculate_costs(contract, prices, meter, fc.rest_by_day, known_until, end_dt, tz,
                                    quantities_are_billing_unit=rest_billing_unit, wastewater=ww_rest,
-                                   tier_before=res.used_billing or 0.0, **tiers)
+                                   tier_before=res.used_billing or 0.0, **tiers, **slot_kw, estimate_from=known_day)
+        if res.rest.energy and seg_dyn is not None and dyn_mean is not None and fc.quality in (ModelQuality.GOOD, ModelQuality.VERY_GOOD):
+            fc.quality = ModelQuality.PRELIMINARY  # künftige Börsenpreise sind unbekannt: höchstens vorläufig
     plan = next((p for p in plans if p.contract_id == contract.contract_id), None)
     res.payments = calculate_payments(plan, [p for p in payments if p.contract_id == contract.contract_id], spec.start_date, spec.end_date, today)
     forecast_cost = None
@@ -391,16 +415,55 @@ def evaluate_meter(
             scaled = {d: v * qty / fc.rest for d, v in fc.rest_by_day.items()}
             band = calculate_costs(contract, prices, meter, scaled, known_until, end_dt, tz, quantities_are_billing_unit=rest_billing_unit,
                                    tier_before=res.used_billing or 0.0, tier_scale=tiers["tier_scale"],
-                                   tier_total=(res.used_billing or 0.0) + qty * (1 if rest_billing_unit else (factor or 1.0)))
+                                   tier_total=(res.used_billing or 0.0) + qty * (1 if rest_billing_unit else (factor or 1.0)), **slot_kw,
+                                   estimate_from=known_day)
             if band.complete:
                 cost = round(res.actual.gross + band.gross, 2)
                 setattr(res.balance, f"forecast_cost_{key}", cost)
                 setattr(res.balance, f"saldo_{key}", round(res.payments.period_total - cost, 2) if res.payments.period_total else None)
     for cb in (res.actual, res.rest):
         if cb is not None:
-            res.flags.extend(cb.flags)
+            # Schätz-Kennzeichen des Rests sind selbstverständlich (Zukunft); sie bleiben an ``res.rest``
+            res.flags.extend(f for f in cb.flags if cb is res.actual or f not in ("fenster_geschaetzt", "dynamisch_mittel"))
+    # Zeitfenster und Vergleich (1.2), nur für die Periode bisher
+    if any(s.windows for s in segs) and used_by_day:
+        billing_days = {k: q * (energy_factor(meter, segment_on(segs, k) or seg_now) or 1.0) for k, q in used_by_day.items()}
+        usage, sources = window_usage(billing_days, lambda d: segment_on(segs, d), tz, hourly, intervals, profile)
+        res.window_usage, res.window_sources = usage, sorted(sources)
+    cached = (comparison_cache or {}).get(meter.meter_id) if comparison_key is not None else None
+    if meter.comparison is not None and cached is not None and cached[0] == comparison_key:
+        res.comparison = cached[1]  # nur abgeschlossene Tage: ändert sich erst mit neuen Tageswerten oder Preisen
+    elif meter.comparison is not None and used_by_day and factor is not None:
+        billing_days = {k: q * (energy_factor(meter, segment_on(segs, k) or seg_now) or factor) for k, q in used_by_day.items() if k < known_day}
+        res.comparison = compare_dynamic(meter, meter.comparison, meter.comparison_base_price, contract, prices, billing_days, tz,
+                                         hourly, intervals, (price_series or {}).get(meter.comparison.entity), profile, res.forecast_total,
+                                         own_prices=dyn_prices, dynamic_mean=dyn_mean,
+                                         tier_kw={"tier_total": res.forecast_total, "tier_scale": tiers["tier_scale"]})
+        if comparison_cache is not None and comparison_key is not None:
+            comparison_cache[meter.meter_id] = (comparison_key, res.comparison)
     res.flags = sorted(set(res.flags))
     return res
+
+
+def _dynamic_mean(seg, prices, used_by_day, hourly, intervals, profile, known_day, meter, contract, tz) -> float | None:
+    """Mengengewichteter Börsenpreis (ohne Aufschlag) der letzten 30 Tage, für den Prognose-Rest des dynamischen Tarifs."""
+    if not prices:
+        return None
+    lo = max(known_day - timedelta(days=30), seg.valid_from)
+    days = {k: q for k, q in used_by_day.items() if lo <= k < known_day and k in prices and q
+            and (seg.valid_to is None or k <= seg.valid_to)}
+    if not days:
+        known = [p for d, vals in prices.items() if lo <= d < known_day for p in vals if p is not None] or \
+                [p for vals in prices.values() for p in vals if p is not None]
+        return sum(known) / len(known) if known else None
+    # roher Börsenpreis (ohne Aufschlag, ohne MwSt.-Umrechnung): ``_timed_energy`` rechnet beides selbst wieder ein
+    probe = replace(seg, valid_from=min(days), valid_to=None, windows=[], rounding=None, tiers=[],
+                    dynamic=replace(seg.dynamic, markup=0.0, net=False))
+    contract = replace(contract, vat_mode=VatMode.GROSS)
+    epoch = datetime.combine(min(days), datetime.min.time(), tzinfo=tz)
+    cb = calculate_costs(contract, [probe], meter, days, epoch, epoch, tz, quantities_are_billing_unit=True,
+                         hourly=hourly, intervals=intervals, prices=prices, profile=profile)
+    return cb.energy / cb.quantity if cb.quantity and cb.complete else None
 
 
 def _split_power_heat(
@@ -423,8 +486,10 @@ def _split_power_heat(
     dd_prev = {k: v.degree_days for k, v in daily.items()}
     if ph.measured:
         meas = ph.measured
+        # Kühltage (1.2) nicht in die Heiz-Regression: sonst stiege die Grundlast um das Kühlen
         samples = [Sample(v, 1.0, daily[k].degree_days or 0.0, daily[k].outdoor_temperature)
-                   for k, v in meas.items() if v is not None and first <= k < today and k in daily and daily[k].degree_days is not None]
+                   for k, v in meas.items() if v is not None and first <= k < today and k in daily and daily[k].degree_days is not None
+                   and not (daily[k].cooling_degree_days or 0.0) > 0]
         model = fit_heat_model(samples, baseload=True, indoor=False)
         res.power_heat_model, res.samples = model, samples
         heat_used = sum(v for k, v in meas.items() if v is not None and spec.start_date <= k < known_day)
@@ -434,11 +499,20 @@ def _split_power_heat(
             res.flags.append("heizstrom_ohne_prognose")
             return main_vals, used, None
         res.flags.append("heizstrom_gemessen")
+        cool = cooling_forecast(meas, daily, known_day, spec.end_date, today)
+        if cool is not None:
+            res.cooling = cool.details
+            fc.rest = round((fc.rest or 0.0) + cool.rest, 4)
+            for k, v in cool.rest_by_day.items():
+                fc.rest_by_day[k] = fc.rest_by_day.get(k, 0.0) + v
+            fc.details["kuehlen_rest"] = cool.rest
         return base_vals, max(used - heat_used, 0.0), fc
     samples = [Sample(v, 1.0, daily[k].degree_days or 0.0, daily[k].outdoor_temperature)
                for k, v in main_vals.items() if v is not None and first <= k < today and k in daily and daily[k].degree_days is not None]
     model = fit_heat_model(samples, baseload=True, indoor=False)
     res.power_heat_model, res.samples = model, samples
+    if any((daily[k].cooling_degree_days or 0.0) > 0 for k in daily if spec.start_date <= k < known_day):
+        res.flags.append("kuehlen_nicht_getrennt")  # ohne eigene Messung wird Kühlen nicht geschätzt (Regel 10)
     k_dd = model.heat_coefficient or 0.0
     if not model.usable or k_dd <= 0:
         res.flags.append("heizstrom_nicht_getrennt")
@@ -492,3 +566,40 @@ def indoor_split(daily: Mapping[date, DailyConsumption], model: HeatModel, start
     room = delta_t * model.indoor_pct_per_k
     return {"gesamt_pct": round(total, 1), "raumtemperatur_pct": round(room, 1), "verhalten_pct": round(total - room, 1),
             "innen_aenderung_k": round(delta_t, 2), "tage": len(t1)}
+
+
+MIN_CDD_FOR_COOLING = 20.0
+MIN_COOLING_DAYS = 10
+
+
+def cooling_forecast(meas: Mapping[date, float | None], daily: Mapping[date, DailyConsumption], known_day: date,
+                     end: date, today: date) -> Forecast | None:
+    """Kühlen am Hausstrom mit eigener Messung (1.2): Kennwert = Energie an Kühltagen (Kühlgradtage > 0, keine Heizgradtage)
+    ÷ Kühlgradtage der letzten 365 Tage, mindestens 20 Kd an 10 Tagen. Rest = Kennwert × erwartete Kühlgradtage
+    (Mittel gleicher Kalendertage der Vorjahre). Grundlast der Messung steckt schon im Heiz-Rest."""
+    from .forecast import expected_degree_days  # noqa: PLC0415
+
+    first = today - timedelta(days=365)
+    e = cdd = 0.0
+    n = 0
+    base_days = [v for k, v in meas.items() if v is not None and first <= k < today and k in daily
+                 and (daily[k].cooling_degree_days or 0.0) == 0 and (daily[k].degree_days or 0.0) == 0]
+    base = sorted(base_days)[len(base_days) // 2] if base_days else 0.0  # Median der Tage ohne Heizen und Kühlen
+    for k, v in meas.items():
+        d = daily.get(k)
+        if v is None or d is None or not (first <= k < today) or not (d.cooling_degree_days or 0.0) > 0 or (d.degree_days or 0.0) > 0:
+            continue
+        e += max(v - base, 0.0)
+        cdd += d.cooling_degree_days
+        n += 1
+    if cdd < MIN_CDD_FOR_COOLING or n < MIN_COOLING_DAYS:
+        return None
+    k_cool = e / cdd
+    days = [known_day + timedelta(days=i) for i in range((end - known_day).days + 1)]
+    exp, src, _ = expected_degree_days({k: v.cooling_degree_days for k, v in daily.items()}, days)
+    rest_by_day = {d: k_cool * (v or 0.0) for d, v in exp.items()}
+    rest = sum(rest_by_day.values())
+    return Forecast(rest=round(rest, 4), rest_by_day=rest_by_day, quality=ModelQuality.PRELIMINARY, method="kuehlgradtage",
+                    details={"kuehlkennwert": round(k_cool, 3), "kuehltage": n, "kuehlgradtage": round(cdd, 1), "kuehlen_rest": round(rest, 2),
+                             "quelle": src})
+

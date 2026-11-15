@@ -1,5 +1,5 @@
 /* Testdaten für die Testseiten: nachgebautes hass-Objekt und Szenarien. Wird vor ../custom_components/tarif_cockpit/frontend/tarif-cockpit.js geladen.
-   URL-Parameter: scene (haus, miete, wasser, nachzahlung, ohne, leer, en, integration, lernt, heizung, waermepumpe, impulse, archiv, rechnung, fernwaerme), user (kein Admin), theme, shot (ohne Knopfleiste), narrow */
+   URL-Parameter: scene (haus, miete, wasser, nachzahlung, ohne, leer, en, integration, lernt, heizung, waermepumpe, impulse, archiv, rechnung, dynamisch, fernwaerme), user (kein Admin), theme, shot (ohne Knopfleiste), narrow */
 (() => {
   // Platzhalter für HA-Elemente
   if (!customElements.get('ha-icon')) customElements.define('ha-icon', class extends HTMLElement { connectedCallback() { this.textContent = '●'; this.style.fontSize = '10px'; } });
@@ -275,6 +275,29 @@
         verhaeltnis: 2.64, einordnung: 'ueberdimensioniert', taktgrenze_c: 3.6, takttage_anteil: 0.58, heiztage: 214, gemessen_max_kw: null, normaussentemperatur: -12 }),
     }),
   });
+  // ---- 1.2: Zeitfenster, Vergleich dynamisch, Leckage, Tagesprofil
+  const prof = (base, peak) => Array.from({ length: 24 }, (_, h) => +(base + (h >= 7 && h <= 9 ? peak : 0) + (h >= 17 && h <= 21 ? peak * 1.4 : 0)).toFixed(3));
+  const cmpDays = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date(2026, 9, 15 + i);
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return [iso, +(4.1 + (i % 7 === 5 ? 1.2 : 0)).toFixed(2), +(3.8 + (i % 7 === 5 ? 0.9 : 0) + (i % 4) * 0.12).toFixed(2)];
+  });
+  HEAT_SCENES.dynamisch = Object.assign({}, HEAT_SCENES.rechnung, {
+    meta: () => {
+      const m = HEAT_SCENES.rechnung.meta();
+      Object.assign(m.haushalte[0].zaehler[0].sensoren, { zeitfenster: sid('strom', 'zeitfenster'), vergleich_dynamisch: sid('strom', 'vergleich_dynamisch'),
+        leckage: 'binary_sensor.strom_leckage' });
+      return m;
+    },
+    seriesBy: { m1: { zaehler_id: 'm1', streuung: null, kosten: null, profil: { werktag: prof(0.32, 0.6), wochenende: prof(0.38, 0.45), tage: { werktag: 21, wochenende: 9 } },
+      fenster: { HT: 1650.2, standard: 1012.4 },
+      vergleich: { tage: 30, tage_gesamt: 30, kosten_tatsaechlich: 124.3, kosten_dynamisch: 115.6, differenz: 8.7, mittelpreis_dynamisch: 0.2734, tage_kosten: cmpDays } } },
+    states: Object.assign({}, HEAT_SCENES.rechnung.states, {
+      [sid('strom', 'zeitfenster')]: S(62, '%', 'Zeitfenster', { fenster: { HT: { menge: 1650.2, anteil_pct: 62 }, standard: { menge: 1012.4, anteil_pct: 38 } } }),
+      [sid('strom', 'vergleich_dynamisch')]: S(8.7, 'EUR', 'Vergleich dynamisch', Object.assign({ tage: 30, differenz: 8.7 }, EUR)),
+      'binary_sensor.strom_leckage': S('on', '', 'Leckage', { nachtminimum_l_h: 7.5, verdacht: true }),
+    }),
+  });
   const heatHass = (key) => (hass) => {
     const sc = HEAT_SCENES[key];
     integHass(false)(hass);
@@ -282,7 +305,7 @@
     const meta = sc.meta();
     hass.callWS = async (m) => {
       if (m.type === 'tarif_cockpit/zaehler') return strip(meta);
-      if (m.type === 'tarif_cockpit/reihen') return strip(sc.series);
+      if (m.type === 'tarif_cockpit/reihen') return strip(sc.seriesBy && sc.seriesBy[m.zaehler] ? sc.seriesBy[m.zaehler] : sc.series);
       if (m.type === 'tarif_cockpit/archiv') { if (sc.archive) return strip(sc.archive); throw new Error('not_found'); }
       return monthly(m);
     };
@@ -308,6 +331,7 @@
     impulse: { name: 'Gas mit Impulszähler: Abgleich, Gasleistung, Brenner', states: {}, hook: heatHass('impulse'), overview: { integration: true }, analyse: { integration: true } },
     archiv: { name: 'Prognose gegen Realität (Archiv), Band kalt/warm, Kündigungsfrist', states: {}, hook: heatHass('archiv'), overview: { integration: true }, analyse: { integration: true } },
     rechnung: { name: 'Rechnung gegen Integration, Prognosegüte, Heizlast (1.1)', states: {}, hook: heatHass('rechnung'), overview: { integration: true }, analyse: { integration: true } },
+    dynamisch: { name: 'Zeitfenster, Vergleich dynamisch, Leckage, Tagesprofil (1.2)', states: {}, hook: heatHass('dynamisch'), overview: { integration: true }, analyse: { integration: true } },
     fernwaerme: { name: 'Fernwärme in MWh', states: {}, hook: heatHass('fernwaerme'), overview: { integration: true }, analyse: { integration: true } },
     en: { name: 'Englische Oberfläche', states: {}, lang: 'en', overview: Object.assign({}, legacy, { analysis: undefined, title: 'Tariffs and billing' }), analyse: Object.assign({}, analysis, { title: 'Gas, weather-adjusted', explain: undefined }) },
   };

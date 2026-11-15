@@ -111,6 +111,7 @@ class Household:
     # Antworten des Fragen-Assistenten: heating, hot_water, extras, tenure, rhythm (Abschnitt 1a)
     situation: dict[str, Any] = field(default_factory=dict)
     design_temp: float = -12.0  # Normaußentemperatur für die Heizlast (1.1), je nach Region etwa −10 … −16 °C
+    cooling_limit: float = 22.0  # Kühlgrenze für Kühlgradtage (1.2): Tagesmittel darüber zählt als Kühltag
 
 
 @dataclass(slots=True)
@@ -140,6 +141,17 @@ class IntervalSource:
 
 
 @dataclass(slots=True)
+class DynamicPrice:
+    """Preis je Viertelstunde aus einer Entität (1.2): z. B. EPEX- oder Tibber-Sensor. ``markup`` in Euro je kWh (brutto)
+    kommt dazu (Netzentgelt, Steuern, Marge). ``attribute``: Liste mit Start und Preis; sonst der Zustand."""
+
+    entity: str
+    markup: float = 0.0
+    attribute: str | None = None
+    net: bool = False  # Preis der Entität ohne MwSt. (z. B. EPEX Market Price); der Aufschlag gilt wie die Preise des Vertrags
+
+
+@dataclass(slots=True)
 class Meter:
     meter_id: str
     medium: Medium
@@ -158,6 +170,9 @@ class Meter:
     role: str = "main"
     parent_meter_id: str | None = None  # bei wallbox/garden: der Hauptzähler
     annual_consumption: float | None = None  # Jahresverbrauch laut letzter Rechnung (Rückfallebene der Prognose)
+    comparison: DynamicPrice | None = None  # Vergleichstarif „dynamisch“ (1.2)
+    comparison_base_price: float | None = None  # Grundpreis des Vergleichstarifs je Monat
+    leak_threshold_lph: float | None = None  # Wasser: Leckage-Schwelle in Litern je Stunde (Standard 5)
 
 
 @dataclass(slots=True)
@@ -225,6 +240,8 @@ class DailyConsumption:
     burner_starts: int | None = None  # Brennerstarts (Gas mit Impulsen)
     cycling: bool | None = None  # Brenner taktet (Heizlast unter der kleinsten Modulationsstufe)
     mean_power_kw: float | None = None  # mittlere Brennerleistung während der Laufzeit (Gas mit Impulsen, ab 1.1)
+    hourly: list[float | None] | None = None  # Verbrauch je lokaler Stunde (23/24/25 Werte), Zählereinheit (1.2)
+    cooling_degree_days: float | None = None  # Kühlgradtage (1.2)
 
 
 @dataclass(slots=True)
@@ -286,6 +303,21 @@ class Rounding:
 
 
 @dataclass(slots=True)
+class PriceWindow:
+    """Zeitfenster eines Preisabschnitts (1.2): HT/NT (``work_price`` absolut) oder § 14a Modul 3 (``delta`` auf den
+    Arbeitspreis). Gilt an ``weekdays`` (0 = Montag) von ``start`` bis ``end`` (lokal, „HH:MM“, über Mitternacht erlaubt),
+    optional nur in ``months``."""
+
+    name: str
+    start: str = "00:00"
+    end: str = "24:00"
+    weekdays: list[int] = field(default_factory=lambda: [0, 1, 2, 3, 4, 5, 6])
+    months: list[int] = field(default_factory=list)
+    work_price: float | None = None
+    delta: float | None = None
+
+
+@dataclass(slots=True)
 class PriceSegment:
     contract_id: str
     valid_from: date
@@ -303,6 +335,9 @@ class PriceSegment:
     tiers: list[PriceTier] = field(default_factory=list)  # Staffel (1.1); leer = einheitlicher Arbeitspreis
     tier_mode: str = "block"  # block: jede Stufe zum eigenen Preis | total: ganze Menge zum Preis der erreichten Stufe
     rounding: Rounding | None = None
+    windows: list[PriceWindow] = field(default_factory=list)  # Zeitfenster (1.2)
+    rebate_yearly: float | None = None  # § 14a Modul 1: pauschale Netzentgeltreduzierung je Jahr (1.2)
+    dynamic: DynamicPrice | None = None  # dynamischer Tarif (1.2)
 
 
 @dataclass(slots=True)
@@ -399,6 +434,19 @@ class IntervalConsumption:
 
 
 @dataclass(slots=True)
+class DayIntervals:
+    """Viertelstunden eines Tages (1.2): Verbrauch (``kind`` energy, ``key`` = Zähler) oder Preis in Euro je kWh
+    (``kind`` price, ``key`` = Preis-Entität). ``source``: 5minute | hour | attribute | history | statistics."""
+
+    key: str
+    date: _Date
+    kind: str = "energy"
+    minutes: int = 15
+    values: list[float | None] = field(default_factory=list)
+    source: str = "5minute"
+
+
+@dataclass(slots=True)
 class SensorReset:
     """Neustart eines Impulszählers (Stand fiel auf 0): ab ``at`` zählt der Sensor ab ``prev_raw`` weiter (Einheit)."""
 
@@ -441,6 +489,8 @@ class Dataset:
     sensor_last_raw: dict[str, float] = field(default_factory=dict)  # letzter Rohstand je Impulszähler (Einheit)
     notices_sent: list[str] = field(default_factory=list)  # gesendete Kündigungs-Events „zähler:frist:tage“ (1.0)
     calibrations: list[Calibration] = field(default_factory=list)  # übernommene Rechnungs-Vorschläge (1.1)
+    day_intervals: list[DayIntervals] = field(default_factory=list)  # Viertelstunden Verbrauch und Preise (1.2)
+    leaks_notified: list[str] = field(default_factory=list)  # gemeldete Leckage-Verdachte „zähler:datum“ (1.2)
     # Zähler, deren Startdaten aus der Einrichtung schon übernommen wurden
     imported_meters: list[str] = field(default_factory=list)
     # Zähler, deren Tageswerte nach dem Update auf 0.6 einmal neu aus der Statistik geholt wurden (Zählerstand am Tagesende)

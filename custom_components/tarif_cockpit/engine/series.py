@@ -73,7 +73,7 @@ def cost_curve(res: MeterResult, meter: Meter, prices: list[PriceSegment], tz: t
     def chunk_cost(quantities: dict[date, float], first: date, last: date, billing_unit: bool) -> float:
         q = {k: v for k, v in quantities.items() if first <= k <= last}
         cb = calculate_costs(contract, prices, meter, q, day_bounds(first, tz)[0], day_bounds(last, tz)[1], tz,
-                             quantities_are_billing_unit=billing_unit, wastewater=q if ww_flag else None)
+                             quantities_are_billing_unit=billing_unit, wastewater=q if ww_flag else None, **res.slot_kw)
         return cb.gross
 
     ist: list[list] = []

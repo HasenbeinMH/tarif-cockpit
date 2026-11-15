@@ -37,7 +37,9 @@ Eine Integration für Home Assistant, die Zähler, Verträge, Abrechnungsperiode
 | Wasser | Frisch- und Abwasser mit eigenen Preisen, Grundgebühren, Gartenwasser-Abzug, Niederschlagswasser als fester Betrag |
 | Daten | Zählerstand-Sensor, Impulszähler, nur Ablesungen von Hand |
 | Preise | Arbeits- und Grundpreis mit Gültigkeit, Staffel (block oder Gesamtmenge), Rundung (Tage je Jahr, Grundpreis je Monat, Menge und Cent je Position) |
-| Noch nicht | HT/NT, dynamischer Tarif, § 14a zeitvariabel, Kühlgradtage, Leckage (geplant in 1.2); Öl und Pellets, Mieter mit Heizkostenverteiler (geplant in 1.3) |
+| Zeitfenster (1.2) | HT/NT, § 14a Modul 1 (Pauschale), Modul 2 (eigener Zähler), Modul 3 (zeitvariable Netzentgelte), dynamischer Tarif mit eigener Viertelstunden-Abrechnung (Preis-Entität wie EPEX oder Tibber), Vergleich „Was hätte ein dynamischer Tarif gekostet?“ |
+| Weitere Auswertung (1.2) | Tagesprofil aus Stundenwerten, Kühlgradtage für Klimageräte, Leckage-Erkennung Wasser (Nachtminimum, Dauerfluss) |
+| Noch nicht | Öl und Pellets, Mieter mit Heizkostenverteiler (geplant in 1.3) |
 
 Fehlt etwas, gibt es eine Rückfallebene statt einer falschen Zahl: ohne Vorjahr der Jahresverbrauch laut Rechnung, ohne Sensor die Ablesungen, ohne belastbaren Kennwert keine Wärmeprognose (fehlend ist nie 0).
 
@@ -92,6 +94,8 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 | Entlastung | kWh, die der Gas-/Fernwärmezähler dadurch weniger braucht; leer, bis sie gelernt ist (Kaminofen vorher als Annahme, Attribut `qualitaet`) |
 | Betriebsstunden, Betriebstage | aus der Betriebszustand-Entität bzw. beim Kaminofen aus dem Temperaturanstieg; ein Tag zählt ab 1 h |
 | Holz (geschätzt), Holzkosten (geschätzt) | nur Kaminofen |
+| Zeitfenster, Mittlerer Strompreis, Vergleich dynamischer Tarif (1.2) | je nach Einrichtung: Anteil des ersten Fensters (Attribut `fenster` mit Menge und Anteil je Fenster), mittlerer Arbeitspreis beim dynamischen Tarif, Differenz zum dynamischen Tarif (positiv = dynamisch günstiger; Attribute Kosten, Tage, Hochrechnung) |
+| Leckage-Verdacht (1.2) | binärer Sensor je Wasserzähler mit Sensor; Attribute `art`, `tage`, `nachtminimum_l_h` |
 | Heizlast (1.1) | Gaskessel und Fernwärme: Heizlast bei Normaußentemperatur (kW, Diagnose); Attribute `nennleistung_kw`, `verhaeltnis`, `einordnung`, `taktgrenze_c`, `takttage_anteil`, `qualitaet` |
 
 **Aktionen** (Entwicklerwerkzeuge → Aktionen, oder in Automationen). Alle Aktionen ändern Daten und dürfen deshalb nur von Administratoren aufgerufen werden; Automationen und Skripte sind davon nicht betroffen.
@@ -102,7 +106,7 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 | `tarif_cockpit.add_folgevertrag` | Anbieterwechsel: alter Vertrag endet am Vortag (Schlussperiode), neuer Vertrag mit eigener Abrechnungsregel; optional `wechselstand`, `mindestlaufzeit` (Monate), `kuendigungsfrist` (Wochen). Ein Wechsel in eine bereits beendete Periode wird abgelehnt. |
 | `tarif_cockpit.set_periodenende` | Der Versorger hat ein paar Tage früher oder später abgelesen: Ende der laufenden oder zuletzt beendeten Periode verschieben (±10 Tage). |
 | `tarif_cockpit.add_periode` | Nur bei Abrechnung „von Hand“: nächste Periode anhängen. |
-| `tarif_cockpit.set_preis` | Preisänderung ab einem Datum; Arbeitspreis hier in **Euro** je kWh (z. B. 0,3154), in den Dialogen in Cent (Arbeits-, Grund-, Messpreis, Brennwert/Zustandszahl, Abwasser, feste Jahresbeträge, Fernwärme-Leistungspreis). Ab 1.1 `staffel`, `staffel_art`, `rundung_tage`, `rundung_grundpreis`, `rundung_menge_stellen`, `rundung_betrag_stellen`. Die Verbrauchsprognose bleibt unverändert. |
+| `tarif_cockpit.set_preis` | Preisänderung ab einem Datum; Arbeitspreis hier in **Euro** je kWh (z. B. 0,3154), in den Dialogen in Cent (Arbeits-, Grund-, Messpreis, Brennwert/Zustandszahl, Abwasser, feste Jahresbeträge, Fernwärme-Leistungspreis). Ab 1.1 `staffel`, `staffel_art`, `rundung_tage`, `rundung_grundpreis`, `rundung_menge_stellen`, `rundung_betrag_stellen`; ab 1.2 `fenster`, `pauschale_14a`, `dynamisch_entitaet`, `dynamisch_aufschlag`. Die Verbrauchsprognose bleibt unverändert. |
 | `tarif_cockpit.set_abschlag` | Neuer Abschlag ab einem Datum, optional Zahltag, Rhythmus (1/2/3 Monate) und Anzahl je Periode (z. B. 11). |
 | `tarif_cockpit.add_zahlung` | Zahlung erfassen: Abschlag (ersetzt den geplanten im selben Monat), Einmalzahlung, Gutschrift, Schlusszahlung, Erstattung; bezahlt, geplant oder storniert. |
 | `tarif_cockpit.add_rechnung` | Rechnung des Versorgers erfassen (getrennt von Zahlungen), auch als Korrektur einer früheren Rechnung. Ab 1.1 optional `menge`, `menge_kwh`, `stand_anfang`, `stand_ende` (werden Ablesungen), `staende_geschaetzt`, `brennwert`, `zustandszahl`, `arbeitspreis_kosten`, `grundpreis_kosten`, `abschlaege_bezahlt`; auch vor dem Vertragsbeginn. Antwort mit `vergleich`. |
@@ -114,6 +118,7 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 |---|---|---|
 | `tarif_cockpit_urteil_geaendert` | das Urteil eines Zählers wechselt innerhalb derselben Periode (nicht beim Start) | `zaehler`, `device_id`, `name`, `alt`, `neu`, `saldo`, `prognose_kosten`, `qualitaet`, `abschlag_empfohlen` |
 | `tarif_cockpit_kuendigungsfrist` | 28 Tage vor dem letzten Kündigungstag und an diesem Tag, je Frist nur einmal | `zaehler`, `device_id`, `name`, `lieferant`, `kuendigen_bis`, `vertragsende`, `tage` |
+| `tarif_cockpit_leckage` | Leckage-Verdacht an einem Wasserzähler (je Verdacht einmal, 1.2) | `zaehler`, `device_id`, `name`, `verdacht`, `art`, `tage`, `nachtminimum_l_h` |
 | `tarif_cockpit_rechnung_abweichung` | eine Rechnung weicht von den eigenen Daten ab (je Rechnung einmal, 1.1) | `zaehler`, `device_id`, `name`, `rechnung`, `von`, `bis`, `abweichung_pct`, `vorschlaege`, `hinweise` |
 
 Ab 28 Tagen vor dem letzten Kündigungstag steht zusätzlich ein Hinweis unter Einstellungen → Reparaturen. Mindestlaufzeit und Kündigungsfrist trägst du im Vertragsschritt ein oder später am Zähler unter **Neu konfigurieren → Vertrag ändern**.

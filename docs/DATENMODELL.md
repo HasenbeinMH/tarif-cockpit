@@ -21,7 +21,7 @@ Der erste Vertrag und der Startstand stehen nur einmal in der Einrichtung. Beim 
 - Ein Anbieterwechsel ändert am alten Vertrag nur das Ende.
 - Fehlt der Store, nachdem er schon einmal gespeichert wurde, oder ist er beschädigt, startet die Integration **nicht** mit leeren Daten. Unter Reparaturen steht, was zu tun ist (Sicherung zurückspielen). Home Assistant benennt eine beschädigte Datei in `….corrupt.<Zeit>` um, der Inhalt bleibt also erhalten.
 - Ist der Inhalt ungültig (z. B. Text statt Zahl), wird nichts gespeichert, bis das Problem behoben ist.
-- Der Store hat eine Versionsnummer (aktuell 1.5) und Migrationen; Daten werden dabei nur ergänzt (1.4: Tageswerte einmal neu aus der Statistik; 1.5: Rechnungen bekommen ihren Zähler, neue Liste der Kalibrierungen). Stammt die Datei von einer neueren Version, bleibt sie unverändert und die Integration meldet sich unter Reparaturen.
+- Der Store hat eine Versionsnummer (aktuell 1.5) und Migrationen; Daten werden dabei nur ergänzt (1.4: Tageswerte einmal neu aus der Statistik; 1.5: Rechnungen bekommen ihren Zähler, neue Liste der Kalibrierungen; 1.6: Stundenwerte, Viertelstunden, gemeldete Leckagen). Stammt die Datei von einer neueren Version, bleibt sie unverändert und die Integration meldet sich unter Reparaturen.
 - Wird der Eintrag „Tarif-Cockpit“ gelöscht, bleibt die Datei unter `.storage` erhalten.
 
 ## Objekte
@@ -30,12 +30,13 @@ Der erste Vertrag und der Startstand stehen nur einmal in der Einrichtung. Beim 
 |---|---|
 | Zähler | `medium` (strom, gas, wasser, fernwaerme), `entity` (oder keiner: nur Ablesungen), `unit`, `conversion` (Brennwert, Zustandszahl), `replacements` (Zählertausch: alter Endstand, neuer Startstand), `history_entity` (Ersatzquelle für fehlende Historie), `role` (main, wallbox, garden) mit `parent_meter_id`, `annual_consumption` (Jahresverbrauch laut Rechnung), `interval` (vorbereitet für dynamische Tarife) |
 | Ablesung | Zeitpunkt, Stand, `quality`, `source` (initial, manual, switch, import, entity, invoice), Notiz, `superseded_by` |
-| Tageswert | Datum, Verbrauch (Zählereinheit), Zählerstand am Tagesende (`end_value`), Gradtage, Außen- und Innentemperatur, `quality`, `quality_flags` |
+| Tageswert | Datum, Verbrauch (Zählereinheit), Zählerstand am Tagesende (`end_value`), Gradtage, Außen- und Innentemperatur, `quality`, `quality_flags`; ab 1.2 `hourly` (Verbrauch je Stunde, 400 Tage) und `cooling_degree_days` |
 | Vertrag | Lieferant, Tarif, Beginn, Ende, `billing_rule`, `fixed_day`, brutto/netto, MwSt. |
 | Abrechnungsperiode | Beginn, Ende, `status` (open, closing, closed), `is_partial` (Rumpfjahr), `is_final` (Schlussrechnung), Archiv |
-| Preisabschnitt | gültig ab/bis, Arbeits-, Grund-, Messpreis, Brennwert/Zustandszahl (Gas), Abwasserpreis, feste Jahresbeträge, Leistungspreis und Anschlussleistung (Fernwärme); ab 1.1 `tiers` (Staffel: bis, Arbeitspreis), `tier_mode` (block, total), `rounding` (Tage je Jahr, Grundpreis je Tag/Monat, Stellen von Menge und Betrag) |
+| Preisabschnitt | gültig ab/bis, Arbeits-, Grund-, Messpreis, Brennwert/Zustandszahl (Gas), Abwasserpreis, feste Jahresbeträge, Leistungspreis und Anschlussleistung (Fernwärme); ab 1.1 `tiers` (Staffel: bis, Arbeitspreis), `tier_mode` (block, total), `rounding` (Tage je Jahr, Grundpreis je Tag/Monat, Stellen von Menge und Betrag); ab 1.2 `windows` (Name, von, bis, Wochentage, Monate, Preis oder Zu-/Abschlag), `rebate_yearly` (§ 14a Modul 1), `dynamic` (Preis-Entität, Aufschlag) |
 | Abschlagsplan | Stufen (ab Datum, Betrag), Zahltag, Rhythmus, Höchstzahl je Periode |
 | Zahlung, Rechnung | getrennt: Zahlung (Abschlag, Einmalzahlung, Gutschrift, Schlusszahlung, Erstattung; bezahlt, geplant, storniert), Rechnung (Zeitraum, Betrag, Korrektur; ab 1.1 Zähler, Vertrag optional, Menge, kWh, Anfangs-/Endstand, Brennwert, Zustandszahl, Kosten Arbeits- und Grundpreis, gezahlte Abschläge) |
+| Viertelstunden (1.2) | `DayIntervals`: Schlüssel (Zähler oder Preis-Entität), Tag, Art (energy, price), Werte je Viertelstunde, Quelle; 400 Tage |
 | Kalibrierung (1.1) | übernommener Vorschlag aus einem Rechnungsvergleich: Zähler, Art (brennwert, zustandszahl, faktor_ersatzquelle), Wert, Rechnung, gültig von/bis, übernommen am |
 | Prognose-Schnappschuss | Periode, Zeitpunkt, Prognose kWh und €, empfohlener Abschlag, Qualität |
 

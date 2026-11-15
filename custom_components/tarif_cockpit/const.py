@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 DOMAIN: Final = "tarif_cockpit"
-VERSION: Final = "1.1.1"
+VERSION: Final = "1.2.0"
 
 SUBENTRY_METER: Final = "zaehler"
 SUBENTRY_SUBMETER: Final = "unterzaehler"  # Wallbox, Gartenwasser (1.0.2)
@@ -26,7 +26,7 @@ CONF_GENERATOR: Final = "generator"
 
 # Store
 STORAGE_VERSION: Final = 1
-STORAGE_MINOR_VERSION: Final = 5
+STORAGE_MINOR_VERSION: Final = 6
 STORAGE_SAVE_DELAY: Final = 10
 
 # Frontend
@@ -48,6 +48,7 @@ ISSUE_STORE_TOO_NEW: Final = "store_zu_neu"
 ISSUE_OLD_RESOURCE: Final = "alte_dashboard_installation"
 ISSUE_NO_STATISTICS: Final = "zaehler_ohne_statistik"
 ISSUE_INVOICE: Final = "rechnung_abweichung"  # 1.1, je Rechnung, mit Knopf „Übernehmen“
+ISSUE_LEAK: Final = "leckage"  # 1.2, je Wasserzähler
 ISSUE_RECONCILE: Final = "abgleich_abweichung"
 ISSUE_NOTICE: Final = "kuendigungsfrist"
 
@@ -55,6 +56,7 @@ ISSUE_NOTICE: Final = "kuendigungsfrist"
 EVENT_VERDICT: Final = "tarif_cockpit_urteil_geaendert"
 EVENT_NOTICE: Final = "tarif_cockpit_kuendigungsfrist"
 EVENT_INVOICE: Final = f"{DOMAIN}_rechnung_abweichung"  # 1.1
+EVENT_LEAK: Final = f"{DOMAIN}_leckage"  # 1.2
 NOTICE_WARN_DAYS: Final = 28
 
 

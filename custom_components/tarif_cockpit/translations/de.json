@@ -22,13 +22,15 @@
           "rooms": "Raumtemperaturen",
           "heating_limit": "Heizgrenze",
           "indoor_ref": "Innentemperatur für Gradtage",
-          "design_temp": "Normaußentemperatur"
+          "design_temp": "Normaußentemperatur",
+          "cooling_limit": "Kühlgrenze"
         },
         "data_description": {
           "outdoor_temp_entity": "Für Gradtage und den gelernten Kennwert. Ohne Außentemperatur gibt es keine Heizprognose.",
           "heating_limit": "Tage mit einem Tagesmittel darunter zählen als Heiztage (üblich 15 °C).",
           "indoor_ref": "Üblich 20 °C (Gradtagzahl G20/15).",
-          "design_temp": "Für die Heizlast: kälteste Auslegungstemperatur deiner Region (Deutschland etwa −10 bis −16 °C, oft −12 °C)."
+          "design_temp": "Für die Heizlast: kälteste Auslegungstemperatur deiner Region (Deutschland etwa −10 bis −16 °C, oft −12 °C).",
+          "cooling_limit": "Kühlgradtage für Klimageräte: Tage mit einem Tagesmittel darüber zählen als Kühltage (Standard 22 °C)."
         }
       },
       "abschluss": {
@@ -112,7 +114,8 @@
             "demand_price": "Leistungspreis je kW und Jahr",
             "demand_kw": "Anschlussleistung",
             "price_unit": "Arbeitspreis je",
-            "tiers_rounding": "Staffel oder Rundung festlegen"
+            "tiers_rounding": "Staffel oder Rundung festlegen",
+            "windows_14a": "Zeitfenster, § 14a oder dynamischer Preis"
           },
           "data_description": {
             "price_unit": "Fernwärme wird oft je MWh abgerechnet; gerechnet wird intern je kWh.",
@@ -169,10 +172,19 @@
             "calorific": "Brennwert",
             "z_factor": "Zustandszahl",
             "pulse_constant": "Impulskonstante",
-            "pulse_mode": "Angabe als"
+            "pulse_mode": "Angabe als",
+            "comparison_net": "Vergleich dynamisch: Preis ohne MwSt.",
+            "comparison_entity": "Vergleich dynamisch: Preis-Entität",
+            "comparison_markup": "Vergleich dynamisch: Aufschlag",
+            "comparison_base": "Vergleich dynamisch: Grundpreis",
+            "leak_threshold": "Leckage-Schwelle"
           },
           "data_description": {
-            "pulse_constant": "Steht auf dem Zähler, z. B. „1 Imp = 0,01 m³“ (dann 0,01 und „Einheit je Impuls“) oder „100 Imp/m³“."
+            "pulse_constant": "Steht auf dem Zähler, z. B. „1 Imp = 0,01 m³“ (dann 0,01 und „Einheit je Impuls“) oder „100 Imp/m³“.",
+            "comparison_net": "An bei EPEX Market Price (netto). Der Aufschlag gilt brutto.",
+            "comparison_entity": "Börsenpreis je Viertelstunde (z. B. EPEX Spot Market Price). Die Integration rechnet mit, was dein Verbrauch damit gekostet hätte.",
+            "comparison_markup": "Netzentgelt, Steuern und Marge des Angebots, brutto in ct/kWh.",
+            "leak_threshold": "Kleinster Verbrauch nachts (1–5 Uhr), ab dem drei Nächte hintereinander als Leckage gelten. Standard 5 L/h."
           }
         },
         "reconfigure": {
@@ -206,11 +218,13 @@
             "demand_price": "Leistungspreis je kW und Jahr",
             "demand_kw": "Anschlussleistung",
             "price_unit": "Arbeitspreis je",
-            "tiers_rounding": "Staffel oder Rundung festlegen"
+            "tiers_rounding": "Staffel oder Rundung festlegen",
+            "windows_14a": "Zeitfenster, § 14a oder dynamischer Preis"
           },
           "data_description": {
             "work_price": "In Cent je kWh wie auf Vertrag und Rechnung, z. B. 31,54. Wasser in Euro je m³, Fernwärme je MWh in Euro.",
-            "tiers_rounding": "Nur nötig, wenn der Versorger nach Mengenstufen abrechnet oder anders rundet. Ohne Haken bleibt die Rundung des laufenden Preises; hat er eine Staffel, folgt der Schritt immer."
+            "tiers_rounding": "Nur nötig, wenn der Versorger nach Mengenstufen abrechnet oder anders rundet. Ohne Haken bleibt die Rundung des laufenden Preises; hat er eine Staffel, folgt der Schritt immer.",
+            "windows_14a": "HT/NT, dynamischer Tarif (Börsenpreis je Viertelstunde) oder § 14a (Pauschale, zeitvariable Netzentgelte). Hat der laufende Preis schon so etwas, folgt der Schritt immer."
           }
         },
         "abschlag_aendern": {
@@ -336,6 +350,33 @@
             "quantity_decimals": "0 = ganze kWh bzw. m³. Leer = nicht runden.",
             "money_decimals": "2 = je Position auf Cent. Leer = nicht runden."
           }
+        },
+        "zeitfenster": {
+          "title": "Zeitfenster, § 14a, dynamisch",
+          "description": "HT/NT: Der Arbeitspreis von vorher gilt als NT, hier der HT-Preis und seine Zeit. Dynamisch: Preis-Entität (z. B. EPEX Spot) und Aufschlag (Netzentgelt, Steuern, Marge). § 14a Modul 1: Pauschale je Jahr. Modul 3: Zu- bzw. Abschlag in bestimmten Zeiten und Quartalen. Modul 2 (eigener Zähler) legst du als eigenen Zähler mit eigenem Vertrag an.",
+          "data": {
+            "mode": "Arbeitspreis",
+            "ht_price": "HT-Preis",
+            "ht_start": "HT von (HH:MM)",
+            "ht_end": "HT bis (HH:MM)",
+            "ht_days": "HT an",
+            "dyn_entity": "Preis-Entität",
+            "dyn_markup": "Aufschlag",
+            "rebate_14a": "§ 14a Modul 1: Pauschale",
+            "m3_nt_start": "Modul 3 Niedertarif von",
+            "m3_nt_end": "Modul 3 Niedertarif bis",
+            "m3_nt_delta": "Modul 3 Niedertarif Abschlag (negativ)",
+            "m3_ht_start": "Modul 3 Hochtarif von",
+            "m3_ht_end": "Modul 3 Hochtarif bis",
+            "m3_ht_delta": "Modul 3 Hochtarif Zuschlag",
+            "m3_quarters": "Modul 3 in den Quartalen",
+            "dyn_net": "Preis der Entität ohne MwSt."
+          },
+          "data_description": {
+            "dyn_markup": "Was zum Börsenpreis dazukommt, brutto in ct/kWh. Enthält die Entität schon alles, 0.",
+            "rebate_14a": "Jährliche Reduzierung des Netzentgelts, wird anteilig abgezogen.",
+            "dyn_net": "An bei Börsenpreisen wie EPEX Market Price (netto); dann kommt die MwSt. dazu. Aus bei Endpreisen inkl. MwSt."
+          }
         }
       },
       "error": {
@@ -353,7 +394,11 @@
         "work_price_cents": "Der Arbeitspreis wird in Cent je kWh eingegeben: 31,54 statt 0,3154.",
         "period_order": "„Zeitraum bis“ liegt vor „Zeitraum von“.",
         "tiers_order": "Die Stufen müssen aufsteigen (Stufe 2 bis über Stufe 1 bis).",
-        "tier_incomplete": "Je Stufe Menge und Preis angeben; „darüber“ nur mit mindestens einer Stufe."
+        "tier_incomplete": "Je Stufe Menge und Preis angeben; „darüber“ nur mit mindestens einer Stufe.",
+        "time_format": "Uhrzeit als HH:MM von 00:00 bis 23:59 (als Ende auch 24:00).",
+        "m3_times_missing": "Für den Zu- bzw. Abschlag bitte von und bis angeben.",
+        "required_for_htnt": "Für HT/NT bitte den HT-Preis angeben.",
+        "required_for_dynamic": "Für den dynamischen Tarif bitte die Preis-Entität wählen."
       },
       "abort": {
         "reconfigure_successful": "Der Zähler wurde geändert.",
@@ -689,6 +734,32 @@
         "day": "Je Tag (Monatspreis × 12 ÷ Tage je Jahr)",
         "month": "Je Monat anteilig nach Tagen des Monats"
       }
+    },
+    "price_mode": {
+      "options": {
+        "keine": "Einheitlich (nur § 14a, falls angegeben)",
+        "htnt": "HT/NT",
+        "dynamisch": "Dynamisch (Börsenpreis)"
+      }
+    },
+    "weekday": {
+      "options": {
+        "0": "Montag",
+        "1": "Dienstag",
+        "2": "Mittwoch",
+        "3": "Donnerstag",
+        "4": "Freitag",
+        "5": "Samstag",
+        "6": "Sonntag"
+      }
+    },
+    "quarter": {
+      "options": {
+        "1": "1. Quartal",
+        "2": "2. Quartal",
+        "3": "3. Quartal",
+        "4": "4. Quartal"
+      }
     }
   },
   "entity": {
@@ -794,6 +865,20 @@
       },
       "heizlast": {
         "name": "Heizlast"
+      },
+      "zeitfenster": {
+        "name": "Zeitfenster"
+      },
+      "mittelpreis": {
+        "name": "Mittlerer Strompreis"
+      },
+      "vergleich_dynamisch": {
+        "name": "Vergleich dynamischer Tarif"
+      }
+    },
+    "binary_sensor": {
+      "leckage": {
+        "name": "Leckage-Verdacht"
       }
     }
   },
@@ -999,6 +1084,22 @@
         "rundung_betrag_stellen": {
           "name": "Beträge runden",
           "description": "Nachkommastellen je Position (2 = Cent)."
+        },
+        "fenster": {
+          "name": "Zeitfenster",
+          "description": "Liste mit name, von, bis (HH:MM), tage (0 = Montag), monate, preis (absolut, €/kWh) oder aufschlag (€/kWh)."
+        },
+        "pauschale_14a": {
+          "name": "§ 14a Pauschale",
+          "description": "Modul 1: Reduzierung je Jahr in Euro."
+        },
+        "dynamisch_entitaet": {
+          "name": "Dynamisch: Preis-Entität",
+          "description": "Sensor mit dem Preis je Viertelstunde."
+        },
+        "dynamisch_aufschlag": {
+          "name": "Dynamisch: Aufschlag",
+          "description": "In Euro je kWh, brutto."
         }
       }
     },
@@ -1243,6 +1344,10 @@
     "rechnung_abweichung_hinweis": {
       "title": "{meter}: Rechnung {von}–{bis} prüfen",
       "description": "Rechnung {von}–{bis}: {menge_rechnung} {einheit}, eigene Daten: {menge_eigen} {einheit} (Abweichung {abweichung} %). Hinweise: {hinweise}. Preise änderst du unter „Preis ändern“ (auch Staffel und Rundung), Ablesungen mit „Ablesung hinzufügen“."
+    },
+    "leckage": {
+      "title": "{meter}: Leckage-Verdacht",
+      "description": "Seit {seit} fließt Wasser auch nachts bzw. ohne Pause (Art: {art}, kleinster Nachtverbrauch {liter} L/h). Bitte Hähne, Spülkästen und Leitungen prüfen. Der Hinweis verschwindet, sobald es wieder Stunden ohne Verbrauch gibt."
     }
   },
   "exceptions": {
@@ -1285,13 +1390,15 @@
           "heating_limit": "Heizgrenze",
           "indoor_ref": "Innentemperatur für Gradtage",
           "tolerance_pct": "Toleranz für „Passt“",
-          "design_temp": "Normaußentemperatur"
+          "design_temp": "Normaußentemperatur",
+          "cooling_limit": "Kühlgrenze"
         },
         "data_description": {
           "outdoor_temp_entity": "Für Gradtage und den gelernten Kennwert. Ohne Außentemperatur gibt es keine Heizprognose.",
           "heating_limit": "Tage mit einem Tagesmittel darunter zählen als Heiztage (üblich 15 °C).",
           "indoor_ref": "Üblich 20 °C (Gradtagzahl G20/15).",
-          "design_temp": "Für die Heizlast: kälteste Auslegungstemperatur deiner Region (Deutschland etwa −10 bis −16 °C, oft −12 °C)."
+          "design_temp": "Für die Heizlast: kälteste Auslegungstemperatur deiner Region (Deutschland etwa −10 bis −16 °C, oft −12 °C).",
+          "cooling_limit": "Kühlgradtage für Klimageräte: Tage mit einem Tagesmittel darüber zählen als Kühltage (Standard 22 °C)."
         }
       }
     }

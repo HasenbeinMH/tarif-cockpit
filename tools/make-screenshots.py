@@ -64,6 +64,10 @@ JOBS = [
     ('analyse.html', 'rechnung-analyse', 'scene=rechnung', 1100, CARD),
     ('analyse.html', 'rechnung-analyse-hell', 'scene=rechnung&theme=hell', 1100, CARD),
     ('analyse.html', 'rechnung-analyse-schmal', 'scene=rechnung&narrow', 420, CARD),
+    # Zeitfenster, Vergleich dynamisch, Leckage, Tagesprofil (1.2)
+    ('overview.html', 'dynamisch-uebersicht', 'scene=dynamisch', 1100, CARD),
+    ('analyse.html', 'dynamisch-analyse', 'scene=dynamisch', 1100, CARD),
+    ('analyse.html', 'dynamisch-analyse-hell', 'scene=dynamisch&theme=hell', 1100, CARD),
 ]
 
 

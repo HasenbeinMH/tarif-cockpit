@@ -115,6 +115,13 @@ def build_series(hass: HomeAssistant, key: str) -> dict[str, Any] | None:
             "streuung": series.scatter(res),
             "kosten": series.cost_curve(res, meter, rt.data.prices, rt.tz, rt.today()),
             "waehrung": hass.config.currency,
+            # 1.2: Tagesprofil (Stundenmittel Werktag/Wochenende, letzte 30 Tage), Zeitfenster, Vergleich dynamisch je Tag
+            "profil": _profile(rt, meter_id),
+            "fenster": {k: round(v, 2) for k, v in (res.window_usage or {}).items()},
+            "vergleich": None if res.comparison is None else {
+                **res.comparison.as_dict(),
+                "tage_kosten": [[d.isoformat(), round(a, 2), round(b, 2)] for d, a, b in res.comparison.by_day],
+            },
         }
     return None
 
@@ -150,3 +157,28 @@ def ws_archive(hass: HomeAssistant, connection: websocket_api.ActiveConnection, 
         })
         return
     connection.send_error(msg["id"], "not_found", "Zähler nicht gefunden")
+
+
+def _profile(rt, meter_id: str) -> dict | None:
+    """Mittlerer Verbrauch je Stunde (lokal) an Werktagen und am Wochenende der letzten 30 Tage; None ohne Stundenwerte."""
+    from datetime import timedelta  # noqa: PLC0415
+
+    from .engine.windows import slot_starts  # noqa: PLC0415
+
+    today = rt.today()
+    sums = {"werktag": [0.0] * 24, "wochenende": [0.0] * 24}
+    n = {"werktag": 0, "wochenende": 0}
+    for d, v in rt.daily(meter_id).items():
+        if not (today - timedelta(days=30) <= d < today) or not v.hourly:
+            continue
+        hours = slot_starts(d, rt.tz, 60)
+        if len(hours) != len(v.hourly) or any(x is None for x in v.hourly):
+            continue
+        key = "wochenende" if d.weekday() >= 5 else "werktag"
+        for h, x in zip(hours, v.hourly):
+            sums[key][h.astimezone(rt.tz).hour] += x
+        n[key] += 1
+    if not any(n.values()):
+        return None
+    return {k: ([round(x / n[k], 4) for x in sums[k]] if n[k] else None) for k in sums} | {"tage": n}
+

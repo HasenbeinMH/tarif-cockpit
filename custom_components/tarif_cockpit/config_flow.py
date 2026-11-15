@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import date, datetime, time, timedelta
+import re
 from typing import Any
 
 import voluptuous as vol
@@ -119,6 +120,7 @@ def _climate_schema(defaults: dict[str, Any]) -> vol.Schema:
         vol.Required("indoor_ref", default=defaults.get("indoor_ref", 20.0)): _number(15, 25, 0.5, "°C"),
         # 1.1: Normaußentemperatur für die Heizlast
         vol.Required("design_temp", default=defaults.get("design_temp", -12.0)): _number(-25, 0, 0.5, "°C"),
+        vol.Required("cooling_limit", default=defaults.get("cooling_limit", 22.0)): _number(15, 30, 0.5, "°C"),  # 1.2
     })
 
 
@@ -131,7 +133,7 @@ def _climate_from(user_input: dict[str, Any]) -> dict[str, Any]:
     return {"outdoor_temp_entity": user_input.get("outdoor_temp_entity"), "weather_entity": user_input.get("weather_entity"),
             "rooms": [{"entity": e} for e in user_input.get("rooms", []) or []],
             "heating_limit": float(user_input["heating_limit"]), "indoor_ref": float(user_input["indoor_ref"]),
-            "design_temp": float(user_input.get("design_temp", -12.0))}
+            "design_temp": float(user_input.get("design_temp", -12.0)), "cooling_limit": float(user_input.get("cooling_limit", 22.0))}
 
 
 class TarifCockpitConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -330,6 +332,35 @@ def _advance_schema(hass: Any, rhythm: int = 1, with_date: bool = False, amount_
     fields[vol.Required("rhythm", default=str(rhythm))] = _select(["1", "2", "3"], "rhythm")
     fields[vol.Optional("max_per_period", description={"suggested_value": max_per_period}) if max_per_period else vol.Optional("max_per_period")] = _number(1, 12, 1)
     return vol.Schema(fields)
+
+
+def _valid_time(v: str, end: bool = False) -> bool:
+    """„HH:MM“ mit 00:00–23:59; als Ende auch 24:00."""
+    m = re.match(r"^(\d{1,2}):(\d{2})$", v)
+    if not m:
+        return False
+    h, mi = int(m.group(1)), int(m.group(2))
+    return (h < 24 and mi < 60) or (end and h == 24 and mi == 0)
+
+
+def _windows_editable(seg: PriceSegment | None) -> bool:
+    """Lassen sich die Fenster eines Preises im Dialog „Zeitfenster“ zeigen, ohne etwas zu verändern? Sonst (über die Aktion
+    angelegte eigene Fenster) bleibt der Schritt weg und die Fenster bleiben unverändert."""
+    if seg is None:
+        return True
+    abs_w = [w for w in seg.windows if w.work_price is not None]
+    delta_w = [w for w in seg.windows if w.delta is not None and w.work_price is None]
+    if len(abs_w) > 1 or any(w.name != "HT" or w.months or w.delta for w in abs_w):
+        return False
+    for w in delta_w:
+        if w.name not in ("NT", "HT 14a") or sorted(w.weekdays) != list(range(7)):
+            return False
+        quarters = {(m - 1) // 3 for m in w.months}
+        if w.months and sorted(w.months) != sorted(m for q in quarters for m in range(3 * q + 1, 3 * q + 4)):
+            return False
+    if len(delta_w) == 2 and sorted(delta_w[0].months) != sorted(delta_w[1].months):
+        return False
+    return len(abs_w) + len(delta_w) == len(seg.windows)
 
 
 def current_price(rt: Any, meter_id: str) -> PriceSegment | None:
@@ -616,6 +647,13 @@ class MeterSubentryFlow(ConfigSubentryFlow):
                 meter["conversion"] = {k: float(user_input[k]) for k in ("calorific", "z_factor") if user_input.get(k) is not None}
             else:
                 meter["annual_consumption"] = float(user_input["annual_consumption"]) if user_input.get("annual_consumption") is not None else None
+            if medium == Medium.STROM:
+                ent = user_input.get("comparison_entity")
+                meter["comparison"] = {"entity": ent, "markup": round(float(user_input.get("comparison_markup") or 0.0) / 100, 6),
+                                       "attribute": None, "net": bool(user_input.get("comparison_net", True))} if ent else None
+                meter["comparison_base_price"] = float(user_input["comparison_base"]) if ent and user_input.get("comparison_base") is not None else None
+            if medium == Medium.WASSER:
+                meter["leak_threshold_lph"] = float(user_input["leak_threshold"]) if user_input.get("leak_threshold") is not None else None
             return self.async_update_and_abort(entry, sub, title=user_input["name"], data={**sub.data, CONF_METER: meter})
         conv = meter.get("conversion") or {}
         fields: dict[Any, Any] = {
@@ -631,6 +669,17 @@ class MeterSubentryFlow(ConfigSubentryFlow):
             fields[vol.Optional("z_factor", description={"suggested_value": conv.get("z_factor")})] = _number(0.8, 1.1, "any")
         else:
             fields[vol.Optional("annual_consumption", description={"suggested_value": meter.get("annual_consumption")})] = _number(0, 1e7, "any", meter.get("unit"))
+        if medium == Medium.STROM:
+            cmp_ = meter.get("comparison") or {}
+            fields[vol.Optional("comparison_entity", description={"suggested_value": cmp_.get("entity")})] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor"))
+            fields[vol.Optional("comparison_markup", description={"suggested_value": round((cmp_.get("markup") or 0) * 100, 4) if cmp_ else None})] = \
+                _number(-100, 100, "any", "ct/kWh")
+            fields[vol.Optional("comparison_base", description={"suggested_value": meter.get("comparison_base_price")})] = \
+                _number(0, 1000, "any", f"{self.hass.config.currency}/Monat")
+            fields[vol.Optional("comparison_net", default=bool(cmp_.get("net", True)))] = selector.BooleanSelector()
+        if medium == Medium.WASSER and meter.get("entity"):
+            fields[vol.Optional("leak_threshold", description={"suggested_value": meter.get("leak_threshold_lph")})] = _number(0.5, 500, "any", "L/h")
         return self.async_show_form(step_id="stammdaten", data_schema=vol.Schema(fields), errors=errors)
 
     def _meter_id_and_medium(self) -> tuple[str, Medium]:
@@ -707,6 +756,10 @@ class MeterSubentryFlow(ConfigSubentryFlow):
             errors = _price_errors(user_input, _cents(self.hass, medium))
         if user_input is not None and not errors:
             price = _price_from(user_input, _cents(self.hass, medium))
+            # Zeitfenster/dynamisch/§ 14a des laufenden Preises bleiben, wenn sie nicht geändert werden (1.2)
+            if current is not None:
+                price.update(windows=list(current.windows), rebate_yearly=current.rebate_yearly, dynamic=current.dynamic)
+            self._want_windows = bool(user_input.get("windows_14a")) or (current is not None and (bool(current.windows) or current.dynamic is not None))
             if user_input.get("tiers_rounding") or (current is not None and current.tiers):
                 # mit Staffel bestimmen die Stufenpreise den Arbeitspreis: Stufen immer zeigen, nie still übernehmen
                 self._pending_price = (date.fromisoformat(user_input["valid_from"]), price)
@@ -714,6 +767,9 @@ class MeterSubentryFlow(ConfigSubentryFlow):
             # Staffel und Rundung des laufenden Preises bleiben, wenn sie nicht geändert werden (nichts geht still verloren)
             if current is not None:
                 price.update(tiers=list(current.tiers), tier_mode=current.tier_mode, rounding=current.rounding)
+            if self._want_windows and (user_input.get("windows_14a") or _windows_editable(current)):
+                self._pending_price = (date.fromisoformat(user_input["valid_from"]), price)
+                return await self.async_step_zeitfenster()
             try:
                 rt.set_price(meter_id, date.fromisoformat(user_input["valid_from"]), **price)
             except billing.BillingError as err:
@@ -722,8 +778,10 @@ class MeterSubentryFlow(ConfigSubentryFlow):
             else:
                 rt.changed(meter_id=meter_id, flags={"costs"})
                 return self.async_abort(reason="price_saved")
-        schema = _price_schema(self.hass, medium, with_date=True, current=current).extend(
-            {vol.Optional("tiers_rounding", default=False): selector.BooleanSelector()})
+        extra = {vol.Optional("tiers_rounding", default=False): selector.BooleanSelector()}
+        if medium == Medium.STROM:
+            extra[vol.Optional("windows_14a", default=False)] = selector.BooleanSelector()
+        schema = _price_schema(self.hass, medium, with_date=True, current=current).extend(extra)
         return self.async_show_form(step_id="preis_aendern", data_schema=schema, errors=errors, description_placeholders=placeholders)
 
     async def async_step_staffel_rundung(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
@@ -758,9 +816,12 @@ class MeterSubentryFlow(ConfigSubentryFlow):
                 rounding = Rounding(days_per_year=user_input["days_per_year"], base_by=user_input["base_by"],
                                     quantity_decimals=int(qd) if qd is not None else None, money_decimals=int(md) if md is not None else None)
                 default = rounding == Rounding()
+                price = {**price, "tiers": tiers, "tier_mode": user_input["tier_mode"], "rounding": None if default else rounding}
+                if getattr(self, "_want_windows", False) and _windows_editable(current_price(rt, meter_id)):
+                    self._pending_price = (valid_from, price)
+                    return await self.async_step_zeitfenster()
                 try:
-                    rt.set_price(meter_id, valid_from, **price, tiers=tiers, tier_mode=user_input["tier_mode"],
-                                 rounding=None if default else rounding)
+                    rt.set_price(meter_id, valid_from, **price)
                 except billing.BillingError as err:
                     return self.async_abort(reason="price_not_saved", description_placeholders={"error": str(err)})
                 rt.changed(meter_id=meter_id, flags={"costs"})
@@ -791,6 +852,85 @@ class MeterSubentryFlow(ConfigSubentryFlow):
         if user_input is not None:
             schema = self.add_suggested_values_to_schema(schema, user_input)
         return self.async_show_form(step_id="staffel_rundung", data_schema=schema, errors=errors)
+
+    async def async_step_zeitfenster(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
+        """Zeitfenster und § 14a (1.2): HT/NT, dynamischer Tarif, Modul 1 (Pauschale) und Modul 3 (zeitvariable Netzentgelte)."""
+        from .engine.model import DynamicPrice, PriceWindow  # noqa: PLC0415
+
+        meter_id, medium = self._meter_id_and_medium()
+        rt = self._runtime()
+        if rt is None:
+            return self.async_abort(reason="not_loaded")
+        valid_from, price = self._pending_price
+        cur = current_price(rt, meter_id)
+        errors: dict[str, str] = {}
+        days_all = ["0", "1", "2", "3", "4", "5", "6"]
+        if user_input is not None:
+            for key in ("ht_start", "ht_end", "m3_nt_start", "m3_nt_end", "m3_ht_start", "m3_ht_end"):
+                if user_input.get(key) and not _valid_time(str(user_input[key]), end=key.endswith("_end")):
+                    errors[key] = "time_format"
+            for a_, b_, d_ in (("m3_nt_start", "m3_nt_end", "m3_nt_delta"), ("m3_ht_start", "m3_ht_end", "m3_ht_delta")):
+                if user_input.get(d_) is not None and not (user_input.get(a_) and user_input.get(b_)):
+                    errors[a_] = "m3_times_missing"
+            mode = user_input["mode"]
+            if mode == "htnt" and user_input.get("ht_price") is None:
+                errors["ht_price"] = "required_for_htnt"
+            if mode == "dynamisch" and not user_input.get("dyn_entity"):
+                errors["dyn_entity"] = "required_for_dynamic"
+            if not errors:
+                windows: list[PriceWindow] = []
+                dynamic = None
+                if mode == "htnt":
+                    windows.append(PriceWindow("HT", user_input.get("ht_start") or "06:00", user_input.get("ht_end") or "22:00",
+                                               [int(d) for d in user_input.get("ht_days") or days_all], [],
+                                               round(float(user_input["ht_price"]) / 100, 10)))
+                elif mode == "dynamisch":
+                    dynamic = DynamicPrice(user_input["dyn_entity"], round(float(user_input.get("dyn_markup") or 0.0) / 100, 10),
+                                           net=bool(user_input.get("dyn_net", True)))
+                months = sorted({m for q in user_input.get("m3_quarters") or [] for m in range(3 * int(q) - 2, 3 * int(q) + 1)})
+                for name, a, b, d in (("NT", "m3_nt_start", "m3_nt_end", "m3_nt_delta"), ("HT 14a", "m3_ht_start", "m3_ht_end", "m3_ht_delta")):
+                    if user_input.get(d) is not None and user_input.get(a) and user_input.get(b):
+                        windows.append(PriceWindow(name, user_input[a], user_input[b], [int(x) for x in days_all], months,
+                                                   None, round(float(user_input[d]) / 100, 10)))
+                rebate = float(user_input["rebate_14a"]) if user_input.get("rebate_14a") is not None else None
+                before = rt.price_kinds(meter_id)
+                try:
+                    rt.set_price(meter_id, valid_from, **{**price, "windows": windows, "dynamic": dynamic, "rebate_yearly": rebate})
+                except billing.BillingError as err:
+                    return self.async_abort(reason="price_not_saved", description_placeholders={"error": str(err)})
+                rt.changed(meter_id=meter_id, flags={"costs"})
+                rt.reload_if_new_kinds(meter_id, before)
+                return self.async_abort(reason="price_saved")
+        ht = next((w for w in (cur.windows if cur else []) if w.work_price is not None), None)
+        m3 = {w.name: w for w in (cur.windows if cur else []) if w.delta is not None}
+        mode_now = "dynamisch" if cur is not None and cur.dynamic is not None else ("htnt" if ht else "keine")
+        quarters = sorted({str((m - 1) // 3 + 1) for w in m3.values() for m in w.months})
+
+        def sv(key: str, value: Any) -> vol.Optional:
+            return vol.Optional(key, description={"suggested_value": value}) if value is not None else vol.Optional(key)
+
+        ct = "ct/kWh"
+        schema = vol.Schema({
+            vol.Required("mode", default=mode_now): _select(["keine", "htnt", "dynamisch"], "price_mode"),
+            sv("ht_price", round(ht.work_price * 100, 4) if ht else None): _number(0, 1000, "any", ct),
+            sv("ht_start", ht.start if ht else "06:00"): str,
+            sv("ht_end", ht.end if ht else "22:00"): str,
+            vol.Optional("ht_days", default=[str(d) for d in (ht.weekdays if ht else [0, 1, 2, 3, 4])]): _select(days_all, "weekday", multiple=True),
+            sv("dyn_entity", cur.dynamic.entity if cur is not None and cur.dynamic else None): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            sv("dyn_markup", round(cur.dynamic.markup * 100, 4) if cur is not None and cur.dynamic else None): _number(-100, 100, "any", ct),
+            vol.Optional("dyn_net", default=cur.dynamic.net if cur is not None and cur.dynamic else True): selector.BooleanSelector(),
+            sv("rebate_14a", cur.rebate_yearly if cur is not None else None): _number(0, 10000, "any", f"{self.hass.config.currency}/Jahr"),
+            sv("m3_nt_start", m3["NT"].start if "NT" in m3 else None): str,
+            sv("m3_nt_end", m3["NT"].end if "NT" in m3 else None): str,
+            sv("m3_nt_delta", round(m3["NT"].delta * 100, 4) if "NT" in m3 else None): _number(-100, 100, "any", ct),
+            sv("m3_ht_start", m3["HT 14a"].start if "HT 14a" in m3 else None): str,
+            sv("m3_ht_end", m3["HT 14a"].end if "HT 14a" in m3 else None): str,
+            sv("m3_ht_delta", round(m3["HT 14a"].delta * 100, 4) if "HT 14a" in m3 else None): _number(-100, 100, "any", ct),
+            vol.Optional("m3_quarters", default=quarters): _select(["1", "2", "3", "4"], "quarter", multiple=True),
+        })
+        if user_input is not None:
+            schema = self.add_suggested_values_to_schema(schema, user_input)
+        return self.async_show_form(step_id="zeitfenster", data_schema=schema, errors=errors)
 
     async def async_step_rechnung_erfassen(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         """Jahresabrechnung erfassen (1.1): Zeitraum, Betrag, optional Menge, Stände, Brennwert, Positionen."""

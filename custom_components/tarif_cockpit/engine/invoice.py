@@ -90,6 +90,7 @@ def compare_invoice(
     tz: tzinfo,
     tolerance_pct: float = 5.0,
     active_factor: float | None = None,
+    slot_kw: dict | None = None,
 ) -> InvoiceCheck:
     """Rechnung mit den eigenen Tageswerten vergleichen (Menge je Quelle, Brennwert, Kosten je Position).
 
@@ -151,7 +152,9 @@ def compare_invoice(
                 else:
                     chk.hints.append("menge_weicht_ab")  # Zähler oder Ablesungen: Ablesungen prüfen (Abgleich 0.9)
     # Kosten: mit der Menge der Rechnung, über die eigenen Tageswerte verteilt (Preisfehler statt Mengenfehler)
-    if contract is not None and segs and chk.quantity_invoice is not None:
+    if contract is not None and segs and any(p.dynamic is not None for p in segs):
+        chk.flags.append("dynamisch_nicht_geprueft")  # Börsenpreise des Rechnungszeitraums liegen nicht vollständig vor
+    elif contract is not None and segs and chk.quantity_invoice is not None:
         weights = by_day if by_day and sum(by_day.values()) > 0 else {d: 1.0 for d in days}
         s = sum(weights.values())
         qty = {d: chk.quantity_invoice * w / s for d, w in weights.items()}
@@ -159,8 +162,11 @@ def compare_invoice(
         if inv.calorific or inv.z_factor:  # Brennwert der Rechnung, damit nur Preise verglichen werden
             segs = [replace(p, calorific=inv.calorific or p.calorific, z_factor=inv.z_factor or p.z_factor) for p in segs]
         f_inv = (inv.calorific * inv.z_factor) if inv.calorific and inv.z_factor else (own_factor or 1.0)
+        kw = {k: v for k, v in (slot_kw or {}).items() if k in ("hourly", "profile")}
         cb = calculate_costs(contract, segs, cal_meter, qty, day_bounds(inv.period_from, tz)[0], day_bounds(inv.period_to, tz)[1], tz,
-                             tier_scale=len(days) / 365, tier_total=chk.quantity_invoice * f_inv)
+                             tier_scale=len(days) / 365, tier_total=chk.quantity_invoice * f_inv, **kw)
+        if "fenster_geschaetzt" in cb.flags:
+            chk.flags.append("fenster_geschaetzt")
         if cb.complete:
             vat = 1 + contract.vat_rate / 100 if contract.vat_mode.value == "net" else 1.0
             chk.cost_own = cb.gross

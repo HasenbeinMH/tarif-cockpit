@@ -158,6 +158,59 @@ Aus dem gelernten Kennwert k (kWh je Gradtag, bei Gas Brennwert Hs) und dem Wirk
 - Mit Impulszähler zusätzlich die höchste gemessene Brennerleistung im Tagesmittel.
 - Ohne Kennwert ab „vorläufig“ gibt es keine Aussage. Beispiel: k = 5 kWh/Kd, η 0,97, 20 °C, −12 °C → 5,8 kW Heizlast; ein Kessel mit 19,5 kW ist 3,3-fach überdimensioniert, mit 4,7 kW kleinster Leistung liegt die Taktgrenze bei −5,8 °C.
 
+## Zeitfenster, § 14a, dynamischer Tarif (1.2)
+
+**Zeitscheiben:** Der Tageswert wird verteilt.
+1. Auf Viertelstunden aus der 5-Minuten-Statistik, nur für Zähler mit dynamischem Tarif oder Vergleich; der Recorder hält sie etwa 10 Tage, sie werden täglich gesichert.
+2. Sonst auf die Stundenwerte des Tages, für alle Zähler mit Sensor, 400 Tage.
+3. Sonst über das typische Tagesprofil der letzten 30 Tage, gekennzeichnet `fenster_geschaetzt`.
+4. Sonst gleichmäßig.
+
+Die Scheiben werden immer auf den Tageswert skaliert. Der Tageswert bleibt maßgeblich, auch nach dem Abgleich.
+Viertelstunden gelten nur, wenn sie zu den sprungbereinigten Stundenwerten passen (je Stunde höchstens 5 % Abweichung), sonst gelten die Stunden.
+`fenster_geschaetzt` steht nur an vergangenen Tagen. Heute und in der Zukunft gibt es noch keine Stundenwerte, das ist kein Mangel.
+
+**Preis einer Scheibe** (Beginn in Ortszeit) = absoluter Fensterpreis (HT), sonst dynamischer Preis + Aufschlag, sonst Arbeitspreis (NT); dazu die Zu- und Abschläge aller passenden Fenster (§ 14a Modul 3).
+Der Wochentag eines Fensters über Mitternacht ist der des Scheibenbeginns: Ein Fenster 22–6 Uhr „Mo–Fr“ gilt Freitagnacht ab 22 Uhr, aber nicht Samstag 0–6 Uhr. Für alle Nächte alle Wochentage wählen.
+- **HT/NT:** Der Arbeitspreis des Abschnitts gilt als NT, das Fenster „HT“ (Zeit, Wochentage) mit eigenem Preis.
+- **§ 14a Modul 1:** Pauschale je Jahr, läuft anteilig mit (`rebate`, mindert die Kosten).
+- **Modul 2:** eigener Zähler mit eigenem Vertrag und reduziertem Preis.
+- **Modul 3:** Fenster mit Zu- bzw. Abschlag in ct/kWh in bestimmten Quartalen.
+- **Dynamisch:** Preis je Viertelstunde aus einer Entität.
+  - Quelle: erst die Preisliste im Attribut (EPEX `data`, Tibber `today`/`prices`), sonst der Verlauf des Zustands (Wert in der Mitte der Viertelstunde), sonst das Stundenmittel der Statistik.
+  - Einheit ct oder € automatisch, aus dem Schlüssel (`price_ct_per_kwh`) bzw. der Einheit des Zustands. Ein Mittel über 2 €/kWh gilt als Cent.
+  - **MwSt.:** Ist der Preis der Entität netto (EPEX Market Price; Kästchen „ohne MwSt.“, Standard an), kommt bei Brutto-Verträgen die MwSt. dazu. Der Aufschlag gilt in der Preisart des Vertrags.
+  - Für Stunden gilt das Mittel der vier Viertelstunden. Fehlt ein Preis, das Mittel des Tages (`preis_geschaetzt`).
+  - Prognose-Rest: mit dem mengengewichteten Börsenpreis der letzten 30 Tage plus Aufschlag (`dynamisch_mittel`), höchstens „vorläufig“.
+- Staffel und Fenster werden nicht kombiniert; mit Fenstern gilt der Fensterpreis.
+
+## Vergleich dynamischer Tarif (1.2)
+
+Am Stromzähler unter Stammdaten: Preis-Entität (z. B. EPEX Spot Market Price), Aufschlag in ct/kWh (Netzentgelt, Steuern, Marge) und Grundpreis des Angebots. Verglichen wird nur über Tage mit Preisen je Viertelstunde:
+
+`Differenz = (eigener Arbeitspreis × Menge + eigener Grund- und Messpreis) − (Σ Menge je Scheibe × (Preis + Aufschlag) + Grundpreis des Angebots)`
+
+Messpreis und § 14a-Pauschale des eigenen Abschnitts gelten auf beiden Seiten (Messstelle und Netz bleiben gleich). Verglichen werden nur Tage mit mindestens 75 % Viertelstundenpreisen. Hat der eigene Vertrag selbst einen dynamischen Preis, rechnet die eigene Seite mit dessen Preisen.
+
+Positiv heißt: Dynamisch wäre günstiger gewesen. Hochrechnung auf die Periode = Differenz je kWh × Prognose-Menge (`hochgerechnet`). Tage, die nur Stundenwerte haben, sind gekennzeichnet (`teils_stuendlich`).
+
+## Kühlgradtage (1.2)
+
+`Kühlgradtage = Tagesmittel − Kühlgrenze`, wenn das Tagesmittel darüber liegt (Standard 22 °C, im Haushalt änderbar), sonst 0.
+- **Klimagerät am Hausstrom mit eigener Messung:** Kühlkennwert = Energie an Kühltagen über dem Median der Tage ohne Heizen und Kühlen, geteilt durch die Kühlgradtage der letzten 365 Tage. Nötig sind mindestens 20 Kd an 10 Tagen.
+- Rest = Kennwert × erwartete Kühlgradtage (Mittel gleicher Kalendertage der Vorjahre). Er wird wie der Heizstrom vor der Grundlast getrennt (`kuehlen_rest`).
+- Kühltage zählen nicht in die Heiz-Regression.
+- Ohne Messung wird Kühlen nicht geschätzt (`kuehlen_nicht_getrennt`).
+
+## Leckage (1.2)
+
+Wasserzähler mit Sensor, aus den Stundenwerten von gestern und den Tagen davor (Gartenwasser abgezogen):
+- **Nachtminimum:** kleinster Stundenverbrauch zwischen 1 und 5 Uhr in drei Nächten hintereinander über der Schwelle (Standard 5 L/h, unter Stammdaten änderbar).
+- **Dauerfluss:** an zwei Tagen hintereinander in jeder Stunde mindestens 1 L (Rauschen und Rundung zählen nicht).
+- Gibt es einen Gartenzähler, aber an einem Tag keine vollständigen Stundenwerte von ihm, ist der Tag nicht prüfbar (nächtliche Bewässerung).
+
+Ein Tag ohne vollständige Stundenwerte unterbricht die Folge. Bei Verdacht gibt es einen Hinweis unter Reparaturen und den binären Sensor „Leckage-Verdacht“. Das Event `tarif_cockpit_leckage` kommt einmal, solange der Verdacht anhält.
+
 ## Kündigungsfrist (1.0)
 
 - Mit festem Vertragsende: letzter Kündigungstag = Vertragsende − Kündigungsfrist (Wochen).

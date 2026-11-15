@@ -14,3 +14,10 @@ def degree_days(t_mean: float | None, heating_limit: float = 15.0, indoor_ref: f
     if t_mean < heating_limit:
         return round(indoor_ref - t_mean, 3)
     return 0.0
+
+
+def cooling_degree_days(t_mean: float | None, cooling_limit: float = 22.0) -> float | None:
+    """Kühlgradtage (1.2): Tagesmittel über der Kühlgrenze zählt mit ``Tagesmittel − Grenze``, sonst 0; ohne Temperatur None."""
+    if t_mean is None:
+        return None
+    return round(t_mean - cooling_limit, 3) if t_mean > cooling_limit else 0.0

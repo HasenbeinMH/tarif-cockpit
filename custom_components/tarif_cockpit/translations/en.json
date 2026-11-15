@@ -22,13 +22,15 @@
           "rooms": "Room temperatures",
           "heating_limit": "Heating limit",
           "indoor_ref": "Indoor reference for degree days",
-          "design_temp": "Design outdoor temperature"
+          "design_temp": "Design outdoor temperature",
+          "cooling_limit": "Cooling limit"
         },
         "data_description": {
           "outdoor_temp_entity": "For degree days and the learned coefficient. Without an outdoor temperature there is no heating forecast.",
           "heating_limit": "Days with a mean below this count as heating days (usually 15 °C).",
           "indoor_ref": "Usually 20 °C (degree days G20/15).",
-          "design_temp": "For the heat load: the coldest design temperature of your region (Germany about −10 to −16 °C, often −12 °C)."
+          "design_temp": "For the heat load: the coldest design temperature of your region (Germany about −10 to −16 °C, often −12 °C).",
+          "cooling_limit": "Cooling degree days for air conditioners: days with a mean above this count as cooling days (default 22 °C)."
         }
       },
       "abschluss": {
@@ -112,7 +114,8 @@
             "demand_price": "Demand charge per kW and year",
             "demand_kw": "Connected load",
             "price_unit": "Unit price per",
-            "tiers_rounding": "Set tiers or rounding"
+            "tiers_rounding": "Set tiers or rounding",
+            "windows_14a": "Time windows, § 14a or dynamic price"
           },
           "data_description": {
             "price_unit": "District heating is often billed per MWh; internally it is calculated per kWh.",
@@ -169,10 +172,19 @@
             "calorific": "Calorific value",
             "z_factor": "Conversion factor (Z)",
             "pulse_constant": "Pulse constant",
-            "pulse_mode": "Given as"
+            "pulse_mode": "Given as",
+            "comparison_net": "Dynamic comparison: price excludes VAT",
+            "comparison_entity": "Dynamic comparison: price entity",
+            "comparison_markup": "Dynamic comparison: markup",
+            "comparison_base": "Dynamic comparison: base price",
+            "leak_threshold": "Leak threshold"
           },
           "data_description": {
-            "pulse_constant": "On the meter, e.g. “1 imp = 0.01 m³” (then 0.01 and “unit per pulse”) or “100 imp/m³”."
+            "pulse_constant": "On the meter, e.g. “1 imp = 0.01 m³” (then 0.01 and “unit per pulse”) or “100 imp/m³”.",
+            "comparison_net": "On for EPEX market price (net). The markup is gross.",
+            "comparison_entity": "Exchange price per quarter hour (e.g. EPEX Spot market price). The integration calculates what your consumption would have cost with it.",
+            "comparison_markup": "Grid fee, taxes and margin of the offer, gross in ct/kWh.",
+            "leak_threshold": "Smallest night-time flow (1–5 am) above which three nights in a row count as a leak. Default 5 L/h."
           }
         },
         "reconfigure": {
@@ -206,11 +218,13 @@
             "demand_price": "Demand charge per kW and year",
             "demand_kw": "Connected load",
             "price_unit": "Unit price per",
-            "tiers_rounding": "Set tiers or rounding"
+            "tiers_rounding": "Set tiers or rounding",
+            "windows_14a": "Time windows, § 14a or dynamic price"
           },
           "data_description": {
             "work_price": "In cents per kWh as on contract and bill, e.g. 31.54. Water in euros per m³, district heating per MWh in euros.",
-            "tiers_rounding": "Only needed if the supplier bills by quantity tiers or rounds differently. Unticked, the rounding of the current price is kept; with tiers the step always follows."
+            "tiers_rounding": "Only needed if the supplier bills by quantity tiers or rounds differently. Unticked, the rounding of the current price is kept; with tiers the step always follows.",
+            "windows_14a": "HT/NT, dynamic tariff (exchange price per quarter hour) or § 14a (flat rate, time-variable grid fees). If the current price already has one, the step always follows."
           }
         },
         "abschlag_aendern": {
@@ -336,6 +350,33 @@
             "quantity_decimals": "0 = whole kWh or m³. Empty = no rounding.",
             "money_decimals": "2 = each item to the cent. Empty = no rounding."
           }
+        },
+        "zeitfenster": {
+          "title": "Time windows, § 14a, dynamic",
+          "description": "HT/NT: the unit price from before counts as NT, here the HT price and its time. Dynamic: price entity (e.g. EPEX Spot) and markup (grid fee, taxes, margin). § 14a module 1: flat rate per year. Module 3: surcharge or discount at certain times and quarters. Module 2 (own meter) is added as a separate meter with its own contract.",
+          "data": {
+            "mode": "Unit price",
+            "ht_price": "Peak price",
+            "ht_start": "Peak from (HH:MM)",
+            "ht_end": "Peak until (HH:MM)",
+            "ht_days": "Peak on",
+            "dyn_entity": "Price entity",
+            "dyn_markup": "Markup",
+            "rebate_14a": "§ 14a module 1: flat rate",
+            "m3_nt_start": "Module 3 low tariff from",
+            "m3_nt_end": "Module 3 low tariff until",
+            "m3_nt_delta": "Module 3 low tariff discount (negative)",
+            "m3_ht_start": "Module 3 high tariff from",
+            "m3_ht_end": "Module 3 high tariff until",
+            "m3_ht_delta": "Module 3 high tariff surcharge",
+            "m3_quarters": "Module 3 in quarters",
+            "dyn_net": "Entity price excludes VAT"
+          },
+          "data_description": {
+            "dyn_markup": "What is added to the exchange price, gross in ct/kWh. If the entity already includes everything, 0.",
+            "rebate_14a": "Yearly grid fee reduction, deducted pro rata.",
+            "dyn_net": "On for exchange prices such as EPEX market price (net); VAT is then added. Off for final prices incl. VAT."
+          }
         }
       },
       "error": {
@@ -353,7 +394,11 @@
         "work_price_cents": "The unit price is entered in cents per kWh: 31.54 instead of 0.3154.",
         "period_order": "“Period to” is before “Period from”.",
         "tiers_order": "Tiers must ascend (tier 2 limit above tier 1 limit).",
-        "tier_incomplete": "Give quantity and price per tier; “above” only with at least one tier."
+        "tier_incomplete": "Give quantity and price per tier; “above” only with at least one tier.",
+        "time_format": "Time as HH:MM from 00:00 to 23:59 (as end also 24:00).",
+        "m3_times_missing": "Please give from and until for the surcharge or discount.",
+        "required_for_htnt": "For HT/NT please enter the peak price.",
+        "required_for_dynamic": "For the dynamic tariff please choose the price entity."
       },
       "abort": {
         "reconfigure_successful": "The meter was changed.",
@@ -689,6 +734,32 @@
         "day": "Per day (monthly price × 12 ÷ days per year)",
         "month": "Per month, pro rata by days of the month"
       }
+    },
+    "price_mode": {
+      "options": {
+        "keine": "Single price (only § 14a, if given)",
+        "htnt": "Peak/off-peak",
+        "dynamisch": "Dynamic (exchange price)"
+      }
+    },
+    "weekday": {
+      "options": {
+        "0": "Monday",
+        "1": "Tuesday",
+        "2": "Wednesday",
+        "3": "Thursday",
+        "4": "Friday",
+        "5": "Saturday",
+        "6": "Sunday"
+      }
+    },
+    "quarter": {
+      "options": {
+        "1": "Q1",
+        "2": "Q2",
+        "3": "Q3",
+        "4": "Q4"
+      }
     }
   },
   "entity": {
@@ -794,6 +865,20 @@
       },
       "heizlast": {
         "name": "Heat load"
+      },
+      "zeitfenster": {
+        "name": "Time windows"
+      },
+      "mittelpreis": {
+        "name": "Average electricity price"
+      },
+      "vergleich_dynamisch": {
+        "name": "Dynamic tariff comparison"
+      }
+    },
+    "binary_sensor": {
+      "leckage": {
+        "name": "Leak suspected"
       }
     }
   },
@@ -999,6 +1084,22 @@
         "rundung_betrag_stellen": {
           "name": "Round amounts",
           "description": "Decimals per item (2 = cents)."
+        },
+        "fenster": {
+          "name": "Time windows",
+          "description": "List with name, von, bis (HH:MM), tage (0 = Monday), monate, preis (absolute, €/kWh) or aufschlag (€/kWh)."
+        },
+        "pauschale_14a": {
+          "name": "§ 14a flat rate",
+          "description": "Module 1: reduction per year in euros."
+        },
+        "dynamisch_entitaet": {
+          "name": "Dynamic: price entity",
+          "description": "Sensor with the price per quarter hour."
+        },
+        "dynamisch_aufschlag": {
+          "name": "Dynamic: markup",
+          "description": "In euros per kWh, gross."
         }
       }
     },
@@ -1243,6 +1344,10 @@
     "rechnung_abweichung_hinweis": {
       "title": "{meter}: check invoice {von}–{bis}",
       "description": "Invoice {von}–{bis}: {menge_rechnung} {einheit}, own data: {menge_eigen} {einheit} (deviation {abweichung} %). Notes: {hinweise}. Change prices under “Change price” (also tiers and rounding), readings with “Add reading”."
+    },
+    "leckage": {
+      "title": "{meter}: leak suspected",
+      "description": "Since {seit} water has been flowing at night or without a break (kind: {art}, smallest night flow {liter} L/h). Please check taps, cisterns and pipes. The notice disappears once there are hours without consumption again."
     }
   },
   "exceptions": {
@@ -1285,13 +1390,15 @@
           "heating_limit": "Heating limit",
           "indoor_ref": "Indoor reference for degree days",
           "tolerance_pct": "Tolerance for “on track”",
-          "design_temp": "Design outdoor temperature"
+          "design_temp": "Design outdoor temperature",
+          "cooling_limit": "Cooling limit"
         },
         "data_description": {
           "outdoor_temp_entity": "For degree days and the learned coefficient. Without an outdoor temperature there is no heating forecast.",
           "heating_limit": "Days with a mean below this count as heating days (usually 15 °C).",
           "indoor_ref": "Usually 20 °C (degree days G20/15).",
-          "design_temp": "For the heat load: the coldest design temperature of your region (Germany about −10 to −16 °C, often −12 °C)."
+          "design_temp": "For the heat load: the coldest design temperature of your region (Germany about −10 to −16 °C, often −12 °C).",
+          "cooling_limit": "Cooling degree days for air conditioners: days with a mean above this count as cooling days (default 22 °C)."
         }
       }
     }

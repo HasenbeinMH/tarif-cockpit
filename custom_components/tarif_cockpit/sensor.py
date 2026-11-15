@@ -44,6 +44,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: TarifConfigEntry, async_
         if meter.role == "main" or rt.contracts(meter.meter_id):
             classes += [CostSoFarSensor, AdvancesPaidSensor, CurrentAdvanceSensor, AdvancesPeriodSensor, ForecastConsumptionSensor, ForecastCostSensor,
                         SaldoSensor, VerdictSensor, RecommendedAdvanceSensor, ForecastQualitySensor]
+            # 1.2: Zeitfenster, dynamischer Tarif, Vergleich (Sensoren nur, wenn eingerichtet; Änderung lädt neu)
+            kinds = rt.price_kinds(meter.meter_id)
+            if "windows" in kinds:
+                classes.append(WindowUsageSensor)
+            if "dynamic" in kinds:
+                classes.append(MeanPriceSensor)
+            if meter.comparison is not None:
+                classes.append(ComparisonSensor)
             if meter.medium in HEAT:
                 classes += [HeatCoefficientSensor, HotWaterSensor, IndoorCoefficientSensor]
             elif meter.medium == Medium.STROM and _heats_with_power(rt, meter):
@@ -745,4 +753,65 @@ class HeatLoadSensor(GeneratorSensor):
         hl = coord.heat_loads.get(self.gen.generator_id) if coord is not None else None
         self._attr_native_value = None if hl is None else round(hl.heat_load_kw, 2)
         self._attr_extra_state_attributes = {"qualitaet": "unzureichend"} if hl is None else hl.as_dict()
+
+
+class WindowUsageSensor(ResultSensor):
+    """Anteil des ersten Zeitfensters (z. B. HT) an der Menge der Periode bisher (1.2); je Fenster Menge und Anteil."""
+
+    key = "zeitfenster"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_suggested_display_precision = 0
+
+    def value(self, res):
+        usage = res.window_usage or {}
+        total = sum(usage.values())
+        named = [k for k in usage if k != "standard"]
+        if not total or not named:
+            return None
+        return round(usage[sorted(named)[0]] / total * 100, 1)
+
+    def attributes(self, res):
+        attrs = super().attributes(res)
+        usage = res.window_usage or {}
+        total = sum(usage.values())
+        if total:
+            attrs["fenster"] = {k: {"menge": round(v, 1), "anteil_pct": round(v / total * 100, 1)} for k, v in usage.items()}
+            attrs["quelle"] = res.window_sources
+        return attrs
+
+
+class MeanPriceSensor(ResultSensor):
+    """Mittlerer Arbeitspreis der Periode bisher beim dynamischen Tarif (1.2), Euro je kWh."""
+
+    key = "mittelpreis"
+    _attr_suggested_display_precision = 4
+
+    def __init__(self, rt: TarifRuntime, meter: Meter) -> None:
+        self._attr_native_unit_of_measurement = f"{rt.hass.config.currency}/kWh"
+        super().__init__(rt, meter)
+
+    def value(self, res):
+        a = res.actual
+        if a is None or not a.quantity:
+            return None
+        vat = 1 + res.contract.vat_rate / 100 if res.contract is not None and res.contract.vat_mode.value == "net" else 1.0
+        return round(a.energy * vat / a.quantity, 4)  # brutto wie die Kosten-Sensoren
+
+
+class ComparisonSensor(ResultSensor):
+    """Vergleich mit dem dynamischen Tarif (1.2): tatsächlich − dynamisch über die Tage mit Preisen (positiv = dynamisch
+    wäre günstiger gewesen)."""
+
+    key = "vergleich_dynamisch"
+    money = True
+
+    def value(self, res):
+        c = res.comparison
+        return None if c is None or c.diff is None else round(c.diff, 2)
+
+    def attributes(self, res):
+        attrs = super().attributes(res)
+        if res.comparison is not None:
+            attrs.update(res.comparison.as_dict())
+        return attrs
 

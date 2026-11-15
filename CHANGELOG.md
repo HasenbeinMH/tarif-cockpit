@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.2.0 – 2026-11-15
+
+### Neu
+- **Stundenwerte:** Für Zähler mit Sensor speichert die Integration den Verbrauch je Stunde, 400 Tage. Sprünge der Statistik werden auch je Stunde abgezogen.
+- **Viertelstunden:** für Zähler mit dynamischem Tarif oder Vergleich aus der 5-Minuten-Statistik, täglich gesichert. Preise je Viertelstunde kommen aus einer Preis-Entität: erst aus der Preisliste im Attribut (EPEX, Tibber), sonst aus dem Verlauf, sonst aus der Statistik.
+- **Zeitfenster:** HT/NT, § 14a Modul 1 (Pauschale je Jahr) und Modul 3 (Zu- und Abschläge zu bestimmten Zeiten und Quartalen), dynamischer Tarif mit eigener Viertelstunden-Abrechnung. Einzurichten über „Preis ändern“ (neuer Schritt) oder `set_preis`. Sensoren „Zeitfenster“ und „Mittlerer Strompreis“.
+- **Vergleich dynamischer Tarif:** Unter Stammdaten eine Preis-Entität (z. B. EPEX Market Price), Aufschlag und Grundpreis eintragen. Dann rechnet die Integration mit, was der Verbrauch damit gekostet hätte, über alle Tage mit Börsenpreis. Dazu der Sensor „Vergleich dynamischer Tarif“ und die Vergleichskurve in der Auswertungskarte.
+- **Kühlgradtage** (Kühlgrenze im Haushalt, Standard 22 °C). Bei Klimageräten mit eigener Messung wird der Kühlstrom gelernt und getrennt fortgeschrieben.
+- **Leckage-Erkennung Wasser:** Nachtminimum über der Schwelle in drei Nächten hintereinander, oder Dauerfluss an zwei Tagen. Dazu ein binärer Sensor, ein Hinweis unter Reparaturen und das Event `tarif_cockpit_leckage`.
+- **Auswertungskarte:** Tagesprofil (Werktag und Wochenende) und Vergleich dynamisch. Die Tarifübersicht zeigt die Zeitfenster-Anteile, den Vergleich und den Leckage-Hinweis.
+- Speicher 1.6. Nach dem Update werden die Tageswerte einmal neu aus der Statistik berechnet, damit Stundenwerte und Kühlgradtage auch für die Vergangenheit da sind.
+- Preis-Entitäten netto oder brutto (Kästchen „Preis ohne MwSt.“, Standard an für Börsenpreise). Eigene Zeitfenster aus der Aktion `set_preis` bleiben beim Dialog „Preis ändern“ unverändert. Die Aktion legt den Abschnitt so an, wie sie aufgerufen wird.
+
 ## 1.1.1 – 2026-11-15
 
 ### Neu

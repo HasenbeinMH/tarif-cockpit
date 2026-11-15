@@ -1,4 +1,4 @@
-/*! tarif-cockpit v1.1.1 - MIT License - https://github.com/HasenbeinMH/tarif-cockpit
+/*! tarif-cockpit v1.2.0 - MIT License - https://github.com/HasenbeinMH/tarif-cockpit
     Editor-Baukasten und Assistent nach energy-cockpit, MIT License, Copyright (c) 2026 Musicmaker3112
     Diese Datei wird gebaut: Quellen in src/, Aufruf node tools/build.mjs */
 /* ---- common.js ---- */
@@ -7,7 +7,7 @@
 window.TarifCockpit = window.TarifCockpit || {};
 (() => {
   const TC = window.TarifCockpit;
-  TC.VERSION = '1.1.1';
+  TC.VERSION = '1.2.0';
 
   // Farbschemen wie bei energy-cockpit
   TC.THEMES = {
@@ -657,6 +657,12 @@ svg.ch{display:block;width:100%;height:auto}
     'in.notice': 'Wer zum Vertragsende wechseln will, muss bis {d} kündigen (noch {n} Tage).',
     'ar.title': 'Prognose gegen Realität', 'ar.prelim': 'vorläufig', 'ar.final': 'abgeschlossen',
     'ar.actual': 'Tatsächlich {v} · Saldo {s}', 'ar.partial': 'Ist-Kosten unvollständig (Tageswerte bis {d})', 'ar.date': 'Stand', 'ar.fc': 'Prognose', 'ar.dev': 'Abweichung',
+    'fw.line': 'Zeitfenster bisher: {v}', 'fw.standard': 'übrige Zeit',
+    'cmp.line': 'Dynamischer Tarif hätte bisher {v} {w} gekostet ({n} Tage mit Börsenpreis).', 'cmp.cheaper': 'weniger', 'cmp.dearer': 'mehr',
+    'leak.line': 'Leckage-Verdacht: Wasser fließt auch nachts (kleinster Nachtverbrauch {l} L/h). Bitte prüfen.',
+    'pr.title': 'Tagesprofil (Mittel je Stunde, 30 Tage)', 'pr.wd': 'Werktag', 'pr.we': 'Wochenende',
+    'cmp.title': 'Vergleich dynamischer Tarif', 'cmp.own': 'Dein Tarif', 'cmp.dyn': 'Dynamisch',
+    'cmp.sum': 'Über {n} Tage: dein Tarif {a}, dynamisch {d} (Mittel {p} je kWh inkl. Aufschlag).',
     'rv.title': 'Rechnung gegen Integration', 'rv.period': 'Zeitraum', 'rv.inv': 'Rechnung', 'rv.own': 'Eigene Daten', 'rv.cal': 'Brennwert',
     'rv.applied': 'übernommen', 'rv.proposal': 'Vorschlag unter Reparaturen', 'rv.check': 'prüfen', 'rv.ok': 'passt', 'rv.few': 'zu wenig Tageswerte',
     'pg.title': 'Prognosegüte', 'pg.lead': 'Vorlauf', 'pg.months': '{m} Monate vorher', 'pg.month1': '1 Monat vorher', 'pg.end': 'zum Ende',
@@ -701,6 +707,12 @@ svg.ch{display:block;width:100%;height:auto}
     'in.notice': 'To switch at the end of the contract, cancel by {d} ({n} days left).',
     'ar.title': 'Forecast vs. reality', 'ar.prelim': 'provisional', 'ar.final': 'final',
     'ar.actual': 'Actual {v} · balance {s}', 'ar.partial': 'Actual costs incomplete (daily values until {d})', 'ar.date': 'As of', 'ar.fc': 'Forecast', 'ar.dev': 'Deviation',
+    'fw.line': 'Time windows so far: {v}', 'fw.standard': 'other times',
+    'cmp.line': 'A dynamic tariff would have cost {v} {w} so far ({n} days with exchange price).', 'cmp.cheaper': 'less', 'cmp.dearer': 'more',
+    'leak.line': 'Leak suspected: water flows at night too (smallest night flow {l} L/h). Please check.',
+    'pr.title': 'Daily profile (mean per hour, 30 days)', 'pr.wd': 'Weekday', 'pr.we': 'Weekend',
+    'cmp.title': 'Dynamic tariff comparison', 'cmp.own': 'Your tariff', 'cmp.dyn': 'Dynamic',
+    'cmp.sum': 'Over {n} days: your tariff {a}, dynamic {d} (mean {p} per kWh incl. markup).',
     'rv.title': 'Invoice vs. integration', 'rv.period': 'Period', 'rv.inv': 'Invoice', 'rv.own': 'Own data', 'rv.cal': 'Calorific value',
     'rv.applied': 'applied', 'rv.proposal': 'suggestion under Repairs', 'rv.check': 'check', 'rv.ok': 'matches', 'rv.few': 'too few daily values',
     'pg.title': 'Forecast accuracy', 'pg.lead': 'Lead time', 'pg.months': '{m} months before', 'pg.month1': '1 month before', 'pg.end': 'at the end',
@@ -818,6 +830,19 @@ svg.ch{display:block;width:100%;height:auto}
     const signed = (v) => t(v >= 0 ? 'verdict.back' : 'verdict.extra') + ' ' + TC.eur(Math.abs(v)) + ' ' + TC.cur();
     const sk = attr(h, s.saldo, 'saldo_kalt'), sw = attr(h, s.saldo, 'saldo_warm');
     if (typeof sk === 'number' && typeof sw === 'number') hints.push(esc(t('in.band', { k: signed(sk), w: signed(sw) })));
+    // 1.2: Zeitfenster, Vergleich dynamisch, Leckage (Werte und Schwellen kommen aus der Integration, Regel 2)
+    const fw = attr(h, s.zeitfenster, 'fenster');
+    if (fw && typeof fw === 'object') {
+      const parts = Object.entries(fw).map(([k, v]) => `${k === 'standard' ? t('fw.standard') : k} ${TC.nf(v.anteil_pct, 0)} %`);
+      if (parts.length) hints.push(esc(t('fw.line', { v: parts.join(' · ') })));
+    }
+    const cd = val(h, s.vergleich_dynamisch);
+    if (cd !== null && attr(h, s.vergleich_dynamisch, 'tage')) {
+      hints.push(esc(t('cmp.line', { v: TC.eur(Math.abs(cd)) + ' ' + TC.cur(), w: t(cd >= 0 ? 'cmp.cheaper' : 'cmp.dearer'), n: attr(h, s.vergleich_dynamisch, 'tage') })));
+    }
+    if ((st(h, s.leckage) || {}).state === 'on') {
+      hints.push(`<b class="bad">${esc(t('leak.line', { l: TC.nf(attr(h, s.leckage, 'nachtminimum_l_h') || 0, 1) }))}</b>`);
+    }
     const nd = attr(h, s.periode_ende, 'tage_bis_kuendigung');
     if (attr(h, s.periode_ende, 'kuendigung_hinweis') && typeof nd === 'number') hints.push(esc(t('in.notice', { d: dd(attr(h, s.periode_ende, 'kuendigung_bis')), n: nd })));
     if (saldo === null && fcCost === null) {
@@ -965,7 +990,7 @@ svg.ch{display:block;width:100%;height:auto}
     return head(`<small>${esc(m.name)}</small>`) + TC.analysisHtml(a, h, card._hist, t('an.kennwert'), '')
       + `<div class="qual">${esc(facts.join(' · '))}</div>`
       + hints.map((x) => `<div class="hint">${x}</div>`).join('')
-      + I.seriesHtml(card, m) + I.archiveHtml(card, m) + I.invoiceHtml(card, m) + I.accuracyHtml(card, m) + I.heatLoadHtml(card) + I.genHtml(card);
+      + I.seriesHtml(card, m) + I.powerHtml(card) + I.archiveHtml(card, m) + I.invoiceHtml(card, m) + I.accuracyHtml(card, m) + I.heatLoadHtml(card) + I.genHtml(card);
   };
 
   // Reihen für die Diagramme (Streudiagramm, Kostenverlauf): gedrosselt wie die Zuordnung
@@ -1120,6 +1145,81 @@ svg.ch{display:block;width:100%;height:auto}
     return out;
   };
 
+  // 1.2: Tagesprofil (24 Balken, Werktag und Wochenende) und Vergleich dynamisch (kumuliert) des Stromzählers
+  I.powerMeter = (card) => {
+    const hh = card._meta && card._meta.haushalte && card._meta.haushalte[0];
+    return hh ? hh.zaehler.find((z) => z.rolle === 'main' && z.medium === 'strom') : null;
+  };
+  I.loadPowerSeries = async (card, meterId) => {
+    const h = card._h;
+    if (!h || typeof h.callWS !== 'function' || card._powLoading || (card._c.profil === false && card._c.vergleich === false)) return;
+    if (card._powAt && card._powKey === meterId && Date.now() - card._powAt < (card._powErr ? 60e3 : 1800e3)) return;
+    card._powLoading = true;
+    card._powKey = meterId;
+    try {
+      card._pow = await h.callWS({ type: 'tarif_cockpit/reihen', zaehler: meterId });
+      card._powErr = null;
+    } catch (e) {
+      card._pow = null;
+      card._powErr = e;
+    }
+    card._powAt = Date.now();
+    card._powLoading = false;
+    card._last = null;
+    card._render();
+  };
+  I.powerHtml = (card) => {
+    const t = TC.T;
+    const m = I.powerMeter(card);
+    if (!m) return '';
+    I.loadPowerSeries(card, m.zaehler_id);
+    const r = card._pow;
+    if (!r || r.zaehler_id !== m.zaehler_id) return '';
+    let out = '';
+    const p = r.profil;
+    if (card._c.profil !== false && p && (p.werktag || p.wochenende)) {
+      const W = 720, H = 160, L = 40, B = 22, T = 8;
+      const vals = [...(p.werktag || []), ...(p.wochenende || [])];
+      const ymax = Math.max(0.01, ...vals) * 1.1;
+      const bw = (W - L - 8) / 24;
+      let svg = `<svg class="ch pr" viewBox="0 0 ${W} ${H}" role="img">`;
+      for (let g = 0; g <= 2; g++) {
+        const y = T + ((H - T - B) * g) / 2;
+        svg += `<line class="gl" x1="${L}" x2="${W - 8}" y1="${y}" y2="${y}"/><text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${TC.nf(ymax * (1 - g / 2), 1)}</text>`;
+      }
+      [['werktag', 0, 'wd'], ['wochenende', 1, 'we']].forEach(([k, o, cls]) => {
+        (p[k] || []).forEach((v, i) => {
+          const hgt = (v / ymax) * (H - T - B);
+          svg += `<rect class="${cls}" x="${(L + i * bw + 2 + o * (bw - 4) / 2).toFixed(1)}" y="${(H - B - hgt).toFixed(1)}" width="${((bw - 4) / 2).toFixed(1)}" height="${hgt.toFixed(1)}"/>`;
+        });
+      });
+      for (let i = 0; i < 24; i += 3) svg += `<text class="ax" x="${(L + i * bw + bw / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle">${i}</text>`;
+      svg += '</svg>';
+      out += `<div class="panel wide prof"><div class="chead"><span class="lbl">${esc(t('pr.title'))}</span><span class="leg"><i class="wd"></i>${esc(t('pr.wd'))}</span><span class="leg"><i class="we"></i>${esc(t('pr.we'))}</span></div>${svg}</div>`;
+    }
+    const v = r.vergleich;
+    if (card._c.vergleich !== false && v && v.tage && (v.tage_kosten || []).length) {
+      let a = 0, d = 0;
+      const pts = v.tage_kosten.map(([day, x, y]) => { a += x; d += y; return [day, a, d]; });
+      const W = 720, H = 180, L = 48, R = 10, T = 10, B = 22;
+      const ymax = Math.max(1, a, d) * 1.08;
+      const n = pts.length;
+      const X = (i) => L + (n > 1 ? (i / (n - 1)) : 0.5) * (W - L - R);
+      const Y = (val2) => T + (H - T - B) * (1 - val2 / ymax);
+      const line = (idx) => pts.map((q, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)} ${Y(q[idx]).toFixed(1)}`).join(' ');
+      let svg = `<svg class="ch cm" viewBox="0 0 ${W} ${H}" role="img">`;
+      for (let g = 0; g <= 2; g++) {
+        const y = T + ((H - T - B) * g) / 2;
+        svg += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/><text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${TC.nf(ymax * (1 - g / 2), 0)}</text>`;
+      }
+      svg += `<path class="own" d="${line(1)}"/><path class="dyn" d="${line(2)}"/>`;
+      svg += `<text class="ax" x="${L}" y="${H - 6}">${esc(dd(pts[0][0]))}</text><text class="ax" x="${W - R}" y="${H - 6}" text-anchor="end">${esc(dd(pts[n - 1][0]))}</text></svg>`;
+      out += `<div class="panel wide cmpp"><div class="chead"><span class="lbl">${esc(t('cmp.title'))}</span><span class="leg"><i class="own"></i>${esc(t('cmp.own'))}</span><span class="leg"><i class="dyn"></i>${esc(t('cmp.dyn'))}</span></div>${svg}`
+        + `<div class="qual">${esc(t('cmp.sum', { n: v.tage, a: money(v.kosten_tatsaechlich), d: money(v.kosten_dynamisch), p: TC.nf((v.mittelpreis_dynamisch || 0) * 100, 1) + ' ct' }))}</div></div>`;
+    }
+    return out;
+  };
+
   // Kacheln je Wärmeerzeuger: Eingang, Wärme, Entlastung (mit Qualität), Betrieb; Ofen zusätzlich Holz
   I.genHtml = (card) => {
     const h = card._h;
@@ -1225,6 +1325,11 @@ svg.ch{display:block;width:100%;height:auto}
 .arch td{text-align:right;padding:5px 6px;border-top:1px solid rgba(var(--ov),.06)}
 .arch th:first-child,.arch td:first-child{text-align:left}
 .arch td small{color:rgb(var(--mut));font-size:.66rem}
+.ch.pr rect.wd{fill:rgb(96 165 250)}.ch.pr rect.we{fill:rgb(251 146 60);opacity:.85}
+.prof .leg i.wd{background:rgb(96 165 250)}.prof .leg i.we{background:rgb(251 146 60)}
+.ch.cm .own{fill:none;stroke:rgb(96 165 250);stroke-width:2.4}.ch.cm .dyn{fill:none;stroke:rgb(52 211 153);stroke-width:2.4;stroke-dasharray:7 5}
+.cmpp .leg i.own{background:rgb(96 165 250)}.cmpp .leg i.dyn{background:rgb(52 211 153)}
+b.bad{color:#f87171}
 .hlbar{height:6px;border-radius:3px;background:rgba(var(--ov),.08);margin-top:8px;overflow:hidden}
 .hlbar i{display:block;height:100%;background:rgb(245 158 11);border-radius:3px}
 .dlgbg{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:5;border-radius:inherit}

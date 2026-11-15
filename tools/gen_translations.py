@@ -781,6 +781,93 @@ SV["set_preis"]["fields"].update({
 })
 
 
+# ---------------------------------------------------------------- 1.2: Zeitfenster, § 14a, dynamisch, Vergleich, Kühlen, Leckage
+COOL = T("Kühlgrenze", "Cooling limit")
+COOL_DESC = T("Kühlgradtage für Klimageräte: Tage mit einem Tagesmittel darüber zählen als Kühltage (Standard 22 °C).",
+              "Cooling degree days for air conditioners: days with a mean above this count as cooling days (default 22 °C).")
+for step in (S["config"]["step"]["klima"], S["options"]["step"]["init"]):
+    step["data"]["cooling_limit"] = COOL
+    step.setdefault("data_description", {})["cooling_limit"] = COOL_DESC
+ZS = S["config_subentries"]["zaehler"]
+ZS["step"]["preis_aendern"]["data"]["windows_14a"] = T("Zeitfenster, § 14a oder dynamischer Preis", "Time windows, § 14a or dynamic price")
+ZS["step"]["preis_aendern"]["data_description"]["windows_14a"] = T(
+    "HT/NT, dynamischer Tarif (Börsenpreis je Viertelstunde) oder § 14a (Pauschale, zeitvariable Netzentgelte). Hat der laufende Preis schon so etwas, folgt der Schritt immer.",
+    "HT/NT, dynamic tariff (exchange price per quarter hour) or § 14a (flat rate, time-variable grid fees). If the current price already has one, the step always follows.")
+ZS["step"]["zeitfenster"] = {
+    "title": T("Zeitfenster, § 14a, dynamisch", "Time windows, § 14a, dynamic"),
+    "description": T("HT/NT: Der Arbeitspreis von vorher gilt als NT, hier der HT-Preis und seine Zeit. Dynamisch: Preis-Entität (z. B. EPEX Spot) und Aufschlag "
+                     "(Netzentgelt, Steuern, Marge). § 14a Modul 1: Pauschale je Jahr. Modul 3: Zu- bzw. Abschlag in bestimmten Zeiten und Quartalen. "
+                     "Modul 2 (eigener Zähler) legst du als eigenen Zähler mit eigenem Vertrag an.",
+                     "HT/NT: the unit price from before counts as NT, here the HT price and its time. Dynamic: price entity (e.g. EPEX Spot) and markup "
+                     "(grid fee, taxes, margin). § 14a module 1: flat rate per year. Module 3: surcharge or discount at certain times and quarters. "
+                     "Module 2 (own meter) is added as a separate meter with its own contract."),
+    "data": {
+        "mode": T("Arbeitspreis", "Unit price"), "ht_price": T("HT-Preis", "Peak price"), "ht_start": T("HT von (HH:MM)", "Peak from (HH:MM)"),
+        "ht_end": T("HT bis (HH:MM)", "Peak until (HH:MM)"), "ht_days": T("HT an", "Peak on"),
+        "dyn_entity": T("Preis-Entität", "Price entity"), "dyn_markup": T("Aufschlag", "Markup"),
+        "rebate_14a": T("§ 14a Modul 1: Pauschale", "§ 14a module 1: flat rate"),
+        "m3_nt_start": T("Modul 3 Niedertarif von", "Module 3 low tariff from"), "m3_nt_end": T("Modul 3 Niedertarif bis", "Module 3 low tariff until"),
+        "m3_nt_delta": T("Modul 3 Niedertarif Abschlag (negativ)", "Module 3 low tariff discount (negative)"),
+        "m3_ht_start": T("Modul 3 Hochtarif von", "Module 3 high tariff from"), "m3_ht_end": T("Modul 3 Hochtarif bis", "Module 3 high tariff until"),
+        "m3_ht_delta": T("Modul 3 Hochtarif Zuschlag", "Module 3 high tariff surcharge"), "m3_quarters": T("Modul 3 in den Quartalen", "Module 3 in quarters"),
+    },
+    "data_description": {
+        "dyn_markup": T("Was zum Börsenpreis dazukommt, brutto in ct/kWh. Enthält die Entität schon alles, 0.", "What is added to the exchange price, gross in ct/kWh. If the entity already includes everything, 0."),
+        "rebate_14a": T("Jährliche Reduzierung des Netzentgelts, wird anteilig abgezogen.", "Yearly grid fee reduction, deducted pro rata."),
+    },
+}
+ZS["error"]["time_format"] = T("Uhrzeit als HH:MM von 00:00 bis 23:59 (als Ende auch 24:00).", "Time as HH:MM from 00:00 to 23:59 (as end also 24:00).")
+ZS["error"]["m3_times_missing"] = T("Für den Zu- bzw. Abschlag bitte von und bis angeben.", "Please give from and until for the surcharge or discount.")
+ZS["step"]["zeitfenster"]["data"]["dyn_net"] = T("Preis der Entität ohne MwSt.", "Entity price excludes VAT")
+ZS["step"]["zeitfenster"]["data_description"]["dyn_net"] = T("An bei Börsenpreisen wie EPEX Market Price (netto); dann kommt die MwSt. dazu. Aus bei Endpreisen inkl. MwSt.",
+                                                             "On for exchange prices such as EPEX market price (net); VAT is then added. Off for final prices incl. VAT.")
+ZS["step"]["stammdaten"]["data"]["comparison_net"] = T("Vergleich dynamisch: Preis ohne MwSt.", "Dynamic comparison: price excludes VAT")
+ZS["step"]["stammdaten"]["data_description"]["comparison_net"] = T("An bei EPEX Market Price (netto). Der Aufschlag gilt brutto.", "On for EPEX market price (net). The markup is gross.")
+ZS["error"]["required_for_htnt"] = T("Für HT/NT bitte den HT-Preis angeben.", "For HT/NT please enter the peak price.")
+ZS["error"]["required_for_dynamic"] = T("Für den dynamischen Tarif bitte die Preis-Entität wählen.", "For the dynamic tariff please choose the price entity.")
+ZS["step"]["stammdaten"]["data"].update({
+    "comparison_entity": T("Vergleich dynamisch: Preis-Entität", "Dynamic comparison: price entity"),
+    "comparison_markup": T("Vergleich dynamisch: Aufschlag", "Dynamic comparison: markup"),
+    "comparison_base": T("Vergleich dynamisch: Grundpreis", "Dynamic comparison: base price"),
+    "leak_threshold": T("Leckage-Schwelle", "Leak threshold"),
+})
+ZS["step"]["stammdaten"].setdefault("data_description", {}).update({
+    "comparison_entity": T("Börsenpreis je Viertelstunde (z. B. EPEX Spot Market Price). Die Integration rechnet mit, was dein Verbrauch damit gekostet hätte.",
+                           "Exchange price per quarter hour (e.g. EPEX Spot market price). The integration calculates what your consumption would have cost with it."),
+    "comparison_markup": T("Netzentgelt, Steuern und Marge des Angebots, brutto in ct/kWh.", "Grid fee, taxes and margin of the offer, gross in ct/kWh."),
+    "leak_threshold": T("Kleinster Verbrauch nachts (1–5 Uhr), ab dem drei Nächte hintereinander als Leckage gelten. Standard 5 L/h.",
+                        "Smallest night-time flow (1–5 am) above which three nights in a row count as a leak. Default 5 L/h."),
+})
+S["selector"].update({
+    "price_mode": {"options": {"keine": T("Einheitlich (nur § 14a, falls angegeben)", "Single price (only § 14a, if given)"),
+                               "htnt": T("HT/NT", "Peak/off-peak"), "dynamisch": T("Dynamisch (Börsenpreis)", "Dynamic (exchange price)")}},
+    "weekday": {"options": {"0": T("Montag", "Monday"), "1": T("Dienstag", "Tuesday"), "2": T("Mittwoch", "Wednesday"), "3": T("Donnerstag", "Thursday"),
+                            "4": T("Freitag", "Friday"), "5": T("Samstag", "Saturday"), "6": T("Sonntag", "Sunday")}},
+    "quarter": {"options": {"1": T("1. Quartal", "Q1"), "2": T("2. Quartal", "Q2"), "3": T("3. Quartal", "Q3"), "4": T("4. Quartal", "Q4")}},
+})
+S["entity"]["sensor"].update({
+    "zeitfenster": {"name": T("Zeitfenster", "Time windows")},
+    "mittelpreis": {"name": T("Mittlerer Strompreis", "Average electricity price")},
+    "vergleich_dynamisch": {"name": T("Vergleich dynamischer Tarif", "Dynamic tariff comparison")},
+})
+S["entity"]["binary_sensor"] = {"leckage": {"name": T("Leckage-Verdacht", "Leak suspected")}}
+S["issues"]["leckage"] = {
+    "title": T("{meter}: Leckage-Verdacht", "{meter}: leak suspected"),
+    "description": T("Seit {seit} fließt Wasser auch nachts bzw. ohne Pause (Art: {art}, kleinster Nachtverbrauch {liter} L/h). Bitte Hähne, Spülkästen und Leitungen prüfen. "
+                     "Der Hinweis verschwindet, sobald es wieder Stunden ohne Verbrauch gibt.",
+                     "Since {seit} water has been flowing at night or without a break (kind: {art}, smallest night flow {liter} L/h). Please check taps, cisterns and pipes. "
+                     "The notice disappears once there are hours without consumption again."),
+}
+SV = S["services"]
+SV["set_preis"]["fields"].update({
+    "fenster": {"name": T("Zeitfenster", "Time windows"), "description": T("Liste mit name, von, bis (HH:MM), tage (0 = Montag), monate, preis (absolut, €/kWh) oder aufschlag (€/kWh).",
+                                                                           "List with name, von, bis (HH:MM), tage (0 = Monday), monate, preis (absolute, €/kWh) or aufschlag (€/kWh).")},
+    "pauschale_14a": {"name": T("§ 14a Pauschale", "§ 14a flat rate"), "description": T("Modul 1: Reduzierung je Jahr in Euro.", "Module 1: reduction per year in euros.")},
+    "dynamisch_entitaet": {"name": T("Dynamisch: Preis-Entität", "Dynamic: price entity"), "description": T("Sensor mit dem Preis je Viertelstunde.", "Sensor with the price per quarter hour.")},
+    "dynamisch_aufschlag": {"name": T("Dynamisch: Aufschlag", "Dynamic: markup"), "description": T("In Euro je kWh, brutto.", "In euros per kWh, gross.")},
+})
+
+
 def pick(o, i):
     if isinstance(o, tuple):
         return o[i]

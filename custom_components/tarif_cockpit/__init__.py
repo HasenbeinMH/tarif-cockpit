@@ -39,7 +39,7 @@ from .store import TarifStore
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 type TarifConfigEntry = ConfigEntry[TarifRuntime]
@@ -213,12 +213,12 @@ def _cleanup_issues(hass: HomeAssistant, runtime: TarifRuntime) -> None:
     """Hinweise unter Reparaturen, die zu einem gelöschten Zähler gehören, entfernen (sie bleiben sonst für immer stehen)."""
     from homeassistant.helpers import issue_registry as ir  # noqa: PLC0415
 
-    from .const import ISSUE_NO_STATISTICS, ISSUE_NOTICE, ISSUE_RECONCILE  # noqa: PLC0415
+    from .const import ISSUE_LEAK, ISSUE_NO_STATISTICS, ISSUE_NOTICE, ISSUE_RECONCILE  # noqa: PLC0415
 
     for domain, issue_id in list(ir.async_get(hass).issues):
         if domain != DOMAIN:
             continue
-        for prefix in (ISSUE_NO_STATISTICS, ISSUE_RECONCILE, ISSUE_NOTICE):
+        for prefix in (ISSUE_NO_STATISTICS, ISSUE_RECONCILE, ISSUE_NOTICE, ISSUE_LEAK):
             if issue_id.startswith(prefix + "_") and issue_id[len(prefix) + 1:] not in runtime.meters:
                 ir.async_delete_issue(hass, DOMAIN, issue_id)
 

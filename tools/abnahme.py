@@ -11,7 +11,7 @@ Vorbereitung (Beispiel, Port 8124):
     -v <leerer-ordner>:/config -v <repo>/custom_components/tarif_cockpit:/config/custom_components/tarif_cockpit:ro \
     ghcr.io/home-assistant/home-assistant:2026.11.1
 Aufruf:
-  python tools/abnahme.py <leerer-ordner> [http://127.0.0.1:8124] [alles|haushalt|zaehler|karte|dialog|waermeerzeuger|analyse|impulse|uebernahme|rechnung]
+  python tools/abnahme.py <leerer-ordner> [http://127.0.0.1:8124] [alles|haushalt|zaehler|karte|dialog|waermeerzeuger|analyse|impulse|uebernahme|rechnung|fenster]
 """
 from __future__ import annotations
 
@@ -457,6 +457,32 @@ def step_rechnung(page: Page, base: str) -> None:
     expect(page.get_by_text(re.compile("Gas: Rechnung .* weicht ab"))).to_have_count(before - 1)  # übernommen → Hinweis weg
 
 
+def step_fenster(page: Page, base: str) -> None:
+    """Zeitfenster (1.2): HT/NT am Stromzähler über „Preis ändern“ → „Zeitfenster, § 14a, dynamisch“ (Ablauf des Untereintrags).
+    Danach lädt die Integration neu und der Sensor „Zeitfenster“ ist da."""
+    res = page.evaluate(f"""async () => {{
+        const h = {HASS};
+        const entry = (await h.callWS({{type: 'config_entries/get', domain: 'tarif_cockpit'}}))[0].entry_id;
+        const subs = await h.callWS({{type: 'config_entries/subentries/list', entry_id: entry}});
+        const strom = subs.find((s) => s.title === 'Strom');
+        let r = await h.callApi('POST', 'config/config_entries/subentries/flow', {{handler: [entry, 'zaehler'], source: 'reconfigure', subentry_id: strom.subentry_id}});
+        r = await h.callApi('POST', `config/config_entries/subentries/flow/${{r.flow_id}}`, {{next_step_id: 'preis_aendern'}});
+        const today = new Date(); const d = new Date(today.getTime() - today.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+        r = await h.callApi('POST', `config/config_entries/subentries/flow/${{r.flow_id}}`, {{valid_from: d, work_price: 25, base_price: 13.09, windows_14a: true}});
+        const step = r.step_id;
+        r = await h.callApi('POST', `config/config_entries/subentries/flow/${{r.flow_id}}`, {{mode: 'htnt', ht_price: 35, ht_start: '06:00', ht_end: '22:00',
+            ht_days: ['0', '1', '2', '3', '4'], m3_quarters: []}});
+        return {{step, result: r}};
+    }}""")
+    print("Zeitfenster:", res["step"], res["result"].get("reason"))
+    assert res["step"] == "zeitfenster" and res["result"].get("reason") == "price_saved", res
+    page.wait_for_timeout(6000)  # Neuladen der Integration (neuer Sensor)
+    found = page.evaluate(f"() => Object.keys({HASS}.states).filter((e) => e.startsWith('sensor.strom') && "
+                          f"({HASS}.states[e].attributes.friendly_name || '').endsWith('Zeitfenster'))")
+    assert found, "Sensor Zeitfenster fehlt"
+    print("Sensor:", found[0])
+
+
 def pick_entity(page: Page, label: str, name: str) -> None:
     """Entitätsauswahl im Dialog: Feld öffnen, Namen suchen, Treffer wählen."""
     d = dialog(page)
@@ -476,10 +502,10 @@ def click_center(page: Page, loc) -> None:
 
 
 def step_alles(page: Page, base: str) -> None:
-    for name in ("haushalt", "zaehler", "karte", "dialog", "waermeerzeuger", "analyse", "impulse", "uebernahme", "rechnung"):
+    for name in ("haushalt", "zaehler", "karte", "dialog", "waermeerzeuger", "analyse", "impulse", "uebernahme", "rechnung", "fenster"):
         print("Schritt", name)
         globals()[f"step_{name}"](page, base)
-    print("Abnahme bestanden: Einrichtung ohne YAML bis zur Karte, Abschlag über den Dialog, Wärmeerzeuger, Auswertungskarte, Impulszähler, Übernahme aus 0.3, Rechnung mit Reparatur „Übernehmen“.")
+    print("Abnahme bestanden: Einrichtung ohne YAML bis zur Karte, Abschlag über den Dialog, Wärmeerzeuger, Auswertungskarte, Impulszähler, Übernahme aus 0.3, Rechnung mit Reparatur „Übernehmen“, Zeitfenster HT/NT.")
 
 
 def tb(page: Page, label: str):

@@ -21,7 +21,7 @@ from homeassistant.util import dt as dt_util
 from .const import DOMAIN, ISSUE_RECONCILE, signal_updated
 from .engine import billing
 from .engine.model import (
-    AdvancePlan, AdvanceStep, BillingPeriod, Calibration, Contract, DailyConsumption, Dataset, GeneratorDaily, HeatGenerator, Household,
+    AdvancePlan, AdvanceStep, BillingPeriod, Calibration, Contract, DayIntervals, DailyConsumption, Dataset, GeneratorDaily, HeatGenerator, Household,
     Invoice, Meter, Payment, PaymentStatus, PaymentType, PeriodStatus, PriceSegment, Reading, ReadingSource, SensorReset, new_id,
 )
 from .engine.quality import Quality, usable
@@ -445,6 +445,67 @@ class TarifRuntime:
         p = Payment(new_id(), contract.contract_id, day, float(amount), kind, status)
         self.data.payments.append(p)
         return p
+
+    def day_intervals(self, key: str, kind: str = "energy") -> dict[date, list[float | None]]:
+        """Viertelstunden je Tag (1.2): Verbrauch eines Zählers (``key`` = Zähler) oder Preise einer Entität."""
+        return {d.date: d.values for d in self.data.day_intervals if d.key == key and d.kind == kind}
+
+    def put_day_interval(self, item: DayIntervals) -> bool:
+        for i, d in enumerate(self.data.day_intervals):
+            if d.key == item.key and d.kind == item.kind and d.date == item.date:
+                if d == item:
+                    return False
+                self.data.day_intervals[i] = item
+                return True
+        self.data.day_intervals.append(item)
+        return True
+
+    def trim_history(self, before: date) -> bool:
+        """Stunden- und Viertelstundenwerte vor ``before`` verwerfen (Speichergröße); Tageswerte bleiben."""
+        changed = False
+        n = len(self.data.day_intervals)
+        self.data.day_intervals = [d for d in self.data.day_intervals if d.date >= before]
+        changed |= len(self.data.day_intervals) != n
+        for i, d in enumerate(self.data.daily):
+            if d.hourly is not None and d.date < before:
+                self.data.daily[i] = replace(d, hourly=None)
+                changed = True
+        return changed
+
+    def price_kinds(self, meter_id: str) -> set[str]:
+        """Preisarten der Verträge eines Zählers (windows, dynamic): bestimmen, welche Sensoren es gibt."""
+        ids = {c.contract_id for c in self.contracts(meter_id)}
+        out: set[str] = set()
+        for p in self.data.prices:
+            if p.contract_id in ids:
+                if p.windows:
+                    out.add("windows")
+                if p.dynamic is not None:
+                    out.add("dynamic")
+        return out
+
+    def reload_if_new_kinds(self, meter_id: str, before: set[str]) -> None:
+        """Kommen Zeitfenster oder ein dynamischer Preis neu hinzu, die Integration neu laden (neue Sensoren)."""
+        if self.price_kinds(meter_id) != before:
+            self.store.schedule_save(self.data)
+            self.hass.config_entries.async_schedule_reload(self.entry.entry_id)
+
+    def interval_needs(self) -> tuple[dict[str, Meter], set[tuple[str, str | None]]]:
+        """Zähler, für die Viertelstunden gesammelt werden, und die Preis-Entitäten (dynamischer Tarif, Vergleich)."""
+        meters: dict[str, Meter] = {}
+        ents: set[tuple[str, str | None]] = set()
+        for m in self.meters.values():
+            mine: set[tuple[str, str | None]] = set()
+            if m.comparison is not None:
+                mine.add((m.comparison.entity, m.comparison.attribute))
+            ids = {c.contract_id for c in self.contracts(m.meter_id)}
+            for p in self.data.prices:
+                if p.contract_id in ids and p.dynamic is not None:
+                    mine.add((p.dynamic.entity, p.dynamic.attribute))
+            if mine and m.entity:
+                meters[m.meter_id] = m
+            ents |= mine
+        return meters, ents
 
     def invoices(self, meter_id: str) -> list[Invoice]:
         """Rechnungen eines Zählers (am Zähler oder über seinen Vertrag), ohne korrigierte, nach Zeitraum sortiert."""
