@@ -39,7 +39,7 @@ from .engine.leak import LeakResult, detect_leak
 from .engine.invoice import InvoiceCheck, calibrated_daily, calibrated_prices, compare_invoice, factor_on
 from .engine.degree_days import degree_days
 from .engine.reconcile import Reconciliation, reconcile
-from .engine.generators import ON_POWER_KINDS, GeneratorResult, evaluate_generator, stove_relief_per_hour
+from .engine.generators import ON_POWER_KINDS, GeneratorResult, evaluate_generator, stove_relief_per_hour, wood_rate
 from .engine.model import ForecastSnapshot, GeneratorKind, HeatGenerator, Medium, Meter
 from .engine.regression import HeatModel
 from .engine.units import convert
@@ -264,7 +264,9 @@ class TarifCoordinator:
                 stoves = [g for g in gens if g.kind == GeneratorKind.FIREPLACE]
                 if stoves:
                     kw["stove_hours"] = self._gen_series(stoves, "hours")
-                    kw["stove_relief"] = stove_relief_per_hour(stoves[0], meter.medium)
+                    # 1.2.2: mit gewogenem Holz die gelernte Wärme je Brennstunde statt Nennleistung × Anteil
+                    rate = wood_rate(stoves[0], rt.generator_daily(stoves[0].generator_id), rt.wood(stoves[0].generator_id))
+                    kw["stove_relief"] = stove_relief_per_hour(stoves[0], meter.medium, rate.heat_kw if rate else None)
                 hps = [g for g in gens if g.kind in ON_POWER_KINDS and g.meter_id != meter.meter_id]
                 if hps:
                     kw["hp_energy"] = self._gen_series(hps, "energy_input")
@@ -330,7 +332,8 @@ class TarifCoordinator:
             start = res.period.start_date if res is not None and res.period is not None else today.replace(month=1, day=1)
             model = self._models.get(heat_id) if heat_id else None
             try:
-                self.gen_results[gid] = evaluate_generator(gen, rt.generator_daily(gid), start, today, model)
+                self.gen_results[gid] = evaluate_generator(gen, rt.generator_daily(gid), start, today, model,
+                                                           wood=rt.wood(gid) if gen.kind == GeneratorKind.FIREPLACE else None)
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("Tarif-Cockpit: Auswertung des Wärmeerzeugers %s fehlgeschlagen", gen.name or gid)
             if gen.kind in (GeneratorKind.GAS_BOILER, GeneratorKind.DISTRICT_HEATING):

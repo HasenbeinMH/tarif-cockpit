@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.2 – 2026-11-16
+
+### Neu
+- **Holz wiegen am Kaminofen:** Aktion `tarif_cockpit.holz_erfassen` trägt die Holzmenge eines Tages ein, in kg oder als Scheite × kg je Scheit (das Gewicht je Scheit wird gemerkt). Einträge eines Tages werden addiert, `ersetzen` korrigiert den Tag (ohne Menge: Tag entfernen).
+- **Gelernte Ofenleistung:** Ab 3 Tagen mit Holz und Brennstunden lernt die Integration die Menge je Brennstunde und die Wärme, die der Ofen dabei abgibt (neuer Sensor „Ofenleistung (gelernt)“, ab 7 Tagen „gut“). Damit rechnet sie auch an Tagen ohne Eintrag statt mit der Nennleistung; die Annahme für die Entlastung der Heizung nutzt sie (× wirksamer Anteil), bis der Ofen-Effekt aus der Regression gelernt ist.
+- Holz und Holzkosten zählen gewogene Tage mit der gewogenen Menge (Attribute `gewogen_kg`, `tage_gewogen`).
+- Beispiel „Holz per Telegram“ in docs/AUTOMATIONEN.md. Speicher 1.7 (neue Liste, sonst unverändert).
+
 ## 1.2.1 – 2026-11-16
 
 ### Geändert

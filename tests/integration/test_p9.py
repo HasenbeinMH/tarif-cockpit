@@ -182,7 +182,7 @@ async def test_store_migration_1_5_to_1_6(hass: HomeAssistant, hass_storage) -> 
     rt.put_day_interval(DayIntervals("m1", date(2026, 11, 12), "energy", 15, [0.1] * 96, "5minute"))
     rt.changed()
     await hass.config_entries.async_unload(entry.entry_id)
-    assert hass_storage[KEY]["minor_version"] == 6 and len(hass_storage[KEY]["data"]["day_intervals"]) == 1
+    assert hass_storage[KEY]["minor_version"] == 7 and len(hass_storage[KEY]["data"]["day_intervals"]) == 1
 
 
 async def test_history_prices_sampled_mid_quarter(hass: HomeAssistant) -> None:

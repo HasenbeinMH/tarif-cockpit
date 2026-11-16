@@ -22,8 +22,9 @@ from .const import DOMAIN, ISSUE_RECONCILE, signal_updated
 from .engine import billing
 from .engine.model import (
     AdvancePlan, AdvanceStep, BillingPeriod, Calibration, Contract, DayIntervals, DailyConsumption, Dataset, GeneratorDaily, HeatGenerator, Household,
-    Invoice, Meter, Payment, PaymentStatus, PaymentType, PeriodStatus, PriceSegment, Reading, ReadingSource, SensorReset, new_id,
+    Invoice, Meter, Payment, PaymentStatus, PaymentType, PeriodStatus, PriceSegment, Reading, ReadingSource, SensorReset, WoodEntry, new_id,
 )
+from .engine.generators import wood_by_day
 from .engine.quality import Quality, usable
 from .engine.reconcile import Reconciliation, apply_reconciliation, reconcile
 from .store import TarifStore
@@ -445,6 +446,32 @@ class TarifRuntime:
         p = Payment(new_id(), contract.contract_id, day, float(amount), kind, status)
         self.data.payments.append(p)
         return p
+
+    def wood(self, generator_id: str) -> dict[date, float]:
+        """Gewogenes Holz je Tag eines Kaminofens (1.2.2)."""
+        return wood_by_day(self.data.wood_log, generator_id)
+
+    def last_kg_per_log(self, generator_id: str) -> float | None:
+        """Zuletzt angegebenes Gewicht je Scheit (für „nur Scheite zählen“)."""
+        best = None
+        for w in self.data.wood_log:  # in Erfassungsreihenfolge: bei gleichem Tag gilt der spätere Eintrag
+            if w.generator_id == generator_id and w.kg_per_log and (best is None or w.date >= best.date):
+                best = w
+        return best.kg_per_log if best is not None else None
+
+    def remove_wood(self, generator_id: str, day: date) -> int:
+        """Einträge eines Tages entfernen (Korrektur); der Tag gilt dann wieder als nicht gewogen."""
+        n = len(self.data.wood_log)
+        self.data.wood_log = [w for w in self.data.wood_log if not (w.generator_id == generator_id and w.date == day)]
+        return n - len(self.data.wood_log)
+
+    def add_wood(self, generator_id: str, day: date, kg: float, logs: int | None = None, kg_per_log: float | None = None,
+                 note: str | None = None, replace_day: bool = False) -> float:
+        """Holz eines Tages erfassen; mit ``replace_day`` ersetzt der Eintrag die bisherigen des Tages. Gibt die Tagessumme zurück."""
+        if replace_day:
+            self.remove_wood(generator_id, day)
+        self.data.wood_log.append(WoodEntry(new_id(), generator_id, day, round(float(kg), 3), logs, kg_per_log, note))
+        return round(sum(w.kg for w in self.data.wood_log if w.generator_id == generator_id and w.date == day), 3)
 
     def day_intervals(self, key: str, kind: str = "energy") -> dict[date, list[float | None]]:
         """Viertelstunden je Tag (1.2): Verbrauch eines Zählers (``key`` = Zähler) oder Preise einer Entität."""

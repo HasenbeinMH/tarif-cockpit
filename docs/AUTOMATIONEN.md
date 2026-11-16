@@ -72,6 +72,35 @@ actions:
 
 Die Geräte-ID steht unter Einstellungen → Geräte & Dienste → Tarif-Cockpit → Gerät „Gas“ in der Adresszeile; im Automations-Editor wählst du das Gerät einfach aus. Ein falscher Stand lässt sich mit `ersetzt` korrigieren oder mit `ablesung_ungueltig` verwerfen; gelöscht wird nichts.
 
+## Holz per Telegram (1.2.2)
+
+Holz des Tages per Nachricht, z. B. `/holz 12,5` (kg):
+
+```yaml
+alias: Tarif-Cockpit – Holz per Telegram
+triggers:
+  - trigger: event
+    event_type: telegram_command
+    event_data:
+      command: /holz
+conditions:
+  - "{{ trigger.event.data.args | count > 0 and trigger.event.data.args[0] | replace(',', '.') | is_number }}"
+actions:
+  - action: tarif_cockpit.holz_erfassen
+    data:
+      erzeuger: 4d5e6f…                         # Gerät „Kaminofen“ des Tarif-Cockpits
+      kg: "{{ trigger.event.data.args[0] | replace(',', '.') | float }}"
+    response_variable: holz
+  - action: telegram_bot.send_message
+    data:
+      target: "{{ trigger.event.data.chat_id }}"
+      message: >-
+        Holz heute {{ holz.kg_tag }} kg (zählt ab morgen mit).
+        {% if holz.leistung_kw %}Gelernt: {{ holz.kg_je_brennstunde }} kg je Brennstunde, {{ holz.leistung_kw }} kW.{% endif %}
+```
+
+Wer lieber Scheite zählt, nimmt `scheite: "{{ trigger.event.data.args[0] | int }}"` statt `kg`. Das Gewicht je Scheit gibst du einmal mit an (`kg_je_scheit`, oder `kg` und `scheite` zusammen); danach reicht die Anzahl. Einträge eines Tages werden addiert, mit `ersetzen: true` korrigierst du den Tag (ohne `kg`/`scheite`: Einträge des Tages entfernen).
+
 ## Erinnerung an die Ablesung
 
 Monatlich am Ersten erinnern, wenn die letzte Ablesung älter als 25 Tage ist:

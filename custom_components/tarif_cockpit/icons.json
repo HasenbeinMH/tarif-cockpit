@@ -32,6 +32,9 @@
     },
     "uebernahme_v03": {
       "service": "mdi:import"
+    },
+    "holz_erfassen": {
+      "service": "mdi:fireplace"
     }
   },
   "entity": {
@@ -86,6 +89,9 @@
       },
       "abschlag": {
         "default": "mdi:cash-sync"
+      },
+      "ofenleistung": {
+        "default": "mdi:fireplace"
       }
     }
   }

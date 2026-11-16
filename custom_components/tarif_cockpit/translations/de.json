@@ -887,6 +887,9 @@
       },
       "vergleich_dynamisch": {
         "name": "Vergleich dynamischer Tarif"
+      },
+      "ofenleistung": {
+        "name": "Ofenleistung (gelernt)"
       }
     },
     "binary_sensor": {
@@ -1309,6 +1312,40 @@
           "description": "Helfer aus 0.3: Zustandszahl."
         }
       }
+    },
+    "holz_erfassen": {
+      "name": "Holz erfassen",
+      "description": "Trägt gewogenes Holz am Kaminofen ein: kg direkt oder Scheite × kg je Scheit. Mehrere Einträge eines Tages werden addiert. Aus den Tagen mit Holz und Brennstunden lernt die Integration die Menge und Wärme je Brennstunde (ab 3 Tagen).",
+      "fields": {
+        "erzeuger": {
+          "name": "Kaminofen",
+          "description": "Kaminofen-Gerät des Tarif-Cockpits."
+        },
+        "datum": {
+          "name": "Datum",
+          "description": "Standard: heute."
+        },
+        "kg": {
+          "name": "Menge",
+          "description": "Gewogenes Holz in kg. 0 = an diesem Tag kein Holz."
+        },
+        "scheite": {
+          "name": "Scheite",
+          "description": "Anzahl Scheite. Ohne Menge: Scheite × kg je Scheit. Mit Menge: das Gewicht je Scheit wird gemerkt."
+        },
+        "kg_je_scheit": {
+          "name": "kg je Scheit",
+          "description": "Standard: das zuletzt angegebene Gewicht je Scheit."
+        },
+        "ersetzen": {
+          "name": "Tag ersetzen",
+          "description": "Ersetzt die bisherigen Einträge dieses Tages (zum Korrigieren). Ohne Menge und Scheite: Einträge des Tages entfernen."
+        },
+        "notiz": {
+          "name": "Notiz",
+          "description": "Freitext."
+        }
+      }
     }
   },
   "issues": {
@@ -1384,6 +1421,21 @@
     },
     "reading_already_replaced": {
       "message": "Diese Ablesung ist schon ersetzt oder ungültig ({id}). Bitte die aktuell gültige Ablesung angeben."
+    },
+    "unknown_generator": {
+      "message": "Unbekannter Wärmeerzeuger: {id}"
+    },
+    "not_a_stove": {
+      "message": "Holz lässt sich nur an einem Kaminofen erfassen."
+    },
+    "wood_date_invalid": {
+      "message": "Das Datum muss zwischen heute und vor {days} Tagen liegen."
+    },
+    "wood_amount_missing": {
+      "message": "Bitte die Menge in kg oder die Anzahl Scheite angeben."
+    },
+    "wood_kg_per_log_missing": {
+      "message": "Für Scheite ohne Menge wird das Gewicht je Scheit gebraucht (einmal angeben, danach wird es gemerkt)."
     }
   },
   "options": {

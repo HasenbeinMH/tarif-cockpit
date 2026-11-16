@@ -19,7 +19,7 @@ Eine Integration für Home Assistant, die Zähler, Verträge, Abrechnungsperiode
 |---|---|
 | Integration `tarif_cockpit` | Haushalt mit Zählern (Strom, Gas, Wasser, Fernwärme), Vertragskette je Zähler, **Abrechnungsperioden** nach der Regel deines Versorgers (Vertragsjahr, Kalenderjahr mit Rumpfjahr, fester Stichtag, von Hand), Anbieterwechsel mit Schlussperiode, Ablesungen mit Qualität, Tageswerte. **Rechnet** Kosten (Preise mit Gültigkeit, brutto/netto, Abwasser), Abschläge und Zahlungen, die Prognose (Strom und Wasser über das Vorjahr, Gas und Fernwärme über einen gelernten Kennwert je Gradtag, Wallbox getrennt) und das Ergebnis mit Qualitätsangabe. Daten liegen in einem eigenen Speicher und überstehen Neustarts und Updates. |
 | Karte `custom:tarif-cockpit-card` | Je Zähler Urteil, Saldo und vier Balken: Kosten bisher, Abschläge bisher (grün), Prognose und Abschläge der Periode, Abschlagsstufen, empfohlener Abschlag, Prognose-Qualität, Anbieterwechsel; Gesamturteil. Abschlag per Tipp ändern. |
-| Wärmeerzeuger (optional) | Gastherme, Wärmepumpe, Split-Klima, Fernwärme, Kaminofen, Elektroheizung: eingesetzte Energie, Wärme, Entlastung, Betriebsstunden; Kaminofen mit Holz und Holzkosten (geschätzt). |
+| Wärmeerzeuger (optional) | Gastherme, Wärmepumpe, Split-Klima, Fernwärme, Kaminofen, Elektroheizung: eingesetzte Energie, Wärme, Entlastung, Betriebsstunden; Kaminofen mit Holz und Holzkosten (geschätzt); mit gewogenem Holz die gelernte Ofenleistung (1.2.2). |
 | Karte `custom:tarif-cockpit-analyse-card` | Heizung: gelernter Kennwert je Gradtag, Warmwasser-Grundlast, temperaturbereinigter Kennwert, Streudiagramm Verbrauch über Gradtage, Kostenverlauf gegen die Abschläge, Wärmeerzeuger; ab 1.1 Rechnung gegen Integration, Prognosegüte über mehrere Jahre, Heizlast mit Taktgrenze. |
 | Jahresabrechnung (1.1) | Rechnung mit Menge, Ständen, Brennwert und Positionen erfassen (auch alte Rechnungen vor dem Vertrag als Lerndaten); Vergleich mit den eigenen Daten, Vorschlag unter Reparaturen mit „OK“ übernehmen (Brennwert, Faktor der Ersatzquelle); Preisstaffeln und Rundungsregeln des Versorgers. |
 
@@ -93,7 +93,8 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 | Wärme | gemessen (Wärmemengenzähler) oder geschätzt (Attribut `geschaetzt`) |
 | Entlastung | kWh, die der Gas-/Fernwärmezähler dadurch weniger braucht; leer, bis sie gelernt ist (Kaminofen vorher als Annahme, Attribut `qualitaet`) |
 | Betriebsstunden, Betriebstage | aus der Betriebszustand-Entität bzw. beim Kaminofen aus dem Temperaturanstieg; ein Tag zählt ab 1 h |
-| Holz (geschätzt), Holzkosten (geschätzt) | nur Kaminofen |
+| Holz (geschätzt), Holzkosten (geschätzt) | nur Kaminofen; mit gewogenem Holz Attribute `gewogen_kg`, `tage_gewogen` |
+| Ofenleistung (gelernt) (1.2.2) | nur Kaminofen: Wärme je Brennstunde aus gewogenem Holz (kW), leer bis 3 Tage gewogen sind; Attribute `kg_je_brennstunde`, `tage`, `brennstunden`, `qualitaet` |
 | Zeitfenster, Mittlerer Strompreis, Vergleich dynamischer Tarif (1.2) | je nach Einrichtung: Anteil des ersten Fensters (Attribut `fenster` mit Menge und Anteil je Fenster), mittlerer Arbeitspreis beim dynamischen Tarif, Differenz zum dynamischen Tarif (positiv = dynamisch günstiger; Attribute Kosten, Tage, Hochrechnung) |
 | Leckage-Verdacht (1.2) | binärer Sensor je Wasserzähler mit Sensor; Attribute `art`, `tage`, `nachtminimum_l_h` |
 | Heizlast (1.1) | Gaskessel und Fernwärme: Heizlast bei Normaußentemperatur (kW, Diagnose); Attribute `nennleistung_kw`, `verhaeltnis`, `einordnung`, `taktgrenze_c`, `takttage_anteil`, `qualitaet` |
@@ -102,6 +103,7 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 | Aktion | Wozu |
 |---|---|
 | `tarif_cockpit.add_ablesung` | Zählerstand eintragen (`zaehler`, `stand`, optional `zeitpunkt`, `qualitaet`, `notiz`). Mit `ersetzt` wird eine frühere Ablesung korrigiert, ohne sie zu löschen. Antwort: `ablesung_id`. |
+| `tarif_cockpit.holz_erfassen` | Gewogenes Holz am Kaminofen (1.2.2): `erzeuger`, `kg` oder `scheite` (× `kg_je_scheit`, sonst das zuletzt angegebene), optional `datum`, `ersetzen` (Tag korrigieren; ohne Menge: Tag entfernen), `notiz`. Einträge eines Tages werden addiert; ein Eintrag für heute zählt ab morgen. Antwort: Tagessumme und gelernte Leistung. |
 | `tarif_cockpit.ablesung_ungueltig` | Ablesung als ungültig markieren; sie bleibt gespeichert. |
 | `tarif_cockpit.add_folgevertrag` | Anbieterwechsel: alter Vertrag endet am Vortag (Schlussperiode), neuer Vertrag mit eigener Abrechnungsregel; optional `wechselstand`, `mindestlaufzeit` (Monate), `kuendigungsfrist` (Wochen). Ein Wechsel in eine bereits beendete Periode wird abgelehnt. |
 | `tarif_cockpit.set_periodenende` | Der Versorger hat ein paar Tage früher oder später abgelesen: Ende der laufenden oder zuletzt beendeten Periode verschieben (±10 Tage). |

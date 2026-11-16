@@ -16,17 +16,22 @@ Alle Annahmen sind als solche gekennzeichnet.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass, field
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 
-from .model import GeneratorDaily, GeneratorKind, HeatGenerator, Medium, PowerBasis
+from .model import GeneratorDaily, GeneratorKind, HeatGenerator, Medium, PowerBasis, WoodEntry
 from .quality import Quality
 from .regression import USABLE_FOR_FORECAST, HeatModel, ModelQuality
 
 HS_HI = 1.11  # Brennwert/Heizwert Erdgas (Annahme)
 BOILER_EFFICIENCY = 0.9  # Wirkungsgrad Gastherme bezogen auf Hi (Annahme)
 WOOD_KWH_PER_KG = 4.2  # Heizwert lufttrockenes Holz (Annahme)
+STOVE_EFFICIENCY = 0.75  # Wirkungsgrad Kaminofen, wenn keiner angegeben ist (Annahme)
+# Gewogenes Holz (1.2.2): ab so vielen Tagen mit Holz und Brennstunden gilt die gelernte Leistung je Brennstunde
+WOOD_RATE_MIN_DAYS = 3  # vorläufig
+WOOD_RATE_GOOD_DAYS = 7  # gut
+WOOD_RATE_MIN_HOURS = 1.0  # Tage mit weniger Brennstunden zählen nicht (Anzünden, Fehlerkennung)
 
 # Vorschläge je Typ (Nennleistung Heizbetrieb kW, Wirkungsgrad bzw. COP, wirksamer Anteil beim Ofen)
 KIND_DEFAULTS: dict[GeneratorKind, dict[str, float]] = {
@@ -76,11 +81,13 @@ def gas_per_hour(gen: HeatGenerator) -> float | None:
     return nominal / (default(gen, "efficiency") or BOILER_EFFICIENCY) * HS_HI
 
 
-def stove_relief_per_hour(gen: HeatGenerator, relieved: Medium) -> float | None:
+def stove_relief_per_hour(gen: HeatGenerator, relieved: Medium, heat_kw: float | None = None) -> float | None:
     """Annahme: Entlastung des Wärmezählers je Ofenstunde (kWh in dessen Einheit nach Brennwert).
-    Ofen-Nennleistung × wirksamer Anteil = Wärme, die sonst die Heizung liefern müsste; bei Gas ÷ Wirkungsgrad × Hs/Hi."""
-    nominal = default(gen, "nominal_kw")
+    Ofen-Nennleistung × wirksamer Anteil = Wärme, die sonst die Heizung liefern müsste; bei Gas ÷ Wirkungsgrad × Hs/Hi.
+    ``heat_kw``: aus gewogenem Holz gelernte Wärme je Brennstunde (1.2.2), ersetzt die Nennleistung; der wirksame
+    Anteil gilt weiter."""
     share = default(gen, "effective_share")
+    nominal = heat_kw or default(gen, "nominal_kw")
     if not nominal or not share:
         return None
     heat = nominal * share
@@ -130,6 +137,86 @@ def build_generator_day(
     return g
 
 
+# ---------------------------------------------------------------- Gewogenes Holz (1.2.2)
+
+
+@dataclass(slots=True, frozen=True)
+class WoodRate:
+    """Aus gewogenem Holz gelernt: kg je Brennstunde und die Wärme, die der Ofen dabei abgibt."""
+
+    kg_per_hour: float
+    heat_kw: float  # kg/h × Heizwert × Wirkungsgrad
+    days: int
+    hours: float
+    kg: float
+    quality: str  # vorlaeufig | gut
+
+
+def wood_by_day(entries: Iterable[WoodEntry], generator_id: str) -> dict[date, float]:
+    """Summe der gewogenen kg je Tag eines Ofens."""
+    out: dict[date, float] = {}
+    for w in entries:
+        if w.generator_id == generator_id:
+            out[w.date] = out.get(w.date, 0.0) + w.kg
+    return out
+
+
+def stove_efficiency(gen: HeatGenerator) -> float:
+    return default(gen, "efficiency") or STOVE_EFFICIENCY
+
+
+def wood_rate(gen: HeatGenerator, dailies: Mapping[date, GeneratorDaily], wood: Mapping[date, float]) -> WoodRate | None:
+    """kg je Brennstunde aus den Tagen mit gewogenem Holz und erkannten Brennstunden (Summe kg ÷ Summe Stunden).
+    Tage ohne Stunden, mit weniger als einer Stunde oder mit 0 kg zählen nicht. Zu wenige Tage → None (Regel 10)."""
+    if gen.kind != GeneratorKind.FIREPLACE:
+        return None
+    kg = hours = 0.0
+    n = 0
+    for d, w in wood.items():
+        g = dailies.get(d)
+        if w <= 0 or g is None or g.hours is None or g.hours < WOOD_RATE_MIN_HOURS:
+            continue
+        kg += w
+        hours += g.hours
+        n += 1
+    if n < WOOD_RATE_MIN_DAYS or hours <= 0:
+        return None
+    kgph = kg / hours
+    return WoodRate(kg_per_hour=round(kgph, 3), heat_kw=round(kgph * WOOD_KWH_PER_KG * stove_efficiency(gen), 2), days=n,
+                    hours=round(hours, 2), kg=round(kg, 1), quality="gut" if n >= WOOD_RATE_GOOD_DAYS else "vorlaeufig")
+
+
+def apply_wood(gen: HeatGenerator, dailies: Mapping[date, GeneratorDaily], wood: Mapping[date, float],
+               rate: WoodRate | None) -> dict[date, GeneratorDaily]:
+    """Tageswerte mit dem gewogenen Holz: an gewogenen Tagen eingesetzte Energie = kg × Heizwert (Schätzung, die Menge ist
+    gemessen). An den übrigen Tagen mit Brennstunden, deren Energie bisher nur aus der Nennleistung angenommen war, mit der
+    gelernten Menge je Brennstunde (Qualität „geschätzt“ erst bei einer guten Rate, vorher weiter „Annahme“).
+    Geschätzte Wärme wie bisher als wirksame Wärme: Ofenwärme (Energie × Wirkungsgrad) × wirksamer Anteil.
+    Gemessene Werte (Energie-Entität, Wärmemengenzähler) bleiben unverändert."""
+    out = dict(dailies)
+    if gen.kind != GeneratorKind.FIREPLACE:
+        return out
+    factor = stove_efficiency(gen) * (default(gen, "effective_share") or 1.0)
+    for d, kg in wood.items():
+        base = out.get(d) or GeneratorDaily(generator_id=gen.generator_id, date=d)
+        if base.measurement_quality == Quality.REAL and base.energy_input is not None:
+            continue  # eigene Messung geht vor
+        e = kg * WOOD_KWH_PER_KG
+        measured_heat = base.thermal_output is not None
+        out[d] = replace(base, energy_input=round(e, 3),
+                         measurement_quality=base.measurement_quality if measured_heat else Quality.ESTIMATED,
+                         estimated_thermal_output=base.estimated_thermal_output if measured_heat else round(e * factor, 3))
+    if rate is not None:
+        quality = Quality.ESTIMATED if rate.quality == "gut" else Quality.ASSUMPTION
+        for d, g in list(out.items()):
+            if d in wood or g.hours is None or g.measurement_quality not in (Quality.ASSUMPTION, Quality.MISSING):
+                continue
+            e = g.hours * rate.kg_per_hour * WOOD_KWH_PER_KG
+            out[d] = replace(g, energy_input=round(e, 3), measurement_quality=quality,
+                             estimated_thermal_output=round(e * factor, 3) if g.thermal_output is None else g.estimated_thermal_output)
+    return out
+
+
 @dataclass(slots=True)
 class GeneratorResult:
     generator_id: str
@@ -142,6 +229,9 @@ class GeneratorResult:
     days_on: int = 0
     wood_kg: float | None = None
     wood_cost: float | None = None
+    wood_weighed_kg: float | None = None  # davon gewogen (1.2.2)
+    wood_days: int = 0  # Tage mit gewogenem Holz in der Periode
+    wood_rate: WoodRate | None = None  # gelernte Menge und Wärme je Brennstunde
     measurement_quality: Quality = Quality.MISSING
     days_with_data: int = 0
     days_total: int = 0
@@ -154,9 +244,18 @@ def evaluate_generator(
     start: date,
     end_excl: date,
     relieved_model: HeatModel | None = None,
+    wood: Mapping[date, float] | None = None,
 ) -> GeneratorResult:
-    """Summen der laufenden Periode (``start`` bis vor ``end_excl``) und die Entlastung des Wärmezählers."""
+    """Summen der laufenden Periode (``start`` bis vor ``end_excl``) und die Entlastung des Wärmezählers.
+    ``wood``: gewogenes Holz je Tag (Kaminofen, 1.2.2); die Menge je Brennstunde wird aus allen Tagen gelernt."""
     res = GeneratorResult(generator_id=gen.generator_id)
+    if wood and gen.kind == GeneratorKind.FIREPLACE:
+        res.wood_rate = wood_rate(gen, dailies, wood)
+        dailies = apply_wood(gen, dailies, wood, res.wood_rate)
+        in_period = [w for d, w in wood.items() if start <= d < end_excl]
+        res.wood_days = len(in_period)
+        res.wood_weighed_kg = round(sum(in_period), 1) if in_period else None
+        res.flags.append("holz_gewogen" if res.wood_rate is None else "holz_leistung_gelernt")
     days = [dailies[d] for d in sorted(dailies) if start <= d < end_excl]
     res.days_total = max((end_excl - start).days, 0)
     if not days:

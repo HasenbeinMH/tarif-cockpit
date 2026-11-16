@@ -204,7 +204,7 @@ async def test_store_migration_1_4_to_1_5(hass: HomeAssistant, hass_storage) -> 
     inv = entry.runtime_data.data.invoices[0]
     assert inv.meter_id == "m1" and inv.quantity is None
     await hass.config_entries.async_unload(entry.entry_id)
-    assert hass_storage[KEY]["minor_version"] == 6
+    assert hass_storage[KEY]["minor_version"] == 7
 
 
 async def test_invoice_reading_checks(hass: HomeAssistant) -> None:

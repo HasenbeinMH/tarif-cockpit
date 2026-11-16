@@ -81,7 +81,7 @@ async def test_store_migration_1_1_to_1_2(hass: HomeAssistant, hass_storage) -> 
     assert await setup(hass, entry)
     assert entry.runtime_data.readings("m1")[0].quality == Quality.REAL
     await hass.config_entries.async_unload(entry.entry_id)
-    assert hass_storage[KEY]["minor_version"] == 6
+    assert hass_storage[KEY]["minor_version"] == 7
     assert hass_storage[KEY]["data"]["readings"][0]["quality"] == "real"
 
 
@@ -186,4 +186,4 @@ async def test_store_migration_1_3_to_1_4_reaggregates(hass: HomeAssistant, hass
     assert entry.runtime_data.data.reaggregated_meters == []  # m1 hat keinen Sensor: nichts neu zu holen
     assert [r.value for r in entry.runtime_data.readings("m1")] == [1000.0]
     await hass.config_entries.async_unload(entry.entry_id)
-    assert hass_storage[KEY]["minor_version"] == 6
+    assert hass_storage[KEY]["minor_version"] == 7

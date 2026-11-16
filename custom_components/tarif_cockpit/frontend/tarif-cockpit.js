@@ -1,4 +1,4 @@
-/*! tarif-cockpit v1.2.1 - MIT License - https://github.com/HasenbeinMH/tarif-cockpit
+/*! tarif-cockpit v1.2.2 - MIT License - https://github.com/HasenbeinMH/tarif-cockpit
     Editor-Baukasten und Assistent nach energy-cockpit, MIT License, Copyright (c) 2026 Musicmaker3112
     Diese Datei wird gebaut: Quellen in src/, Aufruf node tools/build.mjs */
 /* ---- common.js ---- */
@@ -7,7 +7,7 @@
 window.TarifCockpit = window.TarifCockpit || {};
 (() => {
   const TC = window.TarifCockpit;
-  TC.VERSION = '1.2.1';
+  TC.VERSION = '1.2.2';
 
   // Farbschemen wie bei energy-cockpit
   TC.THEMES = {

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 DOMAIN: Final = "tarif_cockpit"
-VERSION: Final = "1.2.1"
+VERSION: Final = "1.2.2"
 
 SUBENTRY_METER: Final = "zaehler"
 SUBENTRY_SUBMETER: Final = "unterzaehler"  # Wallbox, Gartenwasser (1.0.2)
@@ -26,7 +26,7 @@ CONF_GENERATOR: Final = "generator"
 
 # Store
 STORAGE_VERSION: Final = 1
-STORAGE_MINOR_VERSION: Final = 6
+STORAGE_MINOR_VERSION: Final = 7
 STORAGE_SAVE_DELAY: Final = 10
 
 # Frontend

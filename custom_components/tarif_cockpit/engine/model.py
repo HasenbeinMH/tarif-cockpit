@@ -434,6 +434,20 @@ class IntervalConsumption:
 
 
 @dataclass(slots=True)
+class WoodEntry:
+    """Gewogenes Holz am Kaminofen (1.2.2): ``kg`` an einem Tag. Mehrere Einträge eines Tages werden addiert;
+    ``scheite``/``kg_per_log`` nur zur Information (aus Scheite × kg je Scheit oder kg ÷ Scheite)."""
+
+    entry_id: str
+    generator_id: str
+    date: _Date
+    kg: float
+    logs: int | None = None
+    kg_per_log: float | None = None
+    note: str | None = None
+
+
+@dataclass(slots=True)
 class DayIntervals:
     """Viertelstunden eines Tages (1.2): Verbrauch (``kind`` energy, ``key`` = Zähler) oder Preis in Euro je kWh
     (``kind`` price, ``key`` = Preis-Entität). ``source``: 5minute | hour | attribute | history | statistics."""
@@ -491,6 +505,7 @@ class Dataset:
     calibrations: list[Calibration] = field(default_factory=list)  # übernommene Rechnungs-Vorschläge (1.1)
     day_intervals: list[DayIntervals] = field(default_factory=list)  # Viertelstunden Verbrauch und Preise (1.2)
     leaks_notified: list[str] = field(default_factory=list)  # gemeldete Leckage-Verdachte „zähler:datum“ (1.2)
+    wood_log: list[WoodEntry] = field(default_factory=list)  # gewogenes Holz am Kaminofen (1.2.2)
     # Zähler, deren Startdaten aus der Einrichtung schon übernommen wurden
     imported_meters: list[str] = field(default_factory=list)
     # Zähler, deren Tageswerte nach dem Update auf 0.6 einmal neu aus der Statistik geholt wurden (Zählerstand am Tagesende)
@@ -685,6 +700,10 @@ def check_consistency(ds: Dataset) -> list[str]:
         if inv.period_to < inv.period_from:
             errors.append(f"Rechnung {inv.invoice_id}: Ende vor Beginn")
     unique(ds.calibrations, "calibration_id", "Kalibrierungen")
+    unique(ds.wood_log, "entry_id", "Holz-Einträge")
+    for w in ds.wood_log:
+        if w.kg < 0:
+            errors.append(f"Holz-Eintrag {w.entry_id}: negative Menge")
     gen_days: set[tuple[str, date]] = set()
     for g in ds.generator_daily:
         if (g.generator_id, g.date) in gen_days:

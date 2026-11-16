@@ -81,6 +81,9 @@ class TarifStore(Store[dict[str, Any]]):
             if "reaggregated_meters" in data:
                 data["reaggregated_meters"] = []
             _LOGGER.info("Tarif-Cockpit: Store auf 1.6 migriert")
+        if old_major_version == 1 and old_minor_version < 7:
+            # 1.6 → 1.7 (1.2.2): gewogenes Holz am Kaminofen; neue Liste leer, sonst unverändert
+            _LOGGER.info("Tarif-Cockpit: Store auf 1.7 migriert")
         return data
 
     def schedule_save(self, dataset: Dataset) -> None:

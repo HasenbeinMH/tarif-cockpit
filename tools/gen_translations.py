@@ -882,6 +882,38 @@ _sd["data"]["comparison_base"] = T("Vergleich dynamisch: Grundpreis", "Dynamic c
 _sd["data"]["comparison_base_period"] = T("Vergleich dynamisch: Grundpreis gilt", "Dynamic comparison: standing charge applies")
 
 
+
+# ---------------------------------------------------------------- 1.2.2: gewogenes Holz am Kaminofen
+S["services"]["holz_erfassen"] = {
+    "name": T("Holz erfassen", "Log firewood"),
+    "description": T("Trägt gewogenes Holz am Kaminofen ein: kg direkt oder Scheite × kg je Scheit. Mehrere Einträge eines Tages werden addiert. "
+                     "Aus den Tagen mit Holz und Brennstunden lernt die Integration die Menge und Wärme je Brennstunde (ab 3 Tagen).",
+                     "Logs weighed firewood for the stove: kg directly or logs × kg per log. Several entries of a day are added up. "
+                     "From days with wood and burning hours the integration learns the amount and heat per burning hour (from 3 days)."),
+    "fields": {
+        "erzeuger": {"name": T("Kaminofen", "Stove"), "description": T("Kaminofen-Gerät des Tarif-Cockpits.", "Tarif-Cockpit stove device.")},
+        "datum": {"name": T("Datum", "Date"), "description": T("Standard: heute.", "Default: today.")},
+        "kg": {"name": T("Menge", "Amount"), "description": T("Gewogenes Holz in kg. 0 = an diesem Tag kein Holz.", "Weighed wood in kg. 0 = no wood on this day.")},
+        "scheite": {"name": T("Scheite", "Logs"), "description": T("Anzahl Scheite. Ohne Menge: Scheite × kg je Scheit. Mit Menge: das Gewicht je Scheit wird gemerkt.",
+                                                                "Number of logs. Without amount: logs × kg per log. With amount: the weight per log is remembered.")},
+        "kg_je_scheit": {"name": T("kg je Scheit", "kg per log"), "description": T("Standard: das zuletzt angegebene Gewicht je Scheit.", "Default: the weight per log given last.")},
+        "ersetzen": {"name": T("Tag ersetzen", "Replace day"),
+                     "description": T("Ersetzt die bisherigen Einträge dieses Tages (zum Korrigieren). Ohne Menge und Scheite: Einträge des Tages entfernen.",
+                                      "Replaces the previous entries of this day (to correct them). Without amount and logs: remove the day's entries.")},
+        "notiz": {"name": T("Notiz", "Note"), "description": T("Freitext.", "Free text.")},
+    },
+}
+S["exceptions"].update({
+    "unknown_generator": {"message": T("Unbekannter Wärmeerzeuger: {id}", "Unknown heat generator: {id}")},
+    "not_a_stove": {"message": T("Holz lässt sich nur an einem Kaminofen erfassen.", "Wood can only be logged for a stove.")},
+    "wood_date_invalid": {"message": T("Das Datum muss zwischen heute und vor {days} Tagen liegen.", "The date must lie between today and {days} days ago.")},
+    "wood_amount_missing": {"message": T("Bitte die Menge in kg oder die Anzahl Scheite angeben.", "Please give the amount in kg or the number of logs.")},
+    "wood_kg_per_log_missing": {"message": T("Für Scheite ohne Menge wird das Gewicht je Scheit gebraucht (einmal angeben, danach wird es gemerkt).",
+                                             "For logs without an amount the weight per log is needed (give it once, it is remembered afterwards).")},
+})
+S["entity"]["sensor"]["ofenleistung"] = {"name": T("Ofenleistung (gelernt)", "Stove output (learned)")}
+
+
 def pick(o, i):
     if isinstance(o, tuple):
         return o[i]

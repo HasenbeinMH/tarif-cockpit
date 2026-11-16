@@ -60,7 +60,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TarifConfigEntry, async_
     for gen in rt.generators.values():
         gclasses: list[type[GeneratorSensor]] = [GenInputSensor, GenHeatSensor, GenAvoidedSensor, GenHoursSensor, GenDaysSensor]
         if gen.kind == GeneratorKind.FIREPLACE:
-            gclasses += [GenWoodSensor, GenWoodCostSensor]
+            gclasses += [GenWoodSensor, GenWoodCostSensor, GenStovePowerSensor]
         if gen.kind in (GeneratorKind.GAS_BOILER, GeneratorKind.DISTRICT_HEATING):
             gclasses.append(HeatLoadSensor)  # 1.1
         async_add_entities([cls(rt, gen) for cls in gclasses], config_subentry_id=gen.generator_id)
@@ -620,7 +620,14 @@ class GenWoodSensor(GeneratorSensor):
         return res.wood_kg
 
     def attributes(self, res):
-        return {**super().attributes(res), "annahme": "Eingesetzte Energie ÷ 4,2 kWh/kg"}
+        attrs = {**super().attributes(res), "annahme": "Eingesetzte Energie ÷ 4,2 kWh/kg"}
+        if res.wood_days or res.wood_rate:
+            # 1.2.2: gewogene Tage zählen mit ihrer Menge, die übrigen mit der gelernten Menge je Brennstunde
+            attrs.update({"gewogen_kg": res.wood_weighed_kg, "tage_gewogen": res.wood_days,
+                          "rate_qualitaet": res.wood_rate.quality if res.wood_rate else None,
+                          "annahme": ("Gewogene Tage: gewogene Menge; übrige Tage: Brennstunden × gelernte kg je Brennstunde"
+                                      if res.wood_rate else "Gewogene Tage: gewogene Menge; übrige Tage: Brennstunden × Nennleistung")})
+        return attrs
 
 
 class GenWoodCostSensor(GeneratorSensor):
@@ -634,6 +641,26 @@ class GenWoodCostSensor(GeneratorSensor):
 
     def value(self, res):
         return res.wood_cost
+
+
+class GenStovePowerSensor(GeneratorSensor):
+    """Kaminofen (1.2.2): aus gewogenem Holz gelernte Wärme je Brennstunde (kW). Ohne genug gewogene Tage unbekannt."""
+
+    key = "ofenleistung"
+    _attr_native_unit_of_measurement = "kW"
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_suggested_display_precision = 1
+
+    def value(self, res):
+        return res.wood_rate.heat_kw if res.wood_rate else None
+
+    def attributes(self, res):
+        r = res.wood_rate
+        attrs = {"tage_gewogen_gesamt": len(self.rt.wood(self.gen.generator_id)), "nennleistung_kw": self.gen.nominal_kw,
+                 "annahme": "kg je Brennstunde × 4,2 kWh/kg × Wirkungsgrad"}
+        if r is not None:
+            attrs.update({"kg_je_brennstunde": r.kg_per_hour, "tage": r.days, "brennstunden": r.hours, "kg": r.kg, "qualitaet": r.quality})
+        return attrs
 
 
 

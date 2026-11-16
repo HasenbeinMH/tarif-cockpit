@@ -887,6 +887,9 @@
       },
       "vergleich_dynamisch": {
         "name": "Dynamic tariff comparison"
+      },
+      "ofenleistung": {
+        "name": "Stove output (learned)"
       }
     },
     "binary_sensor": {
@@ -1309,6 +1312,40 @@
           "description": "Helper from 0.3: Conversion factor."
         }
       }
+    },
+    "holz_erfassen": {
+      "name": "Log firewood",
+      "description": "Logs weighed firewood for the stove: kg directly or logs × kg per log. Several entries of a day are added up. From days with wood and burning hours the integration learns the amount and heat per burning hour (from 3 days).",
+      "fields": {
+        "erzeuger": {
+          "name": "Stove",
+          "description": "Tarif-Cockpit stove device."
+        },
+        "datum": {
+          "name": "Date",
+          "description": "Default: today."
+        },
+        "kg": {
+          "name": "Amount",
+          "description": "Weighed wood in kg. 0 = no wood on this day."
+        },
+        "scheite": {
+          "name": "Logs",
+          "description": "Number of logs. Without amount: logs × kg per log. With amount: the weight per log is remembered."
+        },
+        "kg_je_scheit": {
+          "name": "kg per log",
+          "description": "Default: the weight per log given last."
+        },
+        "ersetzen": {
+          "name": "Replace day",
+          "description": "Replaces the previous entries of this day (to correct them). Without amount and logs: remove the day's entries."
+        },
+        "notiz": {
+          "name": "Note",
+          "description": "Free text."
+        }
+      }
     }
   },
   "issues": {
@@ -1384,6 +1421,21 @@
     },
     "reading_already_replaced": {
       "message": "This reading is already replaced or invalid ({id}). Please refer to the currently valid reading."
+    },
+    "unknown_generator": {
+      "message": "Unknown heat generator: {id}"
+    },
+    "not_a_stove": {
+      "message": "Wood can only be logged for a stove."
+    },
+    "wood_date_invalid": {
+      "message": "The date must lie between today and {days} days ago."
+    },
+    "wood_amount_missing": {
+      "message": "Please give the amount in kg or the number of logs."
+    },
+    "wood_kg_per_log_missing": {
+      "message": "For logs without an amount the weight per log is needed (give it once, it is remembered afterwards)."
     }
   },
   "options": {

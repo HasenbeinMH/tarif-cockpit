@@ -21,7 +21,7 @@ from homeassistant.util import dt as dt_util
 from .const import DOMAIN
 from .engine import billing
 from .engine.model import (
-    BillingRule, Contract, DynamicPrice, Medium, PaymentStatus, PaymentType, PeriodSpan, PriceTier, PriceWindow, ReadingSource, Rounding,
+    BillingRule, Contract, DynamicPrice, GeneratorKind, Medium, PaymentStatus, PaymentType, PeriodSpan, PriceTier, PriceWindow, ReadingSource, Rounding,
     VatMode, new_id, to_dict,
 )
 from .engine.quality import Quality
@@ -58,6 +58,16 @@ SCHEMA_FOLLOW_UP = vol.Schema({
     vol.Optional("kuendigungsfrist"): vol.All(vol.Coerce(int), vol.Range(min=0, max=104)),
 })
 SCHEMA_PERIOD_END = vol.Schema({vol.Required(ATTR_METER): cv.string, vol.Required("ende"): cv.date})
+WOOD_MAX_AGE_DAYS = 800  # so weit reichen auch die Tageswerte zurück
+SCHEMA_WOOD = vol.Schema({
+    vol.Required("erzeuger"): cv.string,
+    vol.Optional("datum"): cv.date,
+    vol.Optional("kg"): vol.All(vol.Coerce(float), vol.Range(min=0, max=500)),
+    vol.Optional("scheite"): vol.All(vol.Coerce(int), vol.Range(min=0, max=500)),
+    vol.Optional("kg_je_scheit"): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=20)),
+    vol.Optional("ersetzen", default=False): cv.boolean,
+    vol.Optional("notiz"): cv.string,
+})
 SCHEMA_RECALC = vol.Schema({
     vol.Optional(ATTR_METER): cv.string,
     vol.Optional("von"): cv.date,
@@ -75,6 +85,18 @@ def _resolve(hass: HomeAssistant, device_id: str) -> tuple[TarifRuntime, str]:
         if entry.state is ConfigEntryState.LOADED and meter_id in entry.runtime_data.meters:
             return entry.runtime_data, meter_id
     raise ServiceValidationError(translation_domain=DOMAIN, translation_key="unknown_meter", translation_placeholders={"id": device_id})
+
+
+def _resolve_stove(hass: HomeAssistant, device_id: str) -> tuple[TarifRuntime, str]:
+    """Gerät → (Laufzeitdaten, generator_id) eines Kaminofens."""
+    device = dr.async_get(hass).async_get(device_id)
+    gid = next((ident[1] for ident in device.identifiers if ident[0] == DOMAIN), None) if device is not None else None
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.state is ConfigEntryState.LOADED and gid in entry.runtime_data.generators:
+            if entry.runtime_data.generators[gid].kind != GeneratorKind.FIREPLACE:
+                raise ServiceValidationError(translation_domain=DOMAIN, translation_key="not_a_stove")
+            return entry.runtime_data, gid
+    raise ServiceValidationError(translation_domain=DOMAIN, translation_key="unknown_generator", translation_placeholders={"id": device_id})
 
 
 def _billing_error(err: billing.BillingError, key: str = "contract_invalid") -> ServiceValidationError:
@@ -178,11 +200,53 @@ def async_setup_services(hass: HomeAssistant) -> None:
         for rt, meters in targets:
             await rt.aggregator.async_run(meters=meters, start=call.data.get("von"), end=call.data.get("bis"), overwrite=True)
 
+    async def add_wood(call: ServiceCall) -> ServiceResponse:
+        """Gewogenes Holz am Kaminofen (1.2.2): kg direkt oder Scheite × kg je Scheit (sonst das zuletzt angegebene)."""
+        rt, gid = _resolve_stove(hass, call.data["erzeuger"])
+        today = rt.today()
+        day: date = call.data.get("datum") or today
+        if day > today or day < today - timedelta(days=WOOD_MAX_AGE_DAYS):
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key="wood_date_invalid",
+                                         translation_placeholders={"days": str(WOOD_MAX_AGE_DAYS)})
+        kg = call.data.get("kg")
+        logs = call.data.get("scheite")
+        per_log = call.data.get("kg_je_scheit")
+        if kg is None and logs is None:
+            if not call.data["ersetzen"]:
+                raise ServiceValidationError(translation_domain=DOMAIN, translation_key="wood_amount_missing")
+            removed = rt.remove_wood(gid, day)  # „Tag ersetzen“ ohne Menge: der Tag gilt wieder als nicht gewogen
+            total = None
+        else:
+            if kg is not None and logs:
+                per_log = round(kg / logs, 3)  # kg und Scheite: Gewicht je Scheit aus beiden
+            elif kg is None and logs == 0:
+                kg = 0.0
+            elif kg is None:
+                per_log = per_log or rt.last_kg_per_log(gid)
+                if per_log is None:
+                    raise ServiceValidationError(translation_domain=DOMAIN, translation_key="wood_kg_per_log_missing")
+                kg = logs * per_log
+            removed = 0
+            total = rt.add_wood(gid, day, kg, logs, per_log, call.data.get("notiz"), call.data["ersetzen"])
+        coord = rt.coordinator
+        heat_id = coord.heat_meter_id() if coord is not None else None
+        if heat_id is not None:
+            rt.changed(meter_id=heat_id, flags={"forecast"})
+        else:
+            rt.changed(flags=set())  # ohne Wärmezähler: nur speichern und den Ofen neu auswerten
+        res = coord.gen_results.get(gid) if coord is not None else None
+        rate = res.wood_rate if res is not None else None
+        return {"datum": day.isoformat(), "kg": round(kg, 3) if kg is not None else None, "kg_tag": total, "entfernt": removed,
+                "zaehlt_ab": (day + timedelta(days=1)).isoformat() if day == today else day.isoformat(),
+                "kg_je_brennstunde": rate.kg_per_hour if rate else None, "leistung_kw": rate.heat_kw if rate else None,
+                "tage_gelernt": rate.days if rate else 0, "qualitaet": rate.quality if rate else None}
+
     def reg(domain: str, name: str, func: Any, schema: Any, supports_response: SupportsResponse = SupportsResponse.NONE) -> None:
         # Schreibende Aktionen nur für Administratoren; Automationen und Skripte laufen ohne Benutzer und sind nicht betroffen
         async_register_admin_service(hass, domain, name, func, schema, supports_response)
 
     reg(DOMAIN, "add_ablesung", add_reading, SCHEMA_ADD_READING, supports_response=SupportsResponse.OPTIONAL)
+    reg(DOMAIN, "holz_erfassen", add_wood, SCHEMA_WOOD, supports_response=SupportsResponse.OPTIONAL)
     reg(DOMAIN, "ablesung_ungueltig", invalidate, SCHEMA_INVALIDATE)
     reg(DOMAIN, "add_folgevertrag", follow_up, SCHEMA_FOLLOW_UP, supports_response=SupportsResponse.OPTIONAL)
     reg(DOMAIN, "set_periodenende", period_end, SCHEMA_PERIOD_END, supports_response=SupportsResponse.OPTIONAL)
