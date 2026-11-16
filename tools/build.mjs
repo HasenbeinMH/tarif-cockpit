@@ -30,6 +30,7 @@ const ORDER = [
   'overview-editor.js',
   'analyse-card.js',
   'analyse-editor.js',
+  'ablesung-card.js',
 ];
 
 const missing = ORDER.filter((f) => !existsSync(join(root, 'src', f)));

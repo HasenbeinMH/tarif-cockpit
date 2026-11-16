@@ -63,10 +63,10 @@ customElements.define('ha-form', class extends HTMLElement {
 <script src="../custom_components/tarif_cockpit/frontend/tarif-cockpit.js"></script>
 <script>
 const T = window.TCTEST, q = T.q;
-const card = q.get('card') === 'analyse' ? 'analyse' : 'overview';
-const tag = card === 'analyse' ? 'tarif-cockpit-analyse-card' : 'tarif-cockpit-card';
+const card = ['analyse', 'ablesung'].includes(q.get('card')) ? q.get('card') : 'overview';
+const tag = card === 'analyse' ? 'tarif-cockpit-analyse-card' : card === 'ablesung' ? 'tarif-cockpit-ablesung-card' : 'tarif-cockpit-card';
 if (q.has('shot')) document.body.classList.add('shot');
-document.getElementById('kind').textContent = card === 'analyse' ? 'Tarif-Cockpit Auswertung' : 'Tarif-Cockpit';
+document.getElementById('kind').textContent = card === 'analyse' ? 'Tarif-Cockpit Auswertung' : card === 'ablesung' ? 'Tarif-Cockpit Ablesung' : 'Tarif-Cockpit';
 // cfg=leer: frische Karte (getStubConfig), cfg=nichts: ganz leer, sonst Konfiguration des Szenarios
 const start = q.get('cfg') === 'leer' ? customElements.get(tag).getStubConfig(T.hass(T.scene)) : q.get('cfg') === 'nichts' ? {} : T.config(T.scene, card, tag);
 let cfg = Object.assign({ type: 'custom:' + tag }, start);

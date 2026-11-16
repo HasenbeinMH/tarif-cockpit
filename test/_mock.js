@@ -1,5 +1,5 @@
 /* Testdaten für die Testseiten: nachgebautes hass-Objekt und Szenarien. Wird vor ../custom_components/tarif_cockpit/frontend/tarif-cockpit.js geladen.
-   URL-Parameter: scene (haus, miete, wasser, nachzahlung, ohne, leer, en, integration, lernt, heizung, waermepumpe, impulse, archiv, rechnung, dynamisch, fernwaerme), user (kein Admin), theme, shot (ohne Knopfleiste), narrow */
+   URL-Parameter: scene (haus, miete, wasser, nachzahlung, ohne, leer, en, integration, lernt, heizung, waermepumpe, impulse, archiv, rechnung, dynamisch, fernwaerme, ablesung), user (kein Admin), theme, shot (ohne Knopfleiste), narrow */
 (() => {
   // Platzhalter für HA-Elemente
   if (!customElements.get('ha-icon')) customElements.define('ha-icon', class extends HTMLElement { connectedCallback() { this.textContent = '●'; this.style.fontSize = '10px'; } });
@@ -298,10 +298,45 @@
       'binary_sensor.strom_leckage': S('on', '', 'Leckage', { nachtminimum_l_h: 7.5, verdacht: true }),
     }),
   });
+  // ---- 1.2.4: Ablese-Karte (Zählerstände und Holz)
+  HEAT_SCENES.ablesung = Object.assign({}, HEAT_SCENES.heizung, {
+    meta: () => {
+      const m = HEAT_SCENES.heizung.meta();
+      m.haushalte[0].zaehler.forEach((z) => { z.sensoren.letzte_ablesung = sid(z.medium, 'letzte_ablesung'); });
+      const n = new Date();
+      m.haushalte[0].waermeerzeuger[0].holz = { datum: `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`, heute: q.has('holz') ? 9 : null, kg_je_scheit: q.has('neu') ? null : 0.9 };
+      m.haushalte[0].waermeerzeuger[1].holz = null;
+      return m;
+    },
+    states: Object.assign({}, HEAT_SCENES.heizung.states, {
+      [sid('strom', 'letzte_ablesung')]: S('2026-11-01T08:12:00+01:00', '', 'Strom Letzte Ablesung', { stand: 21500.5, qualitaet: 'real', quelle: 'manual', ablesung_id: 'r_s1' }),
+      [sid('gas', 'letzte_ablesung')]: S('2026-11-12T19:05:00+01:00', '', 'Gas Letzte Ablesung', { stand: 9812.4, qualitaet: 'real', quelle: 'manual', ablesung_id: 'r_g1' }),
+    }),
+    service: async (domain, service, data) => {
+      calls.push({ domain, service, data });
+      await new Promise((r) => setTimeout(r, 150));
+      if (service === 'add_ablesung') {
+        const gas = data.zaehler === 'dev_gas';
+        const prev = gas ? 9812.4 : 21500.5;
+        if (!(data.stand >= 0)) throw new Error('Stand fehlt.');
+        const d = +(data.stand - prev).toFixed(4);
+        return { response: { ablesung_id: 'neu', stand: data.stand, zeitpunkt: data.zeitpunkt || new Date().toISOString(), einheit: gas ? 'm³' : 'kWh', vorher_stand: prev,
+          vorher_zeitpunkt: gas ? '2026-11-12T19:05:00+01:00' : '2026-11-01T08:12:00+01:00', verbrauch_seit: d, kleiner_als_vorher: d < 0,
+          sensor_stand: gas ? null : 21712.3, abweichung_sensor: gas ? null : +(data.stand - 21712.3).toFixed(4) } };
+      }
+      if (service === 'holz_erfassen') {
+        if (data.kg === undefined && data.scheite !== undefined && !data.kg_je_scheit && q.has('neu')) throw new Error('Für Scheite ohne Menge wird das Gewicht je Scheit gebraucht.');
+        const kg = data.kg !== undefined ? data.kg : +(data.scheite * (data.kg_je_scheit || 0.9)).toFixed(3);
+        return { response: { datum: '2026-11-16', kg, kg_tag: kg, entfernt: 0, zaehlt_ab: '2026-11-17', kg_je_brennstunde: 1.679, leistung_kw: 5.29, tage_gelernt: 3, qualitaet: 'vorlaeufig' } };
+      }
+      return {};
+    },
+  });
   const heatHass = (key) => (hass) => {
     const sc = HEAT_SCENES[key];
     integHass(false)(hass);
     Object.assign(hass.states, strip(sc.states));
+    if (sc.service) hass.callService = sc.service;
     const meta = sc.meta();
     hass.callWS = async (m) => {
       if (m.type === 'tarif_cockpit/zaehler') return strip(meta);
@@ -332,6 +367,7 @@
     archiv: { name: 'Prognose gegen Realität (Archiv), Band kalt/warm, Kündigungsfrist', states: {}, hook: heatHass('archiv'), overview: { integration: true }, analyse: { integration: true } },
     rechnung: { name: 'Rechnung gegen Integration, Prognosegüte, Heizlast (1.1)', states: {}, hook: heatHass('rechnung'), overview: { integration: true }, analyse: { integration: true } },
     dynamisch: { name: 'Zeitfenster, Vergleich dynamisch, Leckage, Tagesprofil (1.2)', states: {}, hook: heatHass('dynamisch'), overview: { integration: true }, analyse: { integration: true } },
+    ablesung: { name: 'Ablese-Karte: Zählerstände und Holz (1.2.4)', states: {}, hook: heatHass('ablesung'), overview: { integration: true }, analyse: { integration: true }, ablesung: {} },
     fernwaerme: { name: 'Fernwärme in MWh', states: {}, hook: heatHass('fernwaerme'), overview: { integration: true }, analyse: { integration: true } },
     en: { name: 'Englische Oberfläche', states: {}, lang: 'en', overview: Object.assign({}, legacy, { analysis: undefined, title: 'Tariffs and billing' }), analyse: Object.assign({}, analysis, { title: 'Gas, weather-adjusted', explain: undefined }) },
   };

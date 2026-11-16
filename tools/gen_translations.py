@@ -913,6 +913,16 @@ S["exceptions"].update({
 })
 S["entity"]["sensor"]["ofenleistung"] = {"name": T("Ofenleistung (gelernt)", "Stove output (learned)")}
 
+# ---------------------------------------------------------------- 1.2.4: Ablese-Karte, Grenzen für Benutzer ohne Admin-Rechte
+S["exceptions"].update({
+    "user_reading_too_old": {"message": T("Ohne Admin-Rechte geht das höchstens {days} Tage zurück.", "Without admin rights this goes back at most {days} days.")},
+    "user_reading_ended_period": {"message": T("Der Zeitpunkt liegt in einer beendeten Abrechnungsperiode. Das kann nur ein Administrator ändern.",
+                                               "The time lies in an ended billing period. Only an administrator can change that.")},
+    "user_replace_not_allowed": {"message": T("Ohne Admin-Rechte lässt sich nur die letzte, von Hand eingetragene Ablesung der letzten 14 Tage korrigieren.",
+                                              "Without admin rights only the last manually entered reading of the last 14 days can be corrected.")},
+    "user_wood_replace_old": {"message": T("Ohne Admin-Rechte lässt sich Holz nur für heute und gestern ersetzen.", "Without admin rights wood can only be replaced for today and yesterday.")},
+})
+
 
 def pick(o, i):
     if isinstance(o, tuple):

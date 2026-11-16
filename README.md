@@ -21,6 +21,7 @@ Eine Integration für Home Assistant, die Zähler, Verträge, Abrechnungsperiode
 | Karte `custom:tarif-cockpit-card` | Je Zähler Urteil, Saldo und vier Balken: Kosten bisher, Abschläge bisher (grün), Prognose und Abschläge der Periode, Abschlagsstufen, empfohlener Abschlag, Prognose-Qualität, Anbieterwechsel; Gesamturteil. Abschlag per Tipp ändern. |
 | Wärmeerzeuger (optional) | Gastherme, Wärmepumpe, Split-Klima, Fernwärme, Kaminofen, Elektroheizung: eingesetzte Energie, Wärme, Entlastung, Betriebsstunden; Kaminofen mit Holz und Holzkosten (geschätzt); mit gewogenem Holz die gelernte Ofenleistung (1.2.2). |
 | Karte `custom:tarif-cockpit-analyse-card` | Heizung: gelernter Kennwert je Gradtag, Warmwasser-Grundlast, temperaturbereinigter Kennwert, Streudiagramm Verbrauch über Gradtage, Kostenverlauf gegen die Abschläge, Wärmeerzeuger; ab 1.1 Rechnung gegen Integration, Prognosegüte über mehrere Jahre, Heizlast mit Taktgrenze. |
+| Karte `custom:tarif-cockpit-ablesung-card` (1.2.4) | Zählerstände und Holz am Kaminofen eintragen, auch für Benutzer ohne Admin-Rechte: letzte Ablesung je Zähler, Eingabe (auch „9.812,4“), optional Zeitpunkt und „Ersetzt die Ablesung …“ (Korrektur). Nach dem Speichern Verbrauch seit der letzten Ablesung, Warnung bei kleinerem Stand und Abweichung zum Zähler-Sensor. |
 | Jahresabrechnung (1.1) | Rechnung mit Menge, Ständen, Brennwert und Positionen erfassen (auch alte Rechnungen vor dem Vertrag als Lerndaten); Vergleich mit den eigenen Daten, Vorschlag unter Reparaturen mit „OK“ übernehmen (Brennwert, Faktor der Ersatzquelle); Preisstaffeln und Rundungsregeln des Versorgers. |
 
 ![Auswertung](docs/img/heizung-analyse.png)
@@ -99,10 +100,10 @@ Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tar
 | Leckage-Verdacht (1.2) | binärer Sensor je Wasserzähler mit Sensor; Attribute `art`, `tage`, `nachtminimum_l_h` |
 | Heizlast (1.1) | Gaskessel und Fernwärme: Heizlast bei Normaußentemperatur (kW, Diagnose); Attribute `nennleistung_kw`, `verhaeltnis`, `einordnung`, `taktgrenze_c`, `takttage_anteil`, `qualitaet` |
 
-**Aktionen** (Entwicklerwerkzeuge → Aktionen, oder in Automationen). Alle Aktionen ändern Daten und dürfen deshalb nur von Administratoren aufgerufen werden; Automationen und Skripte sind davon nicht betroffen.
+**Aktionen** (Entwicklerwerkzeuge → Aktionen, oder in Automationen). Die Aktionen ändern Daten und dürfen deshalb nur von Administratoren aufgerufen werden; Automationen und Skripte sind davon nicht betroffen. Ausnahme ab 1.2.4: `add_ablesung` und `holz_erfassen` dürfen alle Benutzer außer Nur-Lese-Konten aufrufen (Ablese-Karte), ohne Admin-Rechte mit den Grenzen oben.
 | Aktion | Wozu |
 |---|---|
-| `tarif_cockpit.add_ablesung` | Zählerstand eintragen (`zaehler`, `stand`, optional `zeitpunkt`, `qualitaet`, `notiz`). Mit `ersetzt` wird eine frühere Ablesung korrigiert, ohne sie zu löschen. Antwort: `ablesung_id`. |
+| `tarif_cockpit.add_ablesung` | Zählerstand eintragen (`zaehler`, `stand`, optional `zeitpunkt`, `qualitaet`, `notiz`). Mit `ersetzt` wird eine frühere Ablesung korrigiert, ohne sie zu löschen. Antwort: `ablesung_id`, ab 1.2.4 auch `zeitpunkt`, `vorher_stand`, `vorher_zeitpunkt`, `verbrauch_seit`, `kleiner_als_vorher`, `nachher_stand`, `groesser_als_nachher`, `gleicher_zeitpunkt`, `sensor_stand`, `abweichung_sensor` (nicht bei Impulszählern und nach Zählertausch). Eine Korrektur ohne `zeitpunkt` gilt zum Zeitpunkt der ersetzten Ablesung. |
 | `tarif_cockpit.holz_erfassen` | Gewogenes Holz am Kaminofen (1.2.2): `erzeuger`, `kg` oder `scheite` (× `kg_je_scheit`, sonst das zuletzt angegebene), optional `datum`, `ersetzen` (Tag korrigieren; ohne Menge: Tag entfernen), `notiz`. Einträge eines Tages werden addiert; ein Eintrag für heute zählt ab morgen. Antwort: Tagessumme und gelernte Leistung. |
 | `tarif_cockpit.ablesung_ungueltig` | Ablesung als ungültig markieren; sie bleibt gespeichert. |
 | `tarif_cockpit.add_folgevertrag` | Anbieterwechsel: alter Vertrag endet am Vortag (Schlussperiode), neuer Vertrag mit eigener Abrechnungsregel; optional `wechselstand`, `mindestlaufzeit` (Monate), `kuendigungsfrist` (Wochen). Ein Wechsel in eine bereits beendete Periode wird abgelehnt. |
@@ -188,6 +189,12 @@ Die Karte rechnet nichts selbst. Sie holt über die Integration, welche Sensoren
 | Band und Kündigungsfrist | Prognose gegen Realität |
 |---|---|
 | ![Band](docs/img/archiv-uebersicht.png) | ![Archiv](docs/img/archiv-analyse.png) |
+
+**Ablese-Karte (1.2.4):** `type: custom:tarif-cockpit-ablesung-card`, optional `zaehler: [Geräte]` (sonst alle Hauptzähler), `holz: false` (ohne Kaminofen), `zeitpunkt: false` (ohne Zeitfeld), `title`, `theme`, `colors`. Zählerstände und Holz dürfen alle Benutzer außer Nur-Lese-Konten eintragen, ohne Admin-Rechte mit Grenzen: höchstens 14 Tage zurück und nicht in eine beendete Periode; korrigieren lässt sich nur die eigene letzte, von Hand eingetragene Ablesung (ersetzt, ohne zu löschen); Holz-Tage ersetzen nur für heute und gestern.
+
+| Ablese-Karte | Schmal (Handy) |
+|---|---|
+| ![Ablese-Karte](docs/img/ablesung-karte.png) | ![Ablese-Karte schmal](docs/img/ablesung-schmal.png) |
 
 Die Auswertungskarte geht genauso (`type: custom:tarif-cockpit-analyse-card`, `integration: true`, optional `zaehler: [Gerät des Gas- oder Fernwärmezählers]`; ohne diese der Stromzähler einer Wärmepumpe): gelernter Kennwert, Warmwasser-Grundlast (nur wenn Warmwasser über die Heizung läuft), temperaturbereinigter Kennwert, Qualität mit Anzahl Tage und R², Verlauf des Kennwerts, **Streudiagramm** Verbrauch über Gradtage mit Regressionsgerade (Ofen- und Klimatage farbig), **Kostenverlauf** der Periode (Ist, Prognose, Abschlags-Treppe) und je Wärmeerzeuger Eingang, Wärme, Entlastung. Dazu die Tabelle **Prognose gegen Realität** der zuletzt beendeten Periode (je Schnappschuss Prognose und Abweichung zu den tatsächlichen Kosten, vorläufig oder abgeschlossen). `diagramme: false`, `erzeuger: false` bzw. `archiv: false` blenden Diagramme, Erzeuger bzw. die Tabelle aus. Beispiele: [docs/BEISPIELE.md](docs/BEISPIELE.md).
 

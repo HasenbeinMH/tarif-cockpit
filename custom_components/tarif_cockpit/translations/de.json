@@ -1436,6 +1436,18 @@
     },
     "wood_kg_per_log_missing": {
       "message": "Für Scheite ohne Menge wird das Gewicht je Scheit gebraucht (einmal angeben, danach wird es gemerkt)."
+    },
+    "user_reading_too_old": {
+      "message": "Ohne Admin-Rechte geht das höchstens {days} Tage zurück."
+    },
+    "user_reading_ended_period": {
+      "message": "Der Zeitpunkt liegt in einer beendeten Abrechnungsperiode. Das kann nur ein Administrator ändern."
+    },
+    "user_replace_not_allowed": {
+      "message": "Ohne Admin-Rechte lässt sich nur die letzte, von Hand eingetragene Ablesung der letzten 14 Tage korrigieren."
+    },
+    "user_wood_replace_old": {
+      "message": "Ohne Admin-Rechte lässt sich Holz nur für heute und gestern ersetzen."
     }
   },
   "options": {

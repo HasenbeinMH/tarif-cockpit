@@ -229,6 +229,7 @@
         });
         box.appendChild(row);
       }
+      if (opts && opts.noSensorMode) return;
       const sm = el('button', 'cursor:pointer;margin-top:14px;padding:8px 14px;border-radius:8px;border:1px solid var(--divider-color,#555);background:transparent;color:inherit;font:inherit', t('ei.sensor_mode'));
       sm.type = 'button';
       sm.addEventListener('click', () => { const next = Object.assign({}, api.config()); delete next.integration; delete next.zaehler; api.emit(next); api.setTab('form'); });

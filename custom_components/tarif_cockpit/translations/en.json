@@ -1436,6 +1436,18 @@
     },
     "wood_kg_per_log_missing": {
       "message": "For logs without an amount the weight per log is needed (give it once, it is remembered afterwards)."
+    },
+    "user_reading_too_old": {
+      "message": "Without admin rights this goes back at most {days} days."
+    },
+    "user_reading_ended_period": {
+      "message": "The time lies in an ended billing period. Only an administrator can change that."
+    },
+    "user_replace_not_allowed": {
+      "message": "Without admin rights only the last manually entered reading of the last 14 days can be corrected."
+    },
+    "user_wood_replace_old": {
+      "message": "Without admin rights wood can only be replaced for today and yesterday."
     }
   },
   "options": {

@@ -167,6 +167,18 @@ Die Auswertungskarte zeigt „Rechnung gegen Integration“, „Prognosegüte“
 
 ![Übersicht 1.2](img/dynamisch-uebersicht.png)
 
+## 10. Ablese-Karte (ab 1.2.4)
+
+Dashboard → Karte hinzufügen → „Tarif-Cockpit Ablesung“. Im Editor wählst du die Zähler (ohne Auswahl alle, auch Unterzähler wie Gartenwasser), Titel und Farbschema; „Holz am Kaminofen anzeigen“ und „Feld für den Zeitpunkt anzeigen“ lassen sich abschalten.
+
+| Karte | Editor |
+|---|---|
+| ![Ablese-Karte](img/ablesung-karte.png) | ![Editor](img/editor-ablesung.png) |
+
+- **Zählerstand:** neuen Stand eintippen (Komma oder Punkt, auch „9.812,4“), Speichern. Ohne Zeitpunkt gilt jetzt. Danach zeigt die Karte den Verbrauch seit der letzten Ablesung und bei Zählern mit Sensor die Abweichung zum Sensor. Ist der Stand kleiner als vorher, warnt sie: Mit dem Haken „Ersetzt die Ablesung … vom …“ ersetzt der richtige Stand die vertippte Ablesung zu deren Zeitpunkt; gelöscht wird nichts. Eingaben wie „9.812“ liest die Karte auf Deutsch als 9812.
+- **Holz:** kg eintragen oder Scheite zählen. Das Gewicht je Scheit gibst du einmal an (Feld „à … kg“, oder kg und Scheite zusammen), danach reicht die Anzahl. Ein Eintrag für heute zählt ab morgen mit.
+- **Rechte:** Zählerstände und Holz dürfen alle Benutzer außer Nur-Lese-Konten eintragen, zum Beispiel auf einem Tablet im Flur. Ohne Admin-Rechte: höchstens 14 Tage zurück, nicht in eine beendete Abrechnungsperiode, korrigieren nur die letzte von Hand eingetragene Ablesung, Holz-Tage ersetzen nur für heute und gestern. Preise, Verträge, Abschläge und „Ablesung ungültig“ bleiben Administratoren vorbehalten.
+
 ## Hinweise
 
 - Texte, die die Integration selbst einsetzt (z. B. die Zählernamen im Abschluss-Schritt, Zahlen in der Zusammenfassung), folgen der **Systemsprache** von Home Assistant (Einstellungen → System → Allgemein), nicht der Sprache deines Profils.

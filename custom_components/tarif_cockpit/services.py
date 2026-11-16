@@ -13,13 +13,15 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.auth.const import GROUP_ID_READ_ONLY
+from homeassistant.exceptions import ServiceValidationError, Unauthorized
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .engine import billing
+from .engine.consumption import continuous_value, valid_readings
 from .engine.model import (
     BillingRule, Contract, DynamicPrice, GeneratorKind, Medium, PaymentStatus, PaymentType, PeriodSpan, PriceTier, PriceWindow, ReadingSource, Rounding,
     VatMode, new_id, to_dict,
@@ -32,10 +34,10 @@ DEFAULT_VAT = {Medium.STROM: 19.0, Medium.GAS: 19.0, Medium.WASSER: 7.0, Medium.
 
 SCHEMA_ADD_READING = vol.Schema({
     vol.Required(ATTR_METER): cv.string,
-    vol.Required("stand"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+    vol.Required("stand"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1e9)),
     vol.Optional("zeitpunkt"): cv.datetime,
     vol.Optional("qualitaet", default="real"): vol.In(["real", "estimated"]),
-    vol.Optional("notiz"): cv.string,
+    vol.Optional("notiz"): vol.All(cv.string, vol.Length(max=200)),
     vol.Optional("ersetzt"): cv.string,
 })
 SCHEMA_INVALIDATE = vol.Schema({
@@ -59,6 +61,9 @@ SCHEMA_FOLLOW_UP = vol.Schema({
 })
 SCHEMA_PERIOD_END = vol.Schema({vol.Required(ATTR_METER): cv.string, vol.Required("ende"): cv.date})
 WOOD_MAX_AGE_DAYS = 800  # so weit reichen auch die Tageswerte zurück
+# 1.2.4: Benutzer ohne Admin-Rechte (Ablese-Karte) dürfen nur kurz zurück datieren und nur ihre letzte Ablesung korrigieren
+USER_MAX_AGE_DAYS = 14
+USER_WOOD_REPLACE_DAYS = 1  # „Tag ersetzen“ beim Holz: heute und gestern
 SCHEMA_WOOD = vol.Schema({
     vol.Required("erzeuger"): cv.string,
     vol.Optional("datum"): cv.date,
@@ -66,7 +71,7 @@ SCHEMA_WOOD = vol.Schema({
     vol.Optional("scheite"): vol.All(vol.Coerce(int), vol.Range(min=0, max=500)),
     vol.Optional("kg_je_scheit"): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=20)),
     vol.Optional("ersetzen", default=False): cv.boolean,
-    vol.Optional("notiz"): cv.string,
+    vol.Optional("notiz"): vol.All(cv.string, vol.Length(max=200)),
 })
 SCHEMA_RECALC = vol.Schema({
     vol.Optional(ATTR_METER): cv.string,
@@ -99,6 +104,72 @@ def _resolve_stove(hass: HomeAssistant, device_id: str) -> tuple[TarifRuntime, s
     raise ServiceValidationError(translation_domain=DOMAIN, translation_key="unknown_generator", translation_placeholders={"id": device_id})
 
 
+async def _restricted_user(hass: HomeAssistant, call: ServiceCall) -> bool:
+    """True für einen angemeldeten Benutzer ohne Admin-Rechte (Automationen und Skripte haben keinen Benutzer).
+    Nur-Lese-Konten dürfen gar nicht schreiben."""
+    if not call.context.user_id:
+        return False
+    user = await hass.auth.async_get_user(call.context.user_id)
+    if user is None:
+        raise Unauthorized(context=call.context)
+    if user.is_admin:
+        return False
+    if any(g.id == GROUP_ID_READ_ONLY for g in user.groups):
+        raise Unauthorized(context=call.context, user_id=user.id)
+    return True
+
+
+def _user_denied(key: str, **placeholders: str) -> ServiceValidationError:
+    return ServiceValidationError(translation_domain=DOMAIN, translation_key=key, translation_placeholders=placeholders or None)
+
+
+def _check_user_reading(rt: TarifRuntime, meter_id: str, ts: datetime, replaces: str | None) -> None:
+    """Grenzen für Benutzer ohne Admin-Rechte: höchstens 14 Tage zurück, nie in eine beendete Periode; ersetzen nur die
+    eigene letzte, von Hand eingetragene Ablesung, die keine Periode abschließt (Regel 3)."""
+    now = dt_util.now()
+    if replaces:
+        valid = valid_readings(rt.data.readings, meter_id)
+        closing = {p.end_reading for p in rt.data.periods if p.end_reading} | {p.start_reading for p in rt.data.periods if p.start_reading}
+        target = next((r for r in valid if r.reading_id == replaces), None)
+        if (target is None or target is not valid[-1] or target.source != ReadingSource.MANUAL or replaces in closing
+                or target.timestamp < now - timedelta(days=USER_MAX_AGE_DAYS)):
+            raise _user_denied("user_replace_not_allowed")
+    if ts < now - timedelta(days=USER_MAX_AGE_DAYS):
+        raise _user_denied("user_reading_too_old", days=str(USER_MAX_AGE_DAYS))
+    try:
+        rt._not_in_ended_period(meter_id, ts.astimezone(rt.tz).date(), "Die Ablesung")
+    except billing.BillingError as err:
+        raise _user_denied("user_reading_ended_period") from err
+
+
+def _reading_response(rt: TarifRuntime, meter_id: str, reading: Any, sensor_value: float | None) -> dict[str, Any]:
+    """Antwort von add_ablesung (1.2.4): Verbrauch seit der vorigen gültigen Ablesung (über Zählertausche durchlaufend),
+    Warnung bei kleinerem Stand, Abweichung zum Zähler-Sensor. Die Ablese-Karte zeigt das nur an."""
+    meter = rt.meters[meter_id]
+    out: dict[str, Any] = {"ablesung_id": reading.reading_id, "stand": reading.value, "einheit": meter.unit,
+                           "zeitpunkt": reading.timestamp.astimezone(rt.tz).isoformat(),
+                           "vorher_stand": None, "vorher_zeitpunkt": None, "verbrauch_seit": None, "kleiner_als_vorher": False,
+                           "sensor_stand": None, "abweichung_sensor": None, "nachher_stand": None, "groesser_als_nachher": False,
+                           "gleicher_zeitpunkt": False}
+    others = [r for r in valid_readings(rt.data.readings, meter_id) if r.reading_id != reading.reading_id]
+    cur = continuous_value(meter, reading, rt.tz)
+    before = [r for r in others if r.timestamp < reading.timestamp]
+    after = [r for r in others if r.timestamp > reading.timestamp]
+    out["gleicher_zeitpunkt"] = any(r.timestamp == reading.timestamp for r in others)
+    if before:
+        prev = before[-1]
+        diff = cur - continuous_value(meter, prev, rt.tz)
+        out.update({"vorher_stand": prev.value, "vorher_zeitpunkt": prev.timestamp.astimezone(rt.tz).isoformat(),
+                    "verbrauch_seit": round(diff, 4), "kleiner_als_vorher": diff < 0})
+    if after:
+        nxt = after[0]
+        out.update({"nachher_stand": nxt.value, "groesser_als_nachher": continuous_value(meter, nxt, rt.tz) < cur})
+    # Abweichung zum Sensor nur, wenn der Sensor das Zählwerk selbst zeigt (kein Impulszähler, kein Zählertausch)
+    if sensor_value is not None and not meter.pulse_constant and not meter.replacements:
+        out.update({"sensor_stand": round(sensor_value, 4), "abweichung_sensor": round(reading.value - sensor_value, 4)})
+    return out
+
+
 def _billing_error(err: billing.BillingError, key: str = "contract_invalid") -> ServiceValidationError:
     return ServiceValidationError(translation_domain=DOMAIN, translation_key=key, translation_placeholders={"error": str(err)})
 
@@ -111,19 +182,30 @@ def _unknown_reading(err: KeyError) -> ServiceValidationError:
 def async_setup_services(hass: HomeAssistant) -> None:
     async def add_reading(call: ServiceCall) -> ServiceResponse:
         rt, meter_id = _resolve(hass, call.data[ATTR_METER])
-        ts: datetime = call.data.get("zeitpunkt") or dt_util.now()
+        restricted = await _restricted_user(hass, call)
+        replaces = call.data.get("ersetzt")
+        ts: datetime | None = call.data.get("zeitpunkt")
+        if ts is None and replaces:
+            # Korrektur ohne Zeitpunkt: gilt zum Zeitpunkt der ersetzten Ablesung, nicht „jetzt“
+            target = next((r for r in rt.data.readings if r.reading_id == replaces and r.meter_id == meter_id), None)
+            ts = target.timestamp if target is not None else None
+        explicit_time = ts is not None
+        ts = ts or dt_util.now()
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=rt.tz)
         if ts > dt_util.now() + timedelta(minutes=5):
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key="reading_in_future")
-        # Abgleich (0.9): bei einer Ablesung "jetzt" den Stand des Zähler-Sensors mit merken
+        if restricted:
+            _check_user_reading(rt, meter_id, ts, replaces)
+        # Abgleich (0.9): bei einer Ablesung "jetzt" den Stand des Zähler-Sensors mit merken (nicht bei Korrekturen)
         sensor_value = None
-        if rt.meters[meter_id].entity and rt.coordinator is not None and abs((ts - dt_util.now()).total_seconds()) <= 600:
+        if (rt.meters[meter_id].entity and rt.coordinator is not None and not replaces
+                and (not explicit_time or abs((ts - dt_util.now()).total_seconds()) <= 600)):
             sensor_value = rt.coordinator.sensor_raw(meter_id)
         try:
             reading = rt.add_reading(
                 meter_id, ts, call.data["stand"], Quality(call.data["qualitaet"]), ReadingSource.MANUAL,
-                call.data.get("notiz"), call.data.get("ersetzt"), sensor_value=sensor_value,
+                call.data.get("notiz"), replaces, sensor_value=sensor_value,
             )
         except KeyError as err:
             raise _unknown_reading(err) from err
@@ -132,7 +214,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 translation_domain=DOMAIN, translation_key="reading_already_replaced", translation_placeholders={"id": str(err.args[0])}
             ) from err
         await rt.after_readings_changed(meter_id)
-        return {"ablesung_id": reading.reading_id}
+        return _reading_response(rt, meter_id, reading, sensor_value)
 
     async def invalidate(call: ServiceCall) -> None:
         rt, meter_id = _resolve(hass, call.data[ATTR_METER])
@@ -203,8 +285,13 @@ def async_setup_services(hass: HomeAssistant) -> None:
     async def add_wood(call: ServiceCall) -> ServiceResponse:
         """Gewogenes Holz am Kaminofen (1.2.2): kg direkt oder Scheite × kg je Scheit (sonst das zuletzt angegebene)."""
         rt, gid = _resolve_stove(hass, call.data["erzeuger"])
+        restricted = await _restricted_user(hass, call)
         today = rt.today()
         day: date = call.data.get("datum") or today
+        if restricted and day < today - timedelta(days=USER_MAX_AGE_DAYS):
+            raise _user_denied("user_reading_too_old", days=str(USER_MAX_AGE_DAYS))
+        if restricted and call.data["ersetzen"] and day < today - timedelta(days=USER_WOOD_REPLACE_DAYS):
+            raise _user_denied("user_wood_replace_old")
         if day > today or day < today - timedelta(days=WOOD_MAX_AGE_DAYS):
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key="wood_date_invalid",
                                          translation_placeholders={"days": str(WOOD_MAX_AGE_DAYS)})
@@ -245,8 +332,11 @@ def async_setup_services(hass: HomeAssistant) -> None:
         # Schreibende Aktionen nur für Administratoren; Automationen und Skripte laufen ohne Benutzer und sind nicht betroffen
         async_register_admin_service(hass, domain, name, func, schema, supports_response)
 
-    reg(DOMAIN, "add_ablesung", add_reading, SCHEMA_ADD_READING, supports_response=SupportsResponse.OPTIONAL)
-    reg(DOMAIN, "holz_erfassen", add_wood, SCHEMA_WOOD, supports_response=SupportsResponse.OPTIONAL)
+    # 1.2.4: Ablesung und Holz dürfen alle Benutzer außer Nur-Lese-Konten eintragen (Ablese-Karte), mit Grenzen
+    # (_check_user_reading, höchstens 14 Tage zurück, Holz-Tag ersetzen nur heute/gestern). Ungültig markieren, Preise,
+    # Verträge und Abschläge bleiben Administratoren vorbehalten.
+    hass.services.async_register(DOMAIN, "add_ablesung", add_reading, SCHEMA_ADD_READING, supports_response=SupportsResponse.OPTIONAL)
+    hass.services.async_register(DOMAIN, "holz_erfassen", add_wood, SCHEMA_WOOD, supports_response=SupportsResponse.OPTIONAL)
     reg(DOMAIN, "ablesung_ungueltig", invalidate, SCHEMA_INVALIDATE)
     reg(DOMAIN, "add_folgevertrag", follow_up, SCHEMA_FOLLOW_UP, supports_response=SupportsResponse.OPTIONAL)
     reg(DOMAIN, "set_periodenende", period_end, SCHEMA_PERIOD_END, supports_response=SupportsResponse.OPTIONAL)

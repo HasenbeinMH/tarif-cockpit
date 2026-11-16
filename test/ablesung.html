@@ -1,0 +1,23 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tarif-cockpit-ablesung-card Test</title>
+<link rel="stylesheet" href="_test.css"></head>
+<body>
+<div id="bar"></div><div id="info"></div>
+<div id="host"></div>
+<script src="_mock.js"></script>
+<script src="../custom_components/tarif_cockpit/frontend/tarif-cockpit.js"></script>
+<script>
+const T = window.TCTEST;
+if (!T.q.get('scene')) T.scene = 'ablesung';
+const go = () => {
+  const el = T.mount('tarif-cockpit-ablesung-card', 'ablesung');
+  // demo: Werte eintragen und speichern (für den Screenshot mit Antwort)
+  if (T.q.has('demo')) setTimeout(async () => {
+    el._vals['v:dev_gas'] = '9.856,231'; await el._save('m:dev_gas');
+    el._vals['v:dev_strom'] = '21698,4'; await el._save('m:dev_strom');
+    el._vals['wn:dev_ofen'] = '10'; await el._save('w:dev_ofen');
+  }, 50);
+};
+T.bar(go); T.mark(); go();
+if (T.q.has('narrow')) document.getElementById('host').classList.add('narrow');
+</script></body></html>

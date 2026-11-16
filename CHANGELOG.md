@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.4 – 2026-11-16
+
+### Neu
+- **Ablese-Karte** `custom:tarif-cockpit-ablesung-card`: je Zähler die letzte Ablesung und ein Eingabefeld (auch „9.812,4“), optional Zeitpunkt und „Ersetzt die Ablesung …“ (Korrektur); beim Kaminofen Holz in kg oder als Scheite. Nach dem Speichern zeigt sie den Verbrauch seit der letzten Ablesung, Warnungen bei kleinerem Stand, größerem Stand als die folgende Ablesung oder gleichem Zeitpunkt und die Abweichung zum Zähler-Sensor. Fehlermeldungen in der Sprache der Oberfläche. Editor mit Zählerauswahl, Titel, Farbschema, Holz und Zeitfeld.
+- `add_ablesung` antwortet zusätzlich mit `zeitpunkt`, `vorher_stand`, `vorher_zeitpunkt`, `verbrauch_seit` (über Zählertausche durchlaufend), `kleiner_als_vorher`, `nachher_stand`, `groesser_als_nachher`, `gleicher_zeitpunkt`, `sensor_stand` und `abweichung_sensor`.
+- Eine Korrektur (`ersetzt`) ohne `zeitpunkt` gilt zum Zeitpunkt der ersetzten Ablesung statt „jetzt“; der Sensorstand wird dabei nicht mitgemerkt.
+- Der WebSocket `tarif_cockpit/zaehler` liefert beim Kaminofen `holz` (heute erfasst, Gewicht je Scheit).
+
+### Geändert
+- `add_ablesung` und `holz_erfassen` dürfen alle Benutzer außer Nur-Lese-Konten aufrufen (bisher nur Administratoren), damit Haushaltsmitglieder über die Karte ablesen können. Ohne Admin-Rechte: höchstens 14 Tage zurück, nie in eine beendete Periode, korrigieren nur die letzte von Hand eingetragene Ablesung, die keine Periode abschließt, Holz-Tag ersetzen nur heute und gestern. „Ablesung ungültig“, Preise, Verträge und Abschläge bleiben admin-only.
+- `notiz` höchstens 200 Zeichen, `stand` höchstens 10⁹.
+
 ## 1.2.3 – 2026-11-16
 
 ### Geändert

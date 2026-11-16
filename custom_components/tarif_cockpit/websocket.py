@@ -18,6 +18,7 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .const import DOMAIN
 from .engine import series
+from .engine.model import GeneratorKind
 
 
 @callback
@@ -76,6 +77,9 @@ def build_meters(hass: HomeAssistant) -> dict[str, Any]:
                 "erzeuger_id": gid, "device_id": dev.id if dev else None, "name": g.name or gid, "typ": g.kind.value,
                 "zaehler_id": g.meter_id, "am_haushaltsstrom": g.on_household_power, "ww_zentral": g.central_dhw,
                 "sensoren": by_gen.get(gid, {}),
+                # 1.2.4: für die Ablese-Karte – heute erfasstes Holz und zuletzt angegebenes Gewicht je Scheit
+                "holz": {"datum": rt.today().isoformat(), "heute": rt.wood(gid).get(rt.today()), "kg_je_scheit": rt.last_kg_per_log(gid)}
+                if g.kind == GeneratorKind.FIREPLACE else None,
             })
         hw = rt.household.situation.get("hot_water")
         out["haushalte"].append({"entry_id": entry.entry_id, "name": rt.household.name, "saldo_gesamt": total, "zaehler": meters,
