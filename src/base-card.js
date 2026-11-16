@@ -8,8 +8,21 @@
       this.attachShadow({ mode: 'open' });
     }
 
+    // 1.2.5: hass kommt bei jeder Zustandsänderung in ganz Home Assistant; die Karte zeichnet höchstens einmal je
+    // Sekunde (der letzte Stand wird nachgeholt) und gar nicht, solange der Tab verborgen ist.
     set hass(h) {
       this._h = h;
+      if (typeof document !== 'undefined' && document.hidden && this._tRender) return;
+      const wait = 1000 - (Date.now() - (this._tRender || 0));
+      if (wait > 0) {
+        if (!this._tTimer) this._tTimer = setTimeout(() => { this._tTimer = null; this._renderNow(); }, wait);
+        return;
+      }
+      this._renderNow();
+    }
+
+    _renderNow() {
+      this._tRender = Date.now();
       this._render();
       this._afterHass();
     }
@@ -39,9 +52,15 @@
       }
     }
 
-    connectedCallback() { if (this._ro && this._w) this._ro.observe(this); }
+    connectedCallback() {
+      if (this._ro && this._w) this._ro.observe(this);
+      if (this._h && this._c) this._renderNow();
+    }
 
-    disconnectedCallback() { if (this._ro) this._ro.disconnect(); }
+    disconnectedCallback() {
+      if (this._ro) this._ro.disconnect();
+      if (this._tTimer) { clearTimeout(this._tTimer); this._tTimer = null; }
+    }
 
     // Vor jedem Rendern: Sprache/Format aus hass, Farbschema als Attribut
     _prepare() {
@@ -53,7 +72,10 @@
     }
 
     _put(html) {
-      if (html !== this._last) { this._w.innerHTML = html; this._last = html; }
+      if (html !== this._last) {
+        this._w.innerHTML = html; this._last = html;
+        if (this._dlg && TC.integ && TC.integ.restoreFocus) TC.integ.restoreFocus(this);
+      }
     }
 
     _header(icon, title, sub, right) {

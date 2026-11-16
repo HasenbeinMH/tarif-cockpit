@@ -1,4 +1,4 @@
-/*! tarif-cockpit v1.2.4 - MIT License - https://github.com/HasenbeinMH/tarif-cockpit
+/*! tarif-cockpit v1.2.5 - MIT License - https://github.com/HasenbeinMH/tarif-cockpit
     Editor-Baukasten und Assistent nach energy-cockpit, MIT License, Copyright (c) 2026 Musicmaker3112
     Diese Datei wird gebaut: Quellen in src/, Aufruf node tools/build.mjs */
 /* ---- common.js ---- */
@@ -7,7 +7,7 @@
 window.TarifCockpit = window.TarifCockpit || {};
 (() => {
   const TC = window.TarifCockpit;
-  TC.VERSION = '1.2.4';
+  TC.VERSION = '1.2.5';
 
   // Farbschemen wie bei energy-cockpit
   TC.THEMES = {
@@ -568,8 +568,21 @@ svg.ch{display:block;width:100%;height:auto}
       this.attachShadow({ mode: 'open' });
     }
 
+    // 1.2.5: hass kommt bei jeder Zustandsänderung in ganz Home Assistant; die Karte zeichnet höchstens einmal je
+    // Sekunde (der letzte Stand wird nachgeholt) und gar nicht, solange der Tab verborgen ist.
     set hass(h) {
       this._h = h;
+      if (typeof document !== 'undefined' && document.hidden && this._tRender) return;
+      const wait = 1000 - (Date.now() - (this._tRender || 0));
+      if (wait > 0) {
+        if (!this._tTimer) this._tTimer = setTimeout(() => { this._tTimer = null; this._renderNow(); }, wait);
+        return;
+      }
+      this._renderNow();
+    }
+
+    _renderNow() {
+      this._tRender = Date.now();
       this._render();
       this._afterHass();
     }
@@ -599,9 +612,15 @@ svg.ch{display:block;width:100%;height:auto}
       }
     }
 
-    connectedCallback() { if (this._ro && this._w) this._ro.observe(this); }
+    connectedCallback() {
+      if (this._ro && this._w) this._ro.observe(this);
+      if (this._h && this._c) this._renderNow();
+    }
 
-    disconnectedCallback() { if (this._ro) this._ro.disconnect(); }
+    disconnectedCallback() {
+      if (this._ro) this._ro.disconnect();
+      if (this._tTimer) { clearTimeout(this._tTimer); this._tTimer = null; }
+    }
 
     // Vor jedem Rendern: Sprache/Format aus hass, Farbschema als Attribut
     _prepare() {
@@ -613,7 +632,10 @@ svg.ch{display:block;width:100%;height:auto}
     }
 
     _put(html) {
-      if (html !== this._last) { this._w.innerHTML = html; this._last = html; }
+      if (html !== this._last) {
+        this._w.innerHTML = html; this._last = html;
+        if (this._dlg && TC.integ && TC.integ.restoreFocus) TC.integ.restoreFocus(this);
+      }
     }
 
     _header(icon, title, sub, right) {
@@ -1274,6 +1296,21 @@ svg.ch{display:block;width:100%;height:auto}
     const f = card.shadowRoot.querySelector('[data-dlg="from"]');
     if (a) card._dlg.amount = a.value === '' ? null : a.value;
     if (f) card._dlg.from = f.value;
+    // Fokus und Cursor mitnehmen: das Neuzeichnen ersetzt die Felder
+    const act = card.shadowRoot.activeElement;
+    const k = act && act.getAttribute && act.getAttribute('data-dlg');
+    card._dlg.focus = k === 'amount' || k === 'from'
+      ? { k, s: act.selectionStart === undefined ? null : act.selectionStart, e: act.selectionEnd === undefined ? null : act.selectionEnd }
+      : null;
+  };
+
+  I.restoreFocus = (card) => {
+    const fc = card._dlg && card._dlg.focus;
+    if (!fc || !card.shadowRoot) return;
+    const el = card.shadowRoot.querySelector(`[data-dlg="${fc.k}"]`);
+    if (!el) return;
+    el.focus();
+    try { if (fc.s !== null) el.setSelectionRange(fc.s, fc.e); } catch (_) { /* number/date-Felder kennen keinen Cursor */ }
   };
 
   I.dialogHtml = (card) => {

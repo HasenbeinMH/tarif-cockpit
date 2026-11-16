@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.5 – 2026-11-16
+
+### Geändert (Revision: Rechenlast, Cache, Bedienung)
+- Ein neuer Zählerwert löst nur noch die Kosten-/Prognose-Neuberechnung aus; die Regression (Heizmodell) wird bei Tageswechsel, Aktionen und neuer Wettervorhersage angepasst. Das spart bei jedem Zählerwert etwa zwei Drittel der Rechenzeit.
+- Die Karten zeichnen höchstens einmal je Sekunde neu und gar nicht, solange der Tab verborgen ist (bisher bei jeder Zustandsänderung in ganz Home Assistant).
+- Die Kartendatei wird vom Browser zwischengespeichert (die URL trägt die Version).
+- Große Attribute (Abschlagsliste, Abgleich-Intervalle, Prognosegüte, letzte Rechnung) gehen nicht mehr in den Recorder.
+- Der Abschlagsdialog behält Fokus und Cursor, wenn die Karte während der Eingabe neu gezeichnet wird.
+- Mehrere Kaminöfen: Entlastung je Brennstunde als stundengewichtetes Mittel statt nur vom ersten Ofen.
+- Reparaturhinweise zu Rechnungen nutzen Begriffe in der Sprache der Oberfläche.
+- Unterzähler ohne Vertrag werden nur bei Änderungen abgeglichen.
+
+### Behoben
+- Vergleich mit dynamischem Tarif: Der Zwischenspeicher erkennt jetzt auch geänderte Preise und Tageswerte bei gleicher Anzahl (Preis-Korrektur, Neuberechnung).
+
 ## 1.2.4 – 2026-11-16
 
 ### Neu

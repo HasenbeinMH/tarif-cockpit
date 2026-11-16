@@ -59,9 +59,10 @@ def build_meters(hass: HomeAssistant) -> dict[str, Any]:
             for gid in rt.generators:
                 if uid.startswith(f"{gid}_"):
                     by_gen.setdefault(gid, {})[uid[len(gid) + 1:]] = e.entity_id
+        devices = {i[1]: d for d in dr.async_entries_for_config_entry(dev_reg, entry.entry_id) for i in d.identifiers if i[0] == DOMAIN}
         meters = []
         for meter_id, m in rt.meters.items():
-            dev = next((d for d in dr.async_entries_for_config_entry(dev_reg, entry.entry_id) if (DOMAIN, meter_id) in d.identifiers), None)
+            dev = devices.get(meter_id)
             meters.append({
                 "zaehler_id": meter_id, "device_id": dev.id if dev else None, "name": m.name or meter_id,
                 "medium": m.medium.value, "unit": m.unit, "rolle": m.role, "hauptzaehler": m.parent_meter_id,
@@ -72,7 +73,7 @@ def build_meters(hass: HomeAssistant) -> dict[str, Any]:
             })
         gens = []
         for gid, g in rt.generators.items():
-            dev = next((d for d in dr.async_entries_for_config_entry(dev_reg, entry.entry_id) if (DOMAIN, gid) in d.identifiers), None)
+            dev = devices.get(gid)
             gens.append({
                 "erzeuger_id": gid, "device_id": dev.id if dev else None, "name": g.name or gid, "typ": g.kind.value,
                 "zaehler_id": g.meter_id, "am_haushaltsstrom": g.on_household_power, "ww_zentral": g.central_dhw,

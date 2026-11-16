@@ -116,7 +116,9 @@ class TarifCoordinator:
                             self.rt.data.sensor_last_raw[m.meter_id] = v
                             # nur echte Wertänderungen sind Impulse (nicht unavailable → gleicher Wert, Attribute)
                             self._pulses.setdefault(m.meter_id, deque(maxlen=50)).append((dt_util.now(), v))
-                self.mark(m.meter_id, ALL, debounce=True)
+                # 1.2.5: ein neuer Zählerwert ändert nur Kosten/Prognose des laufenden Tages; die Regression hängt an
+                # abgeschlossenen Tagen und wird bei Tageswechsel, Aktionen und Wetter neu angepasst
+                self.mark(m.meter_id, frozenset({"costs"}), debounce=True)
 
     @callback
     def mark(self, meter_ids: str | list[str] | None, flags: set[str] | frozenset[str], debounce: bool = False) -> None:
@@ -265,8 +267,15 @@ class TarifCoordinator:
                 if stoves:
                     kw["stove_hours"] = self._gen_series(stoves, "hours")
                     # 1.2.2: mit gewogenem Holz die gelernte Wärme je Brennstunde statt Nennleistung × Anteil
-                    rate = wood_rate(stoves[0], rt.generator_daily(stoves[0].generator_id), rt.wood(stoves[0].generator_id))
-                    kw["stove_relief"] = stove_relief_per_hour(stoves[0], meter.medium, rate.heat_kw if rate else None)
+                    # mehrere Öfen: Entlastung je Brennstunde als Mittel über alle Öfen, gewichtet nach ihren Stunden
+                    parts = []
+                    for st in stoves:
+                        rate = wood_rate(st, rt.generator_daily(st.generator_id), rt.wood(st.generator_id))
+                        hrs = sum(v for v in self._gen_series([st], "hours").values() if v)
+                        parts.append((stove_relief_per_hour(st, meter.medium, rate.heat_kw if rate else None), hrs))
+                    valid = [(r, h) for r, h in parts if r is not None]
+                    tot = sum(h for _r, h in valid)
+                    kw["stove_relief"] = (sum(r * h for r, h in valid) / tot) if tot > 0 else (valid[0][0] if valid else None)
                 hps = [g for g in gens if g.kind in ON_POWER_KINDS and g.meter_id != meter.meter_id]
                 if hps:
                     kw["hp_energy"] = self._gen_series(hps, "energy_input")
@@ -297,8 +306,10 @@ class TarifCoordinator:
         key = None
         if meter is not None and meter.comparison is not None:
             # Vergleich nur neu, wenn sich Tag, Tageswerte, Viertelstunden oder Preise geändert haben
-            key = (rt.today(), len(rt.data.daily), sum(1 for d in rt.data.daily if d.meter_id == meter_id and d.consumption is not None),
-                   len(rt.data.day_intervals), len(rt.data.prices), len(rt.data.calibrations))
+            key = (rt.today(), len(rt.data.daily), round(sum(d.consumption for d in rt.data.daily if d.meter_id == meter_id and d.consumption is not None), 6),
+                   len(rt.data.day_intervals), len(rt.data.prices), len(rt.data.calibrations),
+                   # 1.2.5: Inhalte, nicht nur Anzahlen (Preis-Korrektur mit gleichem Beginn, Neuberechnung)
+                   hash(tuple((p.contract_id, p.valid_from, p.work_price, p.base_price, p.valid_to) for p in rt.data.prices)))
         return {"intervals": rt.day_intervals(meter_id, "energy") or None,
                 "price_series": {e: rt.day_intervals(e, "price") for e, _a in ents} or None,
                 "comparison_cache": self._cmp_cache, "comparison_key": key}
@@ -353,8 +364,8 @@ class TarifCoordinator:
         changed = False
         for meter_id, meter in rt.meters.items():
             flags = self._dirty.pop(meter_id, set())
-            if not flags and meter_id in self.results:
-                continue
+            if not flags and (meter_id in self.results or (meter.role != "main" and not rt.contracts(meter_id))):
+                continue  # 1.2.5: Unterzähler ohne Vertrag nur bei Änderung neu abgleichen
             if meter.entity and rt.readings(meter_id) and meter.role != "main" and not rt.contracts(meter_id):
                 self.reconciliations[meter_id] = reconcile(meter, rt.data.readings, rt.daily(meter_id), rt.tz)
             if meter.role != "main" and not rt.contracts(meter_id):
@@ -616,7 +627,7 @@ class TarifCoordinator:
                 ir.async_create_issue(
                     self.hass, DOMAIN, issue_id, is_fixable=bool(chk.proposals), severity=ir.IssueSeverity.WARNING,
                     translation_key=ISSUE_INVOICE + ("" if chk.proposals else "_hinweis"),
-                    translation_placeholders=invoice_placeholders(meter, chk),
+                    translation_placeholders=invoice_placeholders(meter, chk, self.hass.config.language),
                     data={"invoice_id": inv.invoice_id, "meter_id": meter_id},
                 )
                 key = f"rechnung:{inv.invoice_id}"
@@ -674,13 +685,18 @@ def _num(v: float | None, digits: int = 1) -> str:
     return "–" if v is None else f"{v:.{digits}f}".replace(".", ",")
 
 
-def invoice_placeholders(meter: Meter, chk: InvoiceCheck) -> dict[str, str]:
+def invoice_placeholders(meter: Meter, chk: InvoiceCheck, lang: str = "de") -> dict[str, str]:
     """Platzhalter für den Reparaturhinweis (deutsche Zahlen; Begriffe in beiden Sprachen verständlich)."""
-    names = {"brennwert": "Brennwert", "zustandszahl": "Zustandszahl", "faktor_ersatzquelle": "Faktor Ersatzquelle"}
+    en = not lang.startswith("de")
+    names = ({"brennwert": "Calorific value", "zustandszahl": "Conversion factor", "faktor_ersatzquelle": "Fallback-source factor"} if en
+             else {"brennwert": "Brennwert", "zustandszahl": "Zustandszahl", "faktor_ersatzquelle": "Faktor Ersatzquelle"})
     props = "; ".join(f"{names.get(p['art'], p['art'])} {_num(p.get('bisher'), 4)} → {_num(p['wert'], 4)}" for p in chk.proposals)
-    hint_names = {"arbeitspreis_pruefen": "Arbeitspreis prüfen", "grundpreis_pruefen": "Grundpreis prüfen",
-                  "betrag_pruefen": "Rechnungsbetrag prüfen", "menge_weicht_ab": "Ablesungen prüfen",
-                  "menge_weicht_stark_ab": "Menge weicht stark ab"}
+    hint_names = ({"arbeitspreis_pruefen": "Check unit price", "grundpreis_pruefen": "Check base price",
+                   "betrag_pruefen": "Check invoice amount", "menge_weicht_ab": "Check readings",
+                   "menge_weicht_stark_ab": "Quantity deviates strongly"} if en else
+                  {"arbeitspreis_pruefen": "Arbeitspreis prüfen", "grundpreis_pruefen": "Grundpreis prüfen",
+                   "betrag_pruefen": "Rechnungsbetrag prüfen", "menge_weicht_ab": "Ablesungen prüfen",
+                   "menge_weicht_stark_ab": "Menge weicht stark ab"})
     return {
         "meter": meter.name or meter.meter_id, "von": chk.period_from.strftime("%d.%m.%Y"), "bis": chk.period_to.strftime("%d.%m.%Y"),
         "menge_rechnung": _num(chk.quantity_invoice), "menge_eigen": _num(chk.quantity_own), "einheit": meter.unit,

@@ -282,6 +282,7 @@ class CurrentAdvanceSensor(ResultSensor):
 
 
 class AdvancesPeriodSensor(ResultSensor):
+    _unrecorded_attributes = frozenset({"abschlaege"})  # 1.2.5: große Liste nicht in den Recorder
     key = "abschlaege_periode"
     money = True
 
@@ -383,6 +384,7 @@ class RecommendedAdvanceSensor(ResultSensor):
 
 
 class ForecastQualitySensor(ResultSensor):
+    _unrecorded_attributes = frozenset({"prognoseguete", "rechnung_letzte"})  # 1.2.5
     key = "prognose_qualitaet"
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = QUALITIES
@@ -685,6 +687,7 @@ class ReconcileSensor(TarifSensor):
     """Abgleich des Zähler-Sensors mit den Ablesungen: Abweichung des letzten Intervalls in % (negativ: Sensor zählt zu
     wenig, z. B. verlorene Impulse). Attribute: Faktor, Offset, fehlende Menge, Intervalle."""
 
+    _unrecorded_attributes = frozenset({"intervalle"})  # 1.2.5
     key = "abgleich"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_native_unit_of_measurement = PERCENTAGE

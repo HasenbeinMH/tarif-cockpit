@@ -26,7 +26,7 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
     if hass.data.get(DATA_FRONTEND):
         return
     path = Path(__file__).parent / "frontend"
-    await hass.http.async_register_static_paths([StaticPathConfig(URL_BASE, str(path), cache_headers=False)])
+    await hass.http.async_register_static_paths([StaticPathConfig(URL_BASE, str(path), cache_headers=True)])
     hass.data[DATA_FRONTEND] = True
     if "frontend" in hass.config.components:
         from homeassistant.components.frontend import add_extra_js_url  # noqa: PLC0415

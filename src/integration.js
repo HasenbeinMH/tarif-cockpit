@@ -647,6 +647,21 @@
     const f = card.shadowRoot.querySelector('[data-dlg="from"]');
     if (a) card._dlg.amount = a.value === '' ? null : a.value;
     if (f) card._dlg.from = f.value;
+    // Fokus und Cursor mitnehmen: das Neuzeichnen ersetzt die Felder
+    const act = card.shadowRoot.activeElement;
+    const k = act && act.getAttribute && act.getAttribute('data-dlg');
+    card._dlg.focus = k === 'amount' || k === 'from'
+      ? { k, s: act.selectionStart === undefined ? null : act.selectionStart, e: act.selectionEnd === undefined ? null : act.selectionEnd }
+      : null;
+  };
+
+  I.restoreFocus = (card) => {
+    const fc = card._dlg && card._dlg.focus;
+    if (!fc || !card.shadowRoot) return;
+    const el = card.shadowRoot.querySelector(`[data-dlg="${fc.k}"]`);
+    if (!el) return;
+    el.focus();
+    try { if (fc.s !== null) el.setSelectionRange(fc.s, fc.e); } catch (_) { /* number/date-Felder kennen keinen Cursor */ }
   };
 
   I.dialogHtml = (card) => {
