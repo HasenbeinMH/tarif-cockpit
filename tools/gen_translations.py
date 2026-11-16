@@ -20,14 +20,14 @@ S = {
                 "rooms": T("Raumtemperaturen", "Room temperatures"),
                 "heating_limit": T("Heizgrenze", "Heating limit"),
                 "indoor_ref": T("Innentemperatur für Gradtage", "Indoor reference for degree days"),
-                "tolerance_pct": T("Toleranz für „Passt“", "Tolerance for “on track”"),
+                "tolerance_pct": T("Genauigkeit der Prognose", "Forecast accuracy"),
             },
             "data_description": {
                 "outdoor_temp_entity": T("Für Gradtage und Tageswerte. Optional.", "For degree days and daily values. Optional."),
                 "heating_limit": T("Tage mit einem Tagesmittel darunter zählen als Heiztage (üblich 15 °C).",
                                    "Days with a mean below this count as heating days (usually 15 °C)."),
                 "indoor_ref": T("Üblich 20 °C (Gradtagzahl G20/15).", "Usually 20 °C (degree days G20/15)."),
-                "tolerance_pct": T("Abweichung, bis zu der das Urteil „Passt“ lautet.", "Deviation up to which the verdict is “on track”."),
+                "tolerance_pct": T("Bis zu dieser Nachzahlung oder Erstattung (in % deiner Abschläge der Periode) lautet das Urteil „Passt“. Beispiel: 5 % bei 1.200 € Abschlägen = bis 60 €.", "Up to this additional payment or refund (in % of your advance payments for the period) the verdict is “on track”. Example: 5 % of 1,200 € advances = up to 60 €."),
             },
         }},
         "abort": {"single_instance_allowed": T(
@@ -338,15 +338,15 @@ S["config"]["step"] = {
         "title": T("Fast fertig", "Almost done"),
         "description": T("Danach legst du beim Eintrag „Tarif-Cockpit“ über „Zähler hinzufügen“ deine Zähler an. Passend zu deinen Antworten: {zaehler}.",
                          "Afterwards add your meters via “Add meter” on the “Tarif-Cockpit” entry. Matching your answers: {zaehler}."),
-        "data": {"tolerance_pct": T("Toleranz für „Passt“", "Tolerance for “on track”")},
-        "data_description": {"tolerance_pct": T("Abweichung, bis zu der das Urteil „Passt“ lautet.", "Deviation up to which the verdict is “on track”.")},
+        "data": {"tolerance_pct": T("Genauigkeit der Prognose", "Forecast accuracy")},
+        "data_description": {"tolerance_pct": T("Bis zu dieser Nachzahlung oder Erstattung (in % deiner Abschläge der Periode) lautet das Urteil „Passt“. Beispiel: 5 % bei 1.200 € Abschlägen = bis 60 €.", "Up to this additional payment or refund (in % of your advance payments for the period) the verdict is “on track”. Example: 5 % of 1,200 € advances = up to 60 €.")},
     },
 }
 S["options"] = {"step": {"init": {
     "title": T("Haushalt ändern", "Change household"),
     "description": T("Änderungen laden das Tarif-Cockpit neu. Zähler, Verträge und Daten bleiben erhalten.", "Changes reload Tarif-Cockpit. Meters, contracts and data are kept."),
-    "data": {**SITUATION_DATA, **CLIMATE_DATA, "tolerance_pct": T("Toleranz für „Passt“", "Tolerance for “on track”")},
-    "data_description": CLIMATE_DESC,
+    "data": {**SITUATION_DATA, **CLIMATE_DATA, "tolerance_pct": T("Genauigkeit der Prognose", "Forecast accuracy")},
+    "data_description": {**CLIMATE_DESC, "tolerance_pct": T("Bis zu dieser Nachzahlung oder Erstattung (in % deiner Abschläge der Periode) lautet das Urteil „Passt“. Beispiel: 5 % bei 1.200 € Abschlägen = bis 60 €.", "Up to this additional payment or refund (in % of your advance payments for the period) the verdict is “on track”. Example: 5 % of 1,200 € advances = up to 60 €.")},
 }}}
 S["selector"].update({
     "heating": {"options": {"gas": T("Gas", "Gas"), "fernwaerme": T("Fernwärme", "District heating"), "waermepumpe": T("Wärmepumpe", "Heat pump"),

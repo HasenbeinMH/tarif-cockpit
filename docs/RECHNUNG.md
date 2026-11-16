@@ -99,7 +99,7 @@ Die Regression ist ab 0.8 allgemein (kleinste Quadrate mit beliebig vielen Regre
 
 - `Prognose Kosten = Kosten bisher + Kosten der Restmenge + Grundpreis bis Periodenende`
 - `Saldo = Abschläge der Periode − Prognose Kosten` (positiv: Rückzahlung)
-- Urteil „passt“, wenn |Saldo| unter der Toleranz (Standard 5 % der Abschläge) liegt.
+- Urteil „passt“, wenn |Saldo| unter der Toleranz liegt (Feld „Genauigkeit der Prognose“, Standard 5 % der Abschläge der Periode; bei 1.200 € Abschlägen also bis 60 €).
 - `Abschlag empfohlen = (Prognose Kosten − schon gezahlt − geplante Einmalzahlungen) / offene Abschläge`, aufgerundet, ab dem nächsten Zahltag.
 - `Abschlag passend = Prognose Kosten / Anzahl Abschläge der Periode` (wie bisher in den Template-Sensoren).
 - Prognose-Schnappschüsse werden am 1. jedes Monats und beim Wechsel in die nächste Periode (letzter Stand der beendeten Periode) eingefroren.

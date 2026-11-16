@@ -37,10 +37,10 @@
         "title": "Fast fertig",
         "description": "Danach legst du beim Eintrag „Tarif-Cockpit“ über „Zähler hinzufügen“ deine Zähler an. Passend zu deinen Antworten: {zaehler}.\n\nOptional über „Wärmeerzeuger hinzufügen“: {erzeuger}.",
         "data": {
-          "tolerance_pct": "Toleranz für „Passt“"
+          "tolerance_pct": "Genauigkeit der Prognose"
         },
         "data_description": {
-          "tolerance_pct": "Abweichung, bis zu der das Urteil „Passt“ lautet."
+          "tolerance_pct": "Bis zu dieser Nachzahlung oder Erstattung (in % deiner Abschläge der Periode) lautet das Urteil „Passt“. Beispiel: 5 % bei 1.200 € Abschlägen = bis 60 €."
         }
       }
     },
@@ -1454,7 +1454,7 @@
           "rooms": "Raumtemperaturen",
           "heating_limit": "Heizgrenze",
           "indoor_ref": "Innentemperatur für Gradtage",
-          "tolerance_pct": "Toleranz für „Passt“",
+          "tolerance_pct": "Genauigkeit der Prognose",
           "design_temp": "Normaußentemperatur",
           "cooling_limit": "Kühlgrenze"
         },
@@ -1462,6 +1462,7 @@
           "outdoor_temp_entity": "Für Gradtage und den gelernten Kennwert. Ohne Außentemperatur gibt es keine Heizprognose.",
           "heating_limit": "Tage mit einem Tagesmittel darunter zählen als Heiztage (üblich 15 °C).",
           "indoor_ref": "Üblich 20 °C (Gradtagzahl G20/15).",
+          "tolerance_pct": "Bis zu dieser Nachzahlung oder Erstattung (in % deiner Abschläge der Periode) lautet das Urteil „Passt“. Beispiel: 5 % bei 1.200 € Abschlägen = bis 60 €.",
           "design_temp": "Für die Heizlast: kälteste Auslegungstemperatur deiner Region (Deutschland etwa −10 bis −16 °C, oft −12 °C).",
           "cooling_limit": "Kühlgradtage für Klimageräte: Tage mit einem Tagesmittel darüber zählen als Kühltage (Standard 22 °C)."
         }

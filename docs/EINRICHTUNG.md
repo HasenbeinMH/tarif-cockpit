@@ -17,7 +17,7 @@ Zuerst kommen ein paar Fragen statt Fachbegriffe. Die Antworten steuern die folg
 | ![Fragen](img/abnahme-1-haushalt-fragen.png) | ![Klima](img/abnahme-2-haushalt-klima.png) | ![Abschluss](img/abnahme-3-haushalt-abschluss.png) |
 
 - **Klima:** Außentemperatur und Wetter sind optional, werden für die Gasprognose aber gebraucht (Gradtage). Heizgrenze und Innenbezug passen meist so.
-- **Abschluss:** Toleranz für das Urteil „passt“. Darüber steht, welche Zähler aus deinen Antworten folgen.
+- **Abschluss:** Genauigkeit der Prognose: bis zu dieser Nachzahlung oder Erstattung (in % der Abschläge der Periode, Standard 5 %) lautet das Urteil „passt“. Darüber steht, welche Zähler aus deinen Antworten folgen.
 
 Alles lässt sich später unter **Konfigurieren** am Eintrag ändern; die Integration lädt dann neu, gespeicherte Daten bleiben.
 

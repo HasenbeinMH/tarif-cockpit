@@ -59,7 +59,7 @@ Ab Home Assistant 2026.11 heißt HACS **Marketplace** und ist eingebaut (Einstel
 |---|---|---|
 | ![Haushalt](docs/img/abnahme-1-haushalt-fragen.png) | ![Zusammenfassung](docs/img/abnahme-11-zaehler-zusammenfassung.png) | ![Editor](docs/img/abnahme-13-karte-editor.png) |
 
-Alle Schritte mit Bildern: [docs/EINRICHTUNG.md](docs/EINRICHTUNG.md). Später ändern: am Zähler **Neu konfigurieren** → Stammdaten, Anbieter wechseln, Preis ändern, Abschlag ändern; am Haushalt **Konfigurieren** für Situation, Klima und Toleranz.
+Alle Schritte mit Bildern: [docs/EINRICHTUNG.md](docs/EINRICHTUNG.md). Später ändern: am Zähler **Neu konfigurieren** → Stammdaten, Anbieter wechseln, Preis ändern, Abschlag ändern; am Haushalt **Konfigurieren** für Situation, Klima und die Genauigkeit der Prognose (Spielraum für das Urteil „passt“).
 
 Mit Home Assistant 2026.10 oder älter heißt der Marketplace noch **HACS**; Tarif-Cockpit ab 0.5 setzt aber 2026.11 voraus. Die Beschriftung der Menüpunkte kann je nach Version leicht abweichen.
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.3 – 2026-11-16
+
+### Geändert
+- **„Toleranz für Passt“ heißt jetzt „Genauigkeit der Prognose“** (Haushalt anlegen und „Konfigurieren“). Die Beschreibung erklärt den Wert mit einem Beispiel: Bis zu dieser Nachzahlung oder Erstattung in % der Abschläge lautet das Urteil „Passt“, 5 % bei 1.200 € Abschlägen = bis 60 €. Die Rechnung bleibt gleich.
+
 ## 1.2.2 – 2026-11-16
 
 ### Neu

@@ -37,10 +37,10 @@
         "title": "Almost done",
         "description": "Afterwards add your meters via “Add meter” on the “Tarif-Cockpit” entry. Matching your answers: {zaehler}.\n\nOptional via “Add heat generator”: {erzeuger}.",
         "data": {
-          "tolerance_pct": "Tolerance for “on track”"
+          "tolerance_pct": "Forecast accuracy"
         },
         "data_description": {
-          "tolerance_pct": "Deviation up to which the verdict is “on track”."
+          "tolerance_pct": "Up to this additional payment or refund (in % of your advance payments for the period) the verdict is “on track”. Example: 5 % of 1,200 € advances = up to 60 €."
         }
       }
     },
@@ -1454,7 +1454,7 @@
           "rooms": "Room temperatures",
           "heating_limit": "Heating limit",
           "indoor_ref": "Indoor reference for degree days",
-          "tolerance_pct": "Tolerance for “on track”",
+          "tolerance_pct": "Forecast accuracy",
           "design_temp": "Design outdoor temperature",
           "cooling_limit": "Cooling limit"
         },
@@ -1462,6 +1462,7 @@
           "outdoor_temp_entity": "For degree days and the learned coefficient. Without an outdoor temperature there is no heating forecast.",
           "heating_limit": "Days with a mean below this count as heating days (usually 15 °C).",
           "indoor_ref": "Usually 20 °C (degree days G20/15).",
+          "tolerance_pct": "Up to this additional payment or refund (in % of your advance payments for the period) the verdict is “on track”. Example: 5 % of 1,200 € advances = up to 60 €.",
           "design_temp": "For the heat load: the coldest design temperature of your region (Germany about −10 to −16 °C, often −12 °C).",
           "cooling_limit": "Cooling degree days for air conditioners: days with a mean above this count as cooling days (default 22 °C)."
         }
