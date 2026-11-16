@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1 – 2026-11-16
+
+### Geändert
+- **Grundpreis je Monat oder je Jahr:** In den Preisdialogen (Zähler anlegen, „Preis ändern“, „Anbieter wechseln“) und beim Vergleichstarif lässt sich wählen, ob der eingegebene Grundpreis je Monat oder je Jahr gilt. Gespeichert und gerechnet wird weiter je Monat (Jahresbetrag ÷ 12).
+
 ## 1.2.0 – 2026-11-15
 
 ### Neu

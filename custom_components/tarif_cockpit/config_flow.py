@@ -279,7 +279,9 @@ def _price_schema(hass: Any, medium: Medium, with_date: bool = False, current: P
         fields[vol.Required("valid_from")] = selector.DateSelector()
     fields.update({
         vol.Required("work_price", default=work_default): _number(0, 10000, "any", work_unit),
-        vol.Required("base_price", default=current.base_price if current else 0): _number(0, 10000, "any", f"{cur}/Monat"),
+        vol.Required("base_price", default=current.base_price if current else 0): _number(0, 100000, "any", cur),
+        # 1.2.1: Grundpreis je Monat oder je Jahr eingeben (gespeichert wird je Monat)
+        vol.Required("base_price_period", default="month"): _select(["month", "year"], "base_period"),
         opt("metering_price"): _number(0, 1000, "any", f"{cur}/Monat"),
     })
     if medium == Medium.GAS:
@@ -313,7 +315,10 @@ def _price_from(user_input: dict[str, Any], cents: bool = False) -> dict[str, fl
     elif cents:
         work = work / 100.0
     work = round(work, 10)  # 9,52 ct → 0,0952 € ohne Rundungsrest
-    price = {"work_price": work, "base_price": float(user_input["base_price"])}
+    base = float(user_input["base_price"])
+    if user_input.get("base_price_period") == "year":
+        base = round(base / 12, 10)
+    price = {"work_price": work, "base_price": base}
     for key in PRICE_KEYS:
         if user_input.get(key) is not None:
             price[key] = float(user_input[key])
@@ -651,7 +656,10 @@ class MeterSubentryFlow(ConfigSubentryFlow):
                 ent = user_input.get("comparison_entity")
                 meter["comparison"] = {"entity": ent, "markup": round(float(user_input.get("comparison_markup") or 0.0) / 100, 6),
                                        "attribute": None, "net": bool(user_input.get("comparison_net", True))} if ent else None
-                meter["comparison_base_price"] = float(user_input["comparison_base"]) if ent and user_input.get("comparison_base") is not None else None
+                base = float(user_input["comparison_base"]) if ent and user_input.get("comparison_base") is not None else None
+                if base is not None and user_input.get("comparison_base_period") == "year":
+                    base = round(base / 12, 10)
+                meter["comparison_base_price"] = base
             if medium == Medium.WASSER:
                 meter["leak_threshold_lph"] = float(user_input["leak_threshold"]) if user_input.get("leak_threshold") is not None else None
             return self.async_update_and_abort(entry, sub, title=user_input["name"], data={**sub.data, CONF_METER: meter})
@@ -676,7 +684,8 @@ class MeterSubentryFlow(ConfigSubentryFlow):
             fields[vol.Optional("comparison_markup", description={"suggested_value": round((cmp_.get("markup") or 0) * 100, 4) if cmp_ else None})] = \
                 _number(-100, 100, "any", "ct/kWh")
             fields[vol.Optional("comparison_base", description={"suggested_value": meter.get("comparison_base_price")})] = \
-                _number(0, 1000, "any", f"{self.hass.config.currency}/Monat")
+                _number(0, 100000, "any", self.hass.config.currency)
+            fields[vol.Required("comparison_base_period", default="month")] = _select(["month", "year"], "base_period")
             fields[vol.Optional("comparison_net", default=bool(cmp_.get("net", True)))] = selector.BooleanSelector()
         if medium == Medium.WASSER and meter.get("entity"):
             fields[vol.Optional("leak_threshold", description={"suggested_value": meter.get("leak_threshold_lph")})] = _number(0.5, 500, "any", "L/h")

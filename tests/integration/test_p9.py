@@ -165,7 +165,7 @@ async def test_stammdaten_comparison_and_cooling_limit(hass: HomeAssistant) -> N
     r = await flow.async_configure(r["flow_id"], {"next_step_id": "stammdaten"})
     assert "comparison_entity" in r["data_schema"].schema
     r = await flow.async_configure(r["flow_id"], {"name": "Strom", "comparison_entity": "sensor.epex_market", "comparison_markup": 15.0,
-                                                 "comparison_base": 12.0})
+                                                 "comparison_base": 144.0, "comparison_base_period": "year"})
     assert r["reason"] == "reconfigure_successful"
     await hass.async_block_till_done()
     m = entry.runtime_data.meters["s1"]
@@ -234,4 +234,18 @@ async def test_custom_service_windows_kept_by_dialog(hass: HomeAssistant) -> Non
     assert r["reason"] == "price_saved"  # Schritt übersprungen, eigene Fenster unverändert
     seg = next(p for p in entry.runtime_data.data.prices if p.valid_from == date(2026, 11, 10))
     assert seg.work_price == 0.31 and seg.windows[0].name == "Mittag" and seg.windows[0].months == [1, 2]
+
+
+async def test_base_price_per_year_in_price_dialog(hass: HomeAssistant) -> None:
+    """1.2.1: Grundpreis je Jahr eingeben, gespeichert je Monat."""
+    entry = make_entry(strom())
+    assert await setup(hass, entry)
+    flow = hass.config_entries.subentries
+    r = await flow.async_init((entry.entry_id, "zaehler"), context={"source": SOURCE_RECONFIGURE, "subentry_id": "s1"})
+    r = await flow.async_configure(r["flow_id"], {"next_step_id": "preis_aendern"})
+    assert "base_price_period" in r["data_schema"].schema
+    r = await flow.async_configure(r["flow_id"], {"valid_from": "2026-11-01", "work_price": 30.0, "base_price": 157.08, "base_price_period": "year"})
+    assert r["reason"] == "price_saved"
+    seg = next(p for p in entry.runtime_data.data.prices if p.valid_from == date(2026, 11, 1))
+    assert abs(seg.base_price - 13.09) < 1e-9
 

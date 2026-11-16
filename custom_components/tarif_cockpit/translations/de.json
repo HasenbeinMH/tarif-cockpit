@@ -105,7 +105,7 @@
           "data": {
             "valid_from": "Gültig ab",
             "work_price": "Arbeitspreis",
-            "base_price": "Grundpreis je Monat",
+            "base_price": "Grundpreis",
             "metering_price": "Messpreis je Monat",
             "calorific": "Brennwert",
             "z_factor": "Zustandszahl",
@@ -115,11 +115,13 @@
             "demand_kw": "Anschlussleistung",
             "price_unit": "Arbeitspreis je",
             "tiers_rounding": "Staffel oder Rundung festlegen",
-            "windows_14a": "Zeitfenster, § 14a oder dynamischer Preis"
+            "windows_14a": "Zeitfenster, § 14a oder dynamischer Preis",
+            "base_price_period": "Grundpreis gilt"
           },
           "data_description": {
             "price_unit": "Fernwärme wird oft je MWh abgerechnet; gerechnet wird intern je kWh.",
-            "work_price": "In Cent je kWh wie auf Vertrag und Rechnung, z. B. 31,54. Wasser in Euro je m³, Fernwärme je MWh in Euro."
+            "work_price": "In Cent je kWh wie auf Vertrag und Rechnung, z. B. 31,54. Wasser in Euro je m³, Fernwärme je MWh in Euro.",
+            "base_price_period": "Wie auf Vertrag oder Rechnung: je Monat oder je Jahr. Gerechnet wird je Monat (Jahresbetrag ÷ 12)."
           }
         },
         "abschlag": {
@@ -177,7 +179,8 @@
             "comparison_entity": "Vergleich dynamisch: Preis-Entität",
             "comparison_markup": "Vergleich dynamisch: Aufschlag",
             "comparison_base": "Vergleich dynamisch: Grundpreis",
-            "leak_threshold": "Leckage-Schwelle"
+            "leak_threshold": "Leckage-Schwelle",
+            "comparison_base_period": "Vergleich dynamisch: Grundpreis gilt"
           },
           "data_description": {
             "pulse_constant": "Steht auf dem Zähler, z. B. „1 Imp = 0,01 m³“ (dann 0,01 und „Einheit je Impuls“) oder „100 Imp/m³“.",
@@ -209,7 +212,7 @@
           "data": {
             "valid_from": "Gültig ab",
             "work_price": "Arbeitspreis",
-            "base_price": "Grundpreis je Monat",
+            "base_price": "Grundpreis",
             "metering_price": "Messpreis je Monat",
             "calorific": "Brennwert",
             "z_factor": "Zustandszahl",
@@ -219,12 +222,14 @@
             "demand_kw": "Anschlussleistung",
             "price_unit": "Arbeitspreis je",
             "tiers_rounding": "Staffel oder Rundung festlegen",
-            "windows_14a": "Zeitfenster, § 14a oder dynamischer Preis"
+            "windows_14a": "Zeitfenster, § 14a oder dynamischer Preis",
+            "base_price_period": "Grundpreis gilt"
           },
           "data_description": {
             "work_price": "In Cent je kWh wie auf Vertrag und Rechnung, z. B. 31,54. Wasser in Euro je m³, Fernwärme je MWh in Euro.",
             "tiers_rounding": "Nur nötig, wenn der Versorger nach Mengenstufen abrechnet oder anders rundet. Ohne Haken bleibt die Rundung des laufenden Preises; hat er eine Staffel, folgt der Schritt immer.",
-            "windows_14a": "HT/NT, dynamischer Tarif (Börsenpreis je Viertelstunde) oder § 14a (Pauschale, zeitvariable Netzentgelte). Hat der laufende Preis schon so etwas, folgt der Schritt immer."
+            "windows_14a": "HT/NT, dynamischer Tarif (Börsenpreis je Viertelstunde) oder § 14a (Pauschale, zeitvariable Netzentgelte). Hat der laufende Preis schon so etwas, folgt der Schritt immer.",
+            "base_price_period": "Wie auf Vertrag oder Rechnung: je Monat oder je Jahr. Gerechnet wird je Monat (Jahresbetrag ÷ 12)."
           }
         },
         "abschlag_aendern": {
@@ -273,7 +278,7 @@
           "data": {
             "valid_from": "Gültig ab",
             "work_price": "Arbeitspreis",
-            "base_price": "Grundpreis je Monat",
+            "base_price": "Grundpreis",
             "metering_price": "Messpreis je Monat",
             "calorific": "Brennwert",
             "z_factor": "Zustandszahl",
@@ -285,10 +290,12 @@
             "pay_day": "Zahltag im Monat",
             "rhythm": "Rhythmus",
             "max_per_period": "Abschläge je Abrechnungsjahr (z. B. 11)",
-            "price_unit": "Arbeitspreis je"
+            "price_unit": "Arbeitspreis je",
+            "base_price_period": "Grundpreis gilt"
           },
           "data_description": {
-            "work_price": "In Cent je kWh wie auf Vertrag und Rechnung, z. B. 31,54. Wasser in Euro je m³, Fernwärme je MWh in Euro."
+            "work_price": "In Cent je kWh wie auf Vertrag und Rechnung, z. B. 31,54. Wasser in Euro je m³, Fernwärme je MWh in Euro.",
+            "base_price_period": "Wie auf Vertrag oder Rechnung: je Monat oder je Jahr. Gerechnet wird je Monat (Jahresbetrag ÷ 12)."
           }
         },
         "vertrag_aendern": {
@@ -759,6 +766,12 @@
         "2": "2. Quartal",
         "3": "3. Quartal",
         "4": "4. Quartal"
+      }
+    },
+    "base_period": {
+      "options": {
+        "month": "je Monat",
+        "year": "je Jahr"
       }
     }
   },

@@ -868,6 +868,20 @@ SV["set_preis"]["fields"].update({
 })
 
 
+# ---------------------------------------------------------------- 1.2.1: Grundpreis je Monat oder Jahr
+S["selector"]["base_period"] = {"options": {"month": T("je Monat", "per month"), "year": T("je Jahr", "per year")}}
+for step in ("preis", "preis_aendern", "wechsel_preis"):
+    st_ = S["config_subentries"]["zaehler"]["step"][step]
+    st_["data"]["base_price"] = T("Grundpreis", "Standing charge")
+    st_["data"]["base_price_period"] = T("Grundpreis gilt", "Standing charge applies")
+    st_.setdefault("data_description", {})["base_price_period"] = T(
+        "Wie auf Vertrag oder Rechnung: je Monat oder je Jahr. Gerechnet wird je Monat (Jahresbetrag ÷ 12).",
+        "As on contract or bill: per month or per year. Calculated per month (yearly amount ÷ 12).")
+_sd = S["config_subentries"]["zaehler"]["step"]["stammdaten"]
+_sd["data"]["comparison_base"] = T("Vergleich dynamisch: Grundpreis", "Dynamic comparison: standing charge")
+_sd["data"]["comparison_base_period"] = T("Vergleich dynamisch: Grundpreis gilt", "Dynamic comparison: standing charge applies")
+
+
 def pick(o, i):
     if isinstance(o, tuple):
         return o[i]

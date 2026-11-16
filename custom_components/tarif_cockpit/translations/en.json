@@ -105,7 +105,7 @@
           "data": {
             "valid_from": "Valid from",
             "work_price": "Unit price",
-            "base_price": "Standing charge per month",
+            "base_price": "Standing charge",
             "metering_price": "Metering charge per month",
             "calorific": "Calorific value",
             "z_factor": "Conversion factor (Z)",
@@ -115,11 +115,13 @@
             "demand_kw": "Connected load",
             "price_unit": "Unit price per",
             "tiers_rounding": "Set tiers or rounding",
-            "windows_14a": "Time windows, § 14a or dynamic price"
+            "windows_14a": "Time windows, § 14a or dynamic price",
+            "base_price_period": "Standing charge applies"
           },
           "data_description": {
             "price_unit": "District heating is often billed per MWh; internally it is calculated per kWh.",
-            "work_price": "In cents per kWh as on contract and bill, e.g. 31.54. Water in euros per m³, district heating per MWh in euros."
+            "work_price": "In cents per kWh as on contract and bill, e.g. 31.54. Water in euros per m³, district heating per MWh in euros.",
+            "base_price_period": "As on contract or bill: per month or per year. Calculated per month (yearly amount ÷ 12)."
           }
         },
         "abschlag": {
@@ -176,8 +178,9 @@
             "comparison_net": "Dynamic comparison: price excludes VAT",
             "comparison_entity": "Dynamic comparison: price entity",
             "comparison_markup": "Dynamic comparison: markup",
-            "comparison_base": "Dynamic comparison: base price",
-            "leak_threshold": "Leak threshold"
+            "comparison_base": "Dynamic comparison: standing charge",
+            "leak_threshold": "Leak threshold",
+            "comparison_base_period": "Dynamic comparison: standing charge applies"
           },
           "data_description": {
             "pulse_constant": "On the meter, e.g. “1 imp = 0.01 m³” (then 0.01 and “unit per pulse”) or “100 imp/m³”.",
@@ -209,7 +212,7 @@
           "data": {
             "valid_from": "Valid from",
             "work_price": "Unit price",
-            "base_price": "Standing charge per month",
+            "base_price": "Standing charge",
             "metering_price": "Metering charge per month",
             "calorific": "Calorific value",
             "z_factor": "Conversion factor (Z)",
@@ -219,12 +222,14 @@
             "demand_kw": "Connected load",
             "price_unit": "Unit price per",
             "tiers_rounding": "Set tiers or rounding",
-            "windows_14a": "Time windows, § 14a or dynamic price"
+            "windows_14a": "Time windows, § 14a or dynamic price",
+            "base_price_period": "Standing charge applies"
           },
           "data_description": {
             "work_price": "In cents per kWh as on contract and bill, e.g. 31.54. Water in euros per m³, district heating per MWh in euros.",
             "tiers_rounding": "Only needed if the supplier bills by quantity tiers or rounds differently. Unticked, the rounding of the current price is kept; with tiers the step always follows.",
-            "windows_14a": "HT/NT, dynamic tariff (exchange price per quarter hour) or § 14a (flat rate, time-variable grid fees). If the current price already has one, the step always follows."
+            "windows_14a": "HT/NT, dynamic tariff (exchange price per quarter hour) or § 14a (flat rate, time-variable grid fees). If the current price already has one, the step always follows.",
+            "base_price_period": "As on contract or bill: per month or per year. Calculated per month (yearly amount ÷ 12)."
           }
         },
         "abschlag_aendern": {
@@ -273,7 +278,7 @@
           "data": {
             "valid_from": "Valid from",
             "work_price": "Unit price",
-            "base_price": "Standing charge per month",
+            "base_price": "Standing charge",
             "metering_price": "Metering charge per month",
             "calorific": "Calorific value",
             "z_factor": "Conversion factor (Z)",
@@ -285,10 +290,12 @@
             "pay_day": "Day of month",
             "rhythm": "Interval",
             "max_per_period": "Payments per billing year (e.g. 11)",
-            "price_unit": "Unit price per"
+            "price_unit": "Unit price per",
+            "base_price_period": "Standing charge applies"
           },
           "data_description": {
-            "work_price": "In cents per kWh as on contract and bill, e.g. 31.54. Water in euros per m³, district heating per MWh in euros."
+            "work_price": "In cents per kWh as on contract and bill, e.g. 31.54. Water in euros per m³, district heating per MWh in euros.",
+            "base_price_period": "As on contract or bill: per month or per year. Calculated per month (yearly amount ÷ 12)."
           }
         },
         "vertrag_aendern": {
@@ -759,6 +766,12 @@
         "2": "Q2",
         "3": "Q3",
         "4": "Q4"
+      }
+    },
+    "base_period": {
+      "options": {
+        "month": "per month",
+        "year": "per year"
       }
     }
   },
