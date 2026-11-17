@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.7 – 2026-11-17
+
+### Neu
+- **Strom-Auswertung:** Die Auswertungskarte mit `zaehler: [Stromzähler]` (ohne Wärmepumpe) zeigt Kennzahlen der Periode (Kosten bisher, Prognose Verbrauch und Kosten, mittlerer Arbeitspreis, Anteile der Zeitfenster), Kostenverlauf, Tagesprofil, Vergleich dynamischer Tarif sowie Archiv, Rechnung und Prognosegüte des Stromzählers. Im Editor sind alle Hauptzähler wählbar (ohne Auswahl wie bisher der Gas- bzw. Fernwärmezähler).
+
+### Geändert
+- Die Gas- bzw. Fernwärme-Auswertung zeigt Tagesprofil und Vergleich dynamischer Tarif nicht mehr (die gehören zum Strom); bei einer Wärmepumpe am Stromzähler bleiben sie.
+
 ## 1.2.6 – 2026-11-17
 
 ### Geändert

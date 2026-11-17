@@ -289,7 +289,7 @@
         leckage: 'binary_sensor.strom_leckage' });
       return m;
     },
-    seriesBy: { m1: { zaehler_id: 'm1', streuung: null, kosten: null, profil: { werktag: prof(0.32, 0.6), wochenende: prof(0.38, 0.45), tage: { werktag: 21, wochenende: 9 } },
+    seriesBy: { m1: { zaehler_id: 'm1', streuung: null, kosten: costData('2026-06-30', '2027-06-29', '2026-11-13', 70, 108), profil: { werktag: prof(0.32, 0.6), wochenende: prof(0.38, 0.45), tage: { werktag: 21, wochenende: 9 } },
       fenster: { HT: 1650.2, standard: 1012.4 },
       vergleich: { tage: 30, tage_gesamt: 30, kosten_tatsaechlich: 124.3, kosten_dynamisch: 115.6, differenz: 8.7, mittelpreis_dynamisch: 0.2734, tage_kosten: cmpDays } } },
     states: Object.assign({}, HEAT_SCENES.rechnung.states, {
@@ -368,6 +368,7 @@
     rechnung: { name: 'Rechnung gegen Integration, Prognosegüte, Heizlast (1.1)', states: {}, hook: heatHass('rechnung'), overview: { integration: true }, analyse: { integration: true } },
     dynamisch: { name: 'Zeitfenster, Vergleich dynamisch, Leckage, Tagesprofil (1.2)', states: {}, hook: heatHass('dynamisch'), overview: { integration: true }, analyse: { integration: true } },
     ablesung: { name: 'Ablese-Karte: Zählerstände und Holz (1.2.4)', states: {}, hook: heatHass('ablesung'), overview: { integration: true }, analyse: { integration: true }, ablesung: {} },
+    strom: { name: 'Strom-Auswertung: Kennzahlen, Kostenverlauf, Tagesprofil, Vergleich (1.2.7)', states: {}, hook: heatHass('dynamisch'), overview: { integration: true }, analyse: { integration: true, zaehler: ['dev_strom'] } },
     fernwaerme: { name: 'Fernwärme in MWh', states: {}, hook: heatHass('fernwaerme'), overview: { integration: true }, analyse: { integration: true } },
     en: { name: 'Englische Oberfläche', states: {}, lang: 'en', overview: Object.assign({}, legacy, { analysis: undefined, title: 'Tariffs and billing' }), analyse: Object.assign({}, analysis, { title: 'Gas, weather-adjusted', explain: undefined }) },
   };

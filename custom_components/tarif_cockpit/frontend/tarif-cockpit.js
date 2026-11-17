@@ -1,4 +1,4 @@
-/*! tarif-cockpit v1.2.6 - MIT License - https://github.com/HasenbeinMH/tarif-cockpit
+/*! tarif-cockpit v1.2.7 - MIT License - https://github.com/HasenbeinMH/tarif-cockpit
     Editor-Baukasten und Assistent nach energy-cockpit, MIT License, Copyright (c) 2026 Musicmaker3112
     Diese Datei wird gebaut: Quellen in src/, Aufruf node tools/build.mjs */
 /* ---- common.js ---- */
@@ -7,7 +7,7 @@
 window.TarifCockpit = window.TarifCockpit || {};
 (() => {
   const TC = window.TarifCockpit;
-  TC.VERSION = '1.2.6';
+  TC.VERSION = '1.2.7';
 
   // Farbschemen wie bei energy-cockpit
   TC.THEMES = {
@@ -460,6 +460,8 @@ svg.ch{display:block;width:100%;height:auto}
     return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
   };
 
+  TC.niceMax = niceMax;
+
   // Anzahl Teilstriche, die einen runden Schritt ergibt (2500 → 5 × 500, 200 → 4 × 50, 25 → 5 × 5)
   TC.niceTicks = (max) => [5, 4].find((k) => {
     const st = max / k;
@@ -734,6 +736,7 @@ svg.ch{display:block;width:100%;height:auto}
     'g.kind.fireplace': 'Kaminofen', 'g.kind.electric': 'Elektroheizung', 'in.ww': 'WW-Grundlast', 'in.days': 'Tage im Modell', 'in.r2': 'Bestimmtheit R²',
     'in.an_pending': 'Der Kennwert erscheint, sobald die Integration genug Tage mit unterschiedlicher Außentemperatur gesehen hat.',
     'in.no_section': 'In diesem Teil gibt es noch nichts anzuzeigen.',
+    'ps.title': 'Kennzahlen der Periode', 'ps.cost': 'Kosten bisher', 'ps.fc_kwh': 'Prognose Verbrauch', 'ps.fc_cost': 'Prognose Kosten', 'ps.avg': 'Ø Arbeitspreis',
     'sec.title': 'Teile (leer = alle)', 'sec.kennwert': 'Kennwert und Verlauf', 'sec.streuung': 'Streudiagramm', 'sec.kosten': 'Kostenverlauf',
     'sec.profil': 'Tagesprofil', 'sec.vergleich': 'Vergleich dynamischer Tarif', 'sec.archiv': 'Prognose gegen Realität', 'sec.rechnung': 'Rechnung gegen Integration',
     'sec.guete': 'Prognosegüte', 'sec.heizlast': 'Heizlast', 'sec.erzeuger': 'Wärmeerzeuger',
@@ -788,6 +791,7 @@ svg.ch{display:block;width:100%;height:auto}
     'g.kind.fireplace': 'Wood stove', 'g.kind.electric': 'Electric heating', 'in.ww': 'Hot water baseload', 'in.days': 'Days in the model', 'in.r2': 'Coefficient of determination R²',
     'in.an_pending': 'The coefficient appears once the integration has seen enough days with different outdoor temperatures.',
     'in.no_section': 'Nothing to show in this part yet.',
+    'ps.title': 'Key figures of the period', 'ps.cost': 'Costs so far', 'ps.fc_kwh': 'Forecast consumption', 'ps.fc_cost': 'Forecast costs', 'ps.avg': 'Ø unit price',
     'sec.title': 'Parts (empty = all)', 'sec.kennwert': 'Coefficient and history', 'sec.streuung': 'Scatter plot', 'sec.kosten': 'Cost curve',
     'sec.profil': 'Daily profile', 'sec.vergleich': 'Dynamic tariff comparison', 'sec.archiv': 'Forecast vs. reality', 'sec.rechnung': 'Invoice vs. integration',
     'sec.guete': 'Forecast accuracy', 'sec.heizlast': 'Heat load', 'sec.erzeuger': 'Heat generators',
@@ -984,7 +988,7 @@ svg.ch{display:block;width:100%;height:auto}
   // Felder der Sensor-Karte aus den Sensoren der Integration (Verlauf und Darstellung wie bisher)
   I.analyseConfig = (card) => {
     const m = I.heatMeter(card);
-    if (!m) return null;
+    if (!m || I.isPowerView(card, m)) return null; // Strom-Auswertung braucht keinen Kennwert-Verlauf
     const s = m.sensoren || {};
     const c = card._c;
     // Warmwasser-Kachel nur, wenn Warmwasser über diese Heizung läuft
@@ -1005,6 +1009,34 @@ svg.ch{display:block;width:100%;height:auto}
       extras,
       pending_text: TC.T('in.an_pending'), wait_text: TC.T('in.learning'), kw_caption: TC.T('in.kw_learned'),
     };
+  };
+
+  // 1.2.7: Strom-Auswertung – ein gewählter Stromzähler ohne Wärmepumpe (kein gelernter Kennwert): Kennzahlen,
+  // Kostenverlauf, Tagesprofil, Vergleich dynamischer Tarif, Archiv. Die Gas-Auswertung zeigt dafür keine Strom-Teile mehr.
+  I.isPowerView = (card, m) => !!(m && m.medium === 'strom' && !(m.sensoren || {}).kennwert
+    && Array.isArray(card._c.zaehler) && card._c.zaehler.length);
+
+  I.powerKeyHtml = (card, m) => {
+    const h = card._h;
+    const t = TC.T;
+    const s = m.sensoren || {};
+    const c = TC.rgbOf((card._c.colors || {})[m.medium] || card._c.color, (TC.MEDIA.strom || {}).color);
+    const tile = (name, id, fmt) => {
+      const v = TC.num(h, id);
+      return id && v !== null ? `<div class="stat"><span class="lbl">${esc(name)}</span><b>${fmt(v)}</b></div>` : '';
+    };
+    const kwh = (v) => `${TC.nf(v, 0)}<small>kWh</small>`;
+    const eur = (v) => `${TC.eur(v)}<small>${esc(TC.cur())}</small>`;
+    const ct = (v) => `${TC.nf(v * 100, 1)}<small>ct/kWh</small>`;
+    const tiles = tile(t('ps.cost'), s.kosten_bisher, eur) + tile(t('ps.fc_kwh'), s.prognose_verbrauch, kwh)
+      + tile(t('ps.fc_cost'), s.prognose_kosten, eur) + tile(t('ps.avg'), s.mittelpreis, ct);
+    const fw = attr(h, s.zeitfenster, 'fenster');
+    const fwLine = fw && typeof fw === 'object' ? Object.entries(fw).map(([k, v]) => `${k === 'standard' ? t('fw.standard') : k} ${TC.nf((v || {}).anteil_pct || 0, 0)} %`).join(' · ') : '';
+    const q = (st(h, s.prognose_qualitaet) || {}).state;
+    return `<div class="panel" style="--c:${c}"><div class="ph"><span class="lbl"><i></i>${esc(t('ps.title'))}</span></div>`
+      + (tiles ? `<div class="tiles">${tiles}</div>` : `<div class="nodata">${esc(t('in.why'))}</div>`)
+      + (fwLine ? `<div class="hint">${esc(t('fw.line', { v: fwLine }))}</div>` : '')
+      + (QUAL.includes(q) ? `<div class="qual">${esc(t('in.quality', { q: t('q.' + q) }))}</div>` : '') + '</div>';
   };
 
   // 1.2.6: abschnitte: ['kennwert', 'streuung', 'kosten', 'profil', 'vergleich', 'archiv', 'rechnung', 'guete', 'heizlast', 'erzeuger']
@@ -1028,6 +1060,14 @@ svg.ch{display:block;width:100%;height:auto}
     if (!m) return head('') + `<div class="setup">${t('in.no_heat')}</div>`;
     const s = m.sensoren || {};
     if (Object.values(s).some((id) => !h.states[id])) I.load(card, true);
+    if (I.isPowerView(card, m)) {
+      I.loadSeries(card, m.zaehler_id);
+      I.loadArchive(card, m.device_id);
+      const w = (k) => I.want(card, k);
+      const body = (w('kennwert') ? I.powerKeyHtml(card, m) : '') + I.seriesHtml(card, m) + I.powerHtml(card, m)
+        + (w('archiv') ? I.archiveHtml(card, m) : '') + (w('rechnung') ? I.invoiceHtml(card, m) : '') + (w('guete') ? I.accuracyHtml(card, m) : '');
+      return (w('kennwert') || c.title ? head(`<small>${esc(m.name)}</small>`) : '') + (body || `<div class="nodata">${esc(t('in.no_section'))}</div>`);
+    }
     const a = I.analyseConfig(card);
     // Qualität des Kennwerts (Attribute des Kennwert-Sensors; bei Gas gleich der Prognose-Qualität)
     const kq = attr(h, s.kennwert, 'confidence');
@@ -1056,7 +1096,7 @@ svg.ch{display:block;width:100%;height:auto}
     const w = (k) => I.want(card, k);
     const kennwert = w('kennwert') ? TC.analysisHtml(a, h, card._hist, t('an.kennwert'), '')
       + `<div class="qual">${esc(facts.join(' · '))}</div>` + hints.map((x) => `<div class="hint">${x}</div>`).join('') : '';
-    const body = kennwert + I.seriesHtml(card, m) + I.powerHtml(card) + (w('archiv') ? I.archiveHtml(card, m) : '')
+    const body = kennwert + I.seriesHtml(card, m) + (m.medium === 'strom' ? I.powerHtml(card, m) : '') + (w('archiv') ? I.archiveHtml(card, m) : '')
       + (w('rechnung') ? I.invoiceHtml(card, m) : '') + (w('guete') ? I.accuracyHtml(card, m) : '')
       + (w('heizlast') ? I.heatLoadHtml(card) : '') + (w('erzeuger') ? I.genHtml(card) : '');
     // Ohne Kennwert-Teil kein großer Kopf: die Teile einer geteilten Karte stehen dann bündig untereinander
@@ -1238,9 +1278,9 @@ svg.ch{display:block;width:100%;height:auto}
     card._last = null;
     card._render();
   };
-  I.powerHtml = (card) => {
+  I.powerHtml = (card, meter) => {
     const t = TC.T;
-    const m = I.powerMeter(card);
+    const m = meter || I.powerMeter(card);
     if (!m) return '';
     I.loadPowerSeries(card, m.zaehler_id);
     const r = card._pow;
@@ -1250,12 +1290,13 @@ svg.ch{display:block;width:100%;height:auto}
     if (card._c.profil !== false && I.want(card, 'profil') && p && (p.werktag || p.wochenende)) {
       const W = TC.chartW(), H = 170, L = 40, B = 24, T = 8;
       const vals = [...(p.werktag || []), ...(p.wochenende || [])];
-      const ymax = Math.max(0.01, ...vals) * 1.1;
+      const ymax = TC.niceMax(Math.max(0.01, ...vals) * 1.05);
+      const ny = TC.niceTicks(ymax);
       const bw = (W - L - 8) / 24;
       let svg = `<svg class="ch pr" viewBox="0 0 ${W} ${H}" role="img">`;
-      for (let g = 0; g <= 2; g++) {
-        const y = T + ((H - T - B) * g) / 2;
-        svg += `<line class="gl" x1="${L}" x2="${W - 8}" y1="${y}" y2="${y}"/><text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${TC.nf(ymax * (1 - g / 2), 1)}</text>`;
+      for (let g = 0; g <= ny; g++) {
+        const y = T + ((H - T - B) * g) / ny;
+        svg += `<line class="gl" x1="${L}" x2="${W - 8}" y1="${y}" y2="${y}"/><text class="ax" x="${L - 5}" y="${y + 4}" text-anchor="end">${TC.nf(ymax * (1 - g / ny), ymax < 5 ? 1 : 0)}</text>`;
       }
       [['werktag', 0, 'wd'], ['wochenende', 1, 'we']].forEach(([k, o, cls]) => {
         (p[k] || []).forEach((v, i) => {
@@ -1272,15 +1313,16 @@ svg.ch{display:block;width:100%;height:auto}
       let a = 0, d = 0;
       const pts = v.tage_kosten.map(([day, x, y]) => { a += x; d += y; return [day, a, d]; });
       const W = TC.chartW(), H = 180, L = 48, R = 10, T = 10, B = 24;
-      const ymax = Math.max(1, a, d) * 1.08;
+      const ymax = TC.niceMax(Math.max(1, a, d) * 1.05);
+      const ny = TC.niceTicks(ymax);
       const n = pts.length;
       const X = (i) => L + (n > 1 ? (i / (n - 1)) : 0.5) * (W - L - R);
       const Y = (val2) => T + (H - T - B) * (1 - val2 / ymax);
       const line = (idx) => pts.map((q, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)} ${Y(q[idx]).toFixed(1)}`).join(' ');
       let svg = `<svg class="ch cm" viewBox="0 0 ${W} ${H}" role="img">`;
-      for (let g = 0; g <= 2; g++) {
-        const y = T + ((H - T - B) * g) / 2;
-        svg += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/><text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${TC.nf(ymax * (1 - g / 2), 0)}</text>`;
+      for (let g = 0; g <= ny; g++) {
+        const y = T + ((H - T - B) * g) / ny;
+        svg += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/><text class="ax" x="${L - 5}" y="${y + 4}" text-anchor="end">${TC.nf(ymax * (1 - g / ny), 0)}</text>`;
       }
       svg += `<path class="own" d="${line(1)}"/><path class="dyn" d="${line(2)}"/>`;
       svg += `<text class="ax" x="${L}" y="${H - 6}">${esc(dd(pts[0][0]))}</text><text class="ax" x="${W - R}" y="${H - 6}" text-anchor="end">${esc(dd(pts[n - 1][0]))}</text></svg>`;
@@ -2247,7 +2289,8 @@ b.bad{color:#f87171}
       const mains = hh ? hh.zaehler.filter((m) => pick(m, hh)) : [];
       box.appendChild(el('div', 'font-weight:600;margin:8px 0 4px', t('ei.meters')));
       if (!mains.length) box.appendChild(el('div', 'opacity:.7', t('ei.none')));
-      const chosen = Array.isArray(cfg.zaehler) && cfg.zaehler.length ? cfg.zaehler : single ? mains.slice(0, 1).map((m) => m.device_id) : mains.map((m) => m.device_id);
+      const first = (opts && opts.prefer && mains.find(opts.prefer)) || mains[0];
+      const chosen = Array.isArray(cfg.zaehler) && cfg.zaehler.length ? cfg.zaehler : single ? (first ? [first.device_id] : []) : mains.map((m) => m.device_id);
       mains.forEach((m) => {
         const l = el('label', 'display:flex;align-items:center;gap:8px;margin:6px 0');
         const c = document.createElement('input'); c.type = single ? 'radio' : 'checkbox'; c.name = 'tcm'; c.checked = chosen.includes(m.device_id); c.dataset.meter = m.device_id;
@@ -2496,8 +2539,9 @@ b.bad{color:#f87171}
   };
 
   TC.defineEditor('tarif-cockpit-analyse-card-editor', {
-    integTab: TC.integTab({ single: true, sections: true, titleKey: 'an.title', filter: (m, hh) => m.rolle === 'main' && (['gas', 'fernwaerme', 'waerme'].includes(m.medium)
-      || (m.medium === 'strom' && (hh.waermeerzeuger || []).some((g) => ['water_hp', 'air_air_hp', 'electric'].includes(g.typ) && (g.zaehler_id === m.zaehler_id || g.am_haushaltsstrom)))) }),
+    // 1.2.7: alle Hauptzähler; ein Stromzähler ohne Wärmepumpe ergibt die Strom-Auswertung
+    integTab: TC.integTab({ single: true, sections: true, titleKey: 'an.title', filter: (m) => m.rolle === 'main',
+      prefer: (m) => ['gas', 'fernwaerme', 'waerme'].includes(m.medium) }),
     needsSetup: (c) => !(c.kennwert || c.consumption),
     steps,
     form,

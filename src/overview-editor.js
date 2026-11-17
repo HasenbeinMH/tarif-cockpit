@@ -184,7 +184,8 @@
       const mains = hh ? hh.zaehler.filter((m) => pick(m, hh)) : [];
       box.appendChild(el('div', 'font-weight:600;margin:8px 0 4px', t('ei.meters')));
       if (!mains.length) box.appendChild(el('div', 'opacity:.7', t('ei.none')));
-      const chosen = Array.isArray(cfg.zaehler) && cfg.zaehler.length ? cfg.zaehler : single ? mains.slice(0, 1).map((m) => m.device_id) : mains.map((m) => m.device_id);
+      const first = (opts && opts.prefer && mains.find(opts.prefer)) || mains[0];
+      const chosen = Array.isArray(cfg.zaehler) && cfg.zaehler.length ? cfg.zaehler : single ? (first ? [first.device_id] : []) : mains.map((m) => m.device_id);
       mains.forEach((m) => {
         const l = el('label', 'display:flex;align-items:center;gap:8px;margin:6px 0');
         const c = document.createElement('input'); c.type = single ? 'radio' : 'checkbox'; c.name = 'tcm'; c.checked = chosen.includes(m.device_id); c.dataset.meter = m.device_id;

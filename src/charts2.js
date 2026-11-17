@@ -11,6 +11,8 @@
     return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
   };
 
+  TC.niceMax = niceMax;
+
   // Anzahl Teilstriche, die einen runden Schritt ergibt (2500 → 5 × 500, 200 → 4 × 50, 25 → 5 × 5)
   TC.niceTicks = (max) => [5, 4].find((k) => {
     const st = max / k;

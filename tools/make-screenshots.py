@@ -68,6 +68,9 @@ JOBS = [
     ('overview.html', 'dynamisch-uebersicht', 'scene=dynamisch', 1100, CARD),
     ('analyse.html', 'dynamisch-analyse', 'scene=dynamisch', 1100, CARD),
     ('analyse.html', 'dynamisch-analyse-hell', 'scene=dynamisch&theme=hell', 1100, CARD),
+    # Strom-Auswertung (1.2.7)
+    ('analyse.html', 'strom-analyse', 'scene=strom', 1100, CARD),
+    ('analyse.html', 'strom-analyse-schmal', 'scene=strom&narrow', 420, CARD),
     # Ablese-Karte (1.2.4)
     ('ablesung.html', 'ablesung-karte', 'scene=ablesung&demo', 1100, CARD),
     ('ablesung.html', 'ablesung-hell', 'scene=ablesung&theme=hell', 1100, CARD),

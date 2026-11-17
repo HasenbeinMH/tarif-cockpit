@@ -94,8 +94,9 @@
   };
 
   TC.defineEditor('tarif-cockpit-analyse-card-editor', {
-    integTab: TC.integTab({ single: true, sections: true, titleKey: 'an.title', filter: (m, hh) => m.rolle === 'main' && (['gas', 'fernwaerme', 'waerme'].includes(m.medium)
-      || (m.medium === 'strom' && (hh.waermeerzeuger || []).some((g) => ['water_hp', 'air_air_hp', 'electric'].includes(g.typ) && (g.zaehler_id === m.zaehler_id || g.am_haushaltsstrom)))) }),
+    // 1.2.7: alle Hauptzähler; ein Stromzähler ohne Wärmepumpe ergibt die Strom-Auswertung
+    integTab: TC.integTab({ single: true, sections: true, titleKey: 'an.title', filter: (m) => m.rolle === 'main',
+      prefer: (m) => ['gas', 'fernwaerme', 'waerme'].includes(m.medium) }),
     needsSetup: (c) => !(c.kennwert || c.consumption),
     steps,
     form,
