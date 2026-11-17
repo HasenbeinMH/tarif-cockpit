@@ -329,7 +329,7 @@
     };
   };
 
-  // 1.2.5: abschnitte: ['kennwert', 'streuung', 'kosten', 'profil', 'vergleich', 'archiv', 'rechnung', 'guete', 'heizlast', 'erzeuger']
+  // 1.2.6: abschnitte: ['kennwert', 'streuung', 'kosten', 'profil', 'vergleich', 'archiv', 'rechnung', 'guete', 'heizlast', 'erzeuger']
   I.SECTIONS = ['kennwert', 'streuung', 'kosten', 'profil', 'vergleich', 'archiv', 'rechnung', 'guete', 'heizlast', 'erzeuger'];
   I.want = (card, key) => {
     const list = card._c && card._c.abschnitte;

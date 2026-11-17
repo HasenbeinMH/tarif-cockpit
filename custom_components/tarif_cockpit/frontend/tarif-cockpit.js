@@ -1,4 +1,4 @@
-/*! tarif-cockpit v1.2.5 - MIT License - https://github.com/HasenbeinMH/tarif-cockpit
+/*! tarif-cockpit v1.2.6 - MIT License - https://github.com/HasenbeinMH/tarif-cockpit
     Editor-Baukasten und Assistent nach energy-cockpit, MIT License, Copyright (c) 2026 Musicmaker3112
     Diese Datei wird gebaut: Quellen in src/, Aufruf node tools/build.mjs */
 /* ---- common.js ---- */
@@ -7,7 +7,7 @@
 window.TarifCockpit = window.TarifCockpit || {};
 (() => {
   const TC = window.TarifCockpit;
-  TC.VERSION = '1.2.5';
+  TC.VERSION = '1.2.6';
 
   // Farbschemen wie bei energy-cockpit
   TC.THEMES = {
@@ -105,7 +105,7 @@ window.TarifCockpit = window.TarifCockpit || {};
   };
 
   // Farbschema: auto folgt dem hellen/dunklen Design von Home Assistant
-  // 1.2.5: Diagramme in der echten Breite zeichnen (Pixel = Einheiten im viewBox), damit Schrift und Linien bei jeder
+  // 1.2.6: Diagramme in der echten Breite zeichnen (Pixel = Einheiten im viewBox), damit Schrift und Linien bei jeder
   // Kartenbreite gleich groß bleiben. Die Karte misst ihre Breite und setzt den Wert vor jedem Zeichnen.
   TC._chartW = 720;
   TC.chartW = () => TC._chartW || 720;
@@ -1007,7 +1007,7 @@ svg.ch{display:block;width:100%;height:auto}
     };
   };
 
-  // 1.2.5: abschnitte: ['kennwert', 'streuung', 'kosten', 'profil', 'vergleich', 'archiv', 'rechnung', 'guete', 'heizlast', 'erzeuger']
+  // 1.2.6: abschnitte: ['kennwert', 'streuung', 'kosten', 'profil', 'vergleich', 'archiv', 'rechnung', 'guete', 'heizlast', 'erzeuger']
   I.SECTIONS = ['kennwert', 'streuung', 'kosten', 'profil', 'vergleich', 'archiv', 'rechnung', 'guete', 'heizlast', 'erzeuger'];
   I.want = (card, key) => {
     const list = card._c && card._c.abschnitte;

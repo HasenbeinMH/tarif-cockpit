@@ -101,7 +101,7 @@ window.TarifCockpit = window.TarifCockpit || {};
   };
 
   // Farbschema: auto folgt dem hellen/dunklen Design von Home Assistant
-  // 1.2.5: Diagramme in der echten Breite zeichnen (Pixel = Einheiten im viewBox), damit Schrift und Linien bei jeder
+  // 1.2.6: Diagramme in der echten Breite zeichnen (Pixel = Einheiten im viewBox), damit Schrift und Linien bei jeder
   // Kartenbreite gleich groß bleiben. Die Karte misst ihre Breite und setzt den Wert vor jedem Zeichnen.
   TC._chartW = 720;
   TC.chartW = () => TC._chartW || 720;
