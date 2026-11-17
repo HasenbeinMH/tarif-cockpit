@@ -11,10 +11,17 @@
     return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
   };
 
+  // Anzahl Teilstriche, die einen runden Schritt ergibt (2500 → 5 × 500, 200 → 4 × 50, 25 → 5 × 5)
+  TC.niceTicks = (max) => [5, 4].find((k) => {
+    const st = max / k;
+    const p = Math.pow(10, Math.floor(Math.log10(st)));
+    return [1, 2, 2.5, 5].includes(+(st / p).toFixed(6));
+  }) || 4;
+
   // Streudiagramm: x = Gradtage je Tag, y = Verbrauch je Tag; Ofen-/Klimatage farbig; Gerade y = WW + Kennwert × x
   TC.svgScatter = (sc) => {
     const nf = TC.nf;
-    const W = 720, H = 230, L = 44, R = 12, T = 10, B = 34;
+    const W = TC.chartW(), H = 230, L = 44, R = 12, T = 10, B = 34;
     const pts = (sc && sc.punkte) || [];
     const xmax = niceMax(Math.max(1, ...pts.map((p) => p.x), sc && sc.gerade ? sc.gerade.x1 : 0));
     const ymax = niceMax(Math.max(1, ...pts.map((p) => p.y), sc && sc.gerade ? sc.gerade.y1 : 0) * 1.05);
@@ -22,12 +29,15 @@
     const X = (v) => L + (v / xmax) * iw;
     const Y = (v) => T + ih - (v / ymax) * ih;
     let s = `<svg class="ch sc" viewBox="0 0 ${W} ${H}" role="img">`;
-    for (let g = 0; g <= 4; g++) {
-      const y = T + (ih * g) / 4;
+    const ny = TC.niceTicks(ymax), nx = TC.niceTicks(xmax);
+    for (let g = 0; g <= ny; g++) {
+      const y = T + (ih * g) / ny;
       s += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/>`;
-      s += `<text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${nf(ymax * (1 - g / 4), 0)}</text>`;
-      const x = L + (iw * g) / 4;
-      s += `<text class="ax" x="${x}" y="${H - 18}" text-anchor="middle">${nf((xmax * g) / 4, 0)}</text>`;
+      s += `<text class="ax" x="${L - 5}" y="${y + 4}" text-anchor="end">${nf(ymax * (1 - g / ny), 0)}</text>`;
+    }
+    for (let g = 0; g <= nx; g++) {
+      const x = L + (iw * g) / nx;
+      s += `<text class="ax" x="${x}" y="${H - 18}" text-anchor="middle">${nf((xmax * g) / nx, 0)}</text>`;
     }
     s += `<text class="ax" x="${L + iw / 2}" y="${H - 3}" text-anchor="middle">${TC.T('ch.x_dd')}</text>`;
     pts.forEach((p) => {
@@ -46,7 +56,7 @@
   // Kostenverlauf: Ist (durchgezogen), Prognose (gestrichelt), Abschlags-Treppe (grün), Linie "heute"
   TC.svgCumul = (k) => {
     const nf = TC.nf;
-    const W = 720, H = 200, L = 52, R = 12, T = 10, B = 24;
+    const W = TC.chartW(), H = 200, L = 52, R = 12, T = 10, B = 24;
     const t0 = day(k.beginn), t1 = day(k.ende) + 864e5;
     const all = [...k.ist, ...k.prognose, ...k.abschlaege].map((p) => p[1]);
     const ymax = niceMax(Math.max(1, ...all) * 1.05);
@@ -54,14 +64,18 @@
     const X = (iso) => L + ((day(iso) - t0) / (t1 - t0)) * iw;
     const Y = (v) => T + ih - (v / ymax) * ih;
     let s = `<svg class="ch cu" viewBox="0 0 ${W} ${H}" role="img">`;
-    for (let g = 0; g <= 4; g++) {
-      const y = T + (ih * g) / 4;
+    const ny = TC.niceTicks(ymax);
+    for (let g = 0; g <= ny; g++) {
+      const y = T + (ih * g) / ny;
       s += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/>`;
-      s += `<text class="ax" x="${L - 5}" y="${y + 3}" text-anchor="end">${nf(ymax * (1 - g / 4), 0)}</text>`;
+      s += `<text class="ax" x="${L - 5}" y="${y + 4}" text-anchor="end">${nf(ymax * (1 - g / ny), 0)}</text>`;
     }
     // Monatsmarken
     const d = new Date(k.beginn + 'T00:00:00');
     d.setDate(1);
+    // schmale Karte: nur jeden zweiten Monat beschriften, damit sich die Namen nicht überlappen
+    const months = Math.max(1, Math.round((t1 - t0) / (30.4 * 864e5)));
+    const every = iw / months < 34 ? 2 : 1;
     for (let i = 0; i < 40; i++) {
       const m = new Date(d.getFullYear(), d.getMonth() + i, 1);
       const iso = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}-01`;
@@ -70,7 +84,7 @@
       const mid = new Date(m.getFullYear(), m.getMonth(), 15);
       const midIso = `${mid.getFullYear()}-${String(mid.getMonth() + 1).padStart(2, '0')}-15`;
       s += `<line class="gl" x1="${X(iso)}" x2="${X(iso)}" y1="${T + ih}" y2="${T + ih + 4}"/>`;
-      if (day(midIso) <= t1) s += `<text class="ax" x="${X(midIso)}" y="${H - 8}" text-anchor="middle">${m.toLocaleDateString(TC.loc, { month: 'short' })}</text>`;
+      if (day(midIso) <= t1 && i % every === 0) s += `<text class="ax" x="${X(midIso)}" y="${H - 8}" text-anchor="middle">${m.toLocaleDateString(TC.loc, { month: 'short' })}</text>`;
     }
     const path = (pts) => pts.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1)).join(' ');
     if (k.abschlaege.length) {

@@ -45,8 +45,17 @@
       if (typeof ResizeObserver !== 'undefined') {
         if (this._ro) this._ro.disconnect();
         this._ro = new ResizeObserver((e) => {
-          const narrow = e[0].contentRect.width < 420;
+          const w = e[0].contentRect.width;
+          if (!(w > 0)) return;
+          const narrow = w < 420;
           this.shadowRoot.querySelector('ha-card').classList.toggle('narrow', narrow);
+          // Breite eines Diagramms: Karte minus Innenabstand der Karte (22 bzw. 16 px je Seite) und des Panels (18 px je Seite)
+          const cw = Math.max(240, Math.round((w - (narrow ? 32 : 44) - 38) / 10) * 10);
+          if (cw !== this._cw) {
+            this._cw = cw;
+            this._last = null;
+            if (this._c) this._render();
+          }
         });
         this._ro.observe(this);
       }
@@ -66,6 +75,7 @@
     _prepare() {
       if (!this._c || !this._w || !this._h) return false;
       TC.useHass(this._h);
+      TC._chartW = this._cw || 720;
       const t = TC.resolveTheme(this._c, this._h);
       if (this.getAttribute('data-theme') !== t) this.setAttribute('data-theme', t);
       return true;

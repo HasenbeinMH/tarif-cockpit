@@ -229,6 +229,24 @@
         });
         box.appendChild(row);
       }
+      if (opts && opts.sections && TC.integ) {
+        box.appendChild(el('div', 'font-weight:600;margin:12px 0 4px', t('sec.title')));
+        const cur = Array.isArray(cfg.abschnitte) ? cfg.abschnitte : [];
+        const wrap = el('div', 'display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:2px 12px');
+        TC.integ.SECTIONS.forEach((k) => {
+          const l = el('label', 'display:flex;align-items:center;gap:8px;margin:4px 0');
+          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.sec = k; cb.checked = cur.includes(k);
+          cb.addEventListener('change', () => {
+            const list = [...wrap.querySelectorAll('input[data-sec]')].filter((x) => x.checked).map((x) => x.dataset.sec);
+            const next = Object.assign({}, api.config(), { integration: true });
+            if (list.length && list.length < TC.integ.SECTIONS.length) next.abschnitte = list; else delete next.abschnitte;
+            api.emit(next);
+          });
+          l.appendChild(cb); l.appendChild(document.createTextNode(t('sec.' + k)));
+          wrap.appendChild(l);
+        });
+        box.appendChild(wrap);
+      }
       if (opts && opts.noSensorMode) return;
       const sm = el('button', 'cursor:pointer;margin-top:14px;padding:8px 14px;border-radius:8px;border:1px solid var(--divider-color,#555);background:transparent;color:inherit;font:inherit', t('ei.sensor_mode'));
       sm.type = 'button';

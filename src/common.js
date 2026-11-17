@@ -101,6 +101,11 @@ window.TarifCockpit = window.TarifCockpit || {};
   };
 
   // Farbschema: auto folgt dem hellen/dunklen Design von Home Assistant
+  // 1.2.5: Diagramme in der echten Breite zeichnen (Pixel = Einheiten im viewBox), damit Schrift und Linien bei jeder
+  // Kartenbreite gleich groß bleiben. Die Karte misst ihre Breite und setzt den Wert vor jedem Zeichnen.
+  TC._chartW = 720;
+  TC.chartW = () => TC._chartW || 720;
+
   TC.resolveTheme = (cfg, h) => {
     let t = (cfg && cfg.theme) || 'dunkel';
     if (t === 'auto') {
@@ -169,7 +174,7 @@ footer{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap
 .leg{display:flex;align-items:center;font-size:.72rem;color:rgb(var(--mut));margin-left:14px}
 .leg i{width:10px;height:10px;border-radius:3px;margin-right:6px;background:rgb(var(--lc))}
 svg.ch{display:block;width:100%;height:auto}
-.ch .ax{fill:rgb(var(--mut));font-size:9px;font-family:inherit}
+.ch .ax{fill:rgb(var(--mut));font-size:11px;font-family:inherit}
 .ch .gl{stroke:var(--stroke);stroke-width:1}
 .ch .cb{fill:rgb(var(--c));opacity:.9}
 .ch .ln{fill:none;stroke:rgb(var(--lc));stroke-width:2;stroke-linejoin:round}

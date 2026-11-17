@@ -55,6 +55,10 @@
     'g.kind.gas_boiler': 'Gastherme', 'g.kind.air_air_hp': 'Split-Klima', 'g.kind.water_hp': 'Wärmepumpe', 'g.kind.district_heating': 'Fernwärme',
     'g.kind.fireplace': 'Kaminofen', 'g.kind.electric': 'Elektroheizung', 'in.ww': 'WW-Grundlast', 'in.days': 'Tage im Modell', 'in.r2': 'Bestimmtheit R²',
     'in.an_pending': 'Der Kennwert erscheint, sobald die Integration genug Tage mit unterschiedlicher Außentemperatur gesehen hat.',
+    'in.no_section': 'In diesem Teil gibt es noch nichts anzuzeigen.',
+    'sec.title': 'Teile (leer = alle)', 'sec.kennwert': 'Kennwert und Verlauf', 'sec.streuung': 'Streudiagramm', 'sec.kosten': 'Kostenverlauf',
+    'sec.profil': 'Tagesprofil', 'sec.vergleich': 'Vergleich dynamischer Tarif', 'sec.archiv': 'Prognose gegen Realität', 'sec.rechnung': 'Rechnung gegen Integration',
+    'sec.guete': 'Prognosegüte', 'sec.heizlast': 'Heizlast', 'sec.erzeuger': 'Wärmeerzeuger',
   });
   TC.addStrings('en', {
     'in.loading': 'Loading data from the integration …',
@@ -105,6 +109,10 @@
     'g.kind.gas_boiler': 'Gas boiler', 'g.kind.air_air_hp': 'Split air-con', 'g.kind.water_hp': 'Heat pump', 'g.kind.district_heating': 'District heating',
     'g.kind.fireplace': 'Wood stove', 'g.kind.electric': 'Electric heating', 'in.ww': 'Hot water baseload', 'in.days': 'Days in the model', 'in.r2': 'Coefficient of determination R²',
     'in.an_pending': 'The coefficient appears once the integration has seen enough days with different outdoor temperatures.',
+    'in.no_section': 'Nothing to show in this part yet.',
+    'sec.title': 'Parts (empty = all)', 'sec.kennwert': 'Coefficient and history', 'sec.streuung': 'Scatter plot', 'sec.kosten': 'Cost curve',
+    'sec.profil': 'Daily profile', 'sec.vergleich': 'Dynamic tariff comparison', 'sec.archiv': 'Forecast vs. reality', 'sec.rechnung': 'Invoice vs. integration',
+    'sec.guete': 'Forecast accuracy', 'sec.heizlast': 'Heat load', 'sec.erzeuger': 'Heat generators',
   });
 
   I.available = (h) => !!(h && h.config && Array.isArray(h.config.components) && h.config.components.includes('tarif_cockpit'));
@@ -321,6 +329,13 @@
     };
   };
 
+  // 1.2.5: abschnitte: ['kennwert', 'streuung', 'kosten', 'profil', 'vergleich', 'archiv', 'rechnung', 'guete', 'heizlast', 'erzeuger']
+  I.SECTIONS = ['kennwert', 'streuung', 'kosten', 'profil', 'vergleich', 'archiv', 'rechnung', 'guete', 'heizlast', 'erzeuger'];
+  I.want = (card, key) => {
+    const list = card._c && card._c.abschnitte;
+    return !Array.isArray(list) || !list.length || list.includes(key);
+  };
+
   I.renderAnalyse = (card) => {
     const h = card._h;
     const t = TC.T;
@@ -360,10 +375,14 @@
       hints.push(esc(t('in.split', { g: sg(split.gesamt_pct), r: sg(split.raumtemperatur_pct), v: sg(split.verhalten_pct),
         k: (split.innen_aenderung_k >= 0 ? '+' : '−') + TC.nf(Math.abs(split.innen_aenderung_k), 1) + ' K' })));
     }
-    return head(`<small>${esc(m.name)}</small>`) + TC.analysisHtml(a, h, card._hist, t('an.kennwert'), '')
-      + `<div class="qual">${esc(facts.join(' · '))}</div>`
-      + hints.map((x) => `<div class="hint">${x}</div>`).join('')
-      + I.seriesHtml(card, m) + I.powerHtml(card) + I.archiveHtml(card, m) + I.invoiceHtml(card, m) + I.accuracyHtml(card, m) + I.heatLoadHtml(card) + I.genHtml(card);
+    const w = (k) => I.want(card, k);
+    const kennwert = w('kennwert') ? TC.analysisHtml(a, h, card._hist, t('an.kennwert'), '')
+      + `<div class="qual">${esc(facts.join(' · '))}</div>` + hints.map((x) => `<div class="hint">${x}</div>`).join('') : '';
+    const body = kennwert + I.seriesHtml(card, m) + I.powerHtml(card) + (w('archiv') ? I.archiveHtml(card, m) : '')
+      + (w('rechnung') ? I.invoiceHtml(card, m) : '') + (w('guete') ? I.accuracyHtml(card, m) : '')
+      + (w('heizlast') ? I.heatLoadHtml(card) : '') + (w('erzeuger') ? I.genHtml(card) : '');
+    // Ohne Kennwert-Teil kein großer Kopf: die Teile einer geteilten Karte stehen dann bündig untereinander
+    return (w('kennwert') || c.title ? head(`<small>${esc(m.name)}</small>`) : '') + (body || `<div class="nodata">${esc(t('in.no_section'))}</div>`);
   };
 
   // Reihen für die Diagramme (Streudiagramm, Kostenverlauf): gedrosselt wie die Zuordnung
@@ -499,7 +518,7 @@
     const adv = TC.rgbOf(card._c.advance_color, TC.OK);
     let out = '';
     const sc = r.streuung;
-    if (sc && sc.punkte && sc.punkte.length) {
+    if (I.want(card, 'streuung') && sc && sc.punkte && sc.punkte.length) {
       const leg = [`<span class="leg"><i></i>${esc(sc.je_periode ? t('ch.periods') : t('ch.days'))}</span>`];
       if (sc.punkte.some((p) => p.ofen)) leg.push(`<span class="leg"><i class="of"></i>${esc(t('ch.stove_days'))}</span>`);
       if (sc.punkte.some((p) => p.klima)) leg.push(`<span class="leg"><i class="kl"></i>${esc(t('ch.hp_days'))}</span>`);
@@ -509,7 +528,7 @@
         + `<div class="qual">${esc([line, t('in.quality', { q: t('q.' + sc.qualitaet) }), sc.r2 !== null ? `R² ${TC.nf(sc.r2, 2)}` : ''].filter(Boolean).join(' · '))}</div></div>`;
     }
     const k = r.kosten;
-    if (k && (k.ist.length || k.abschlaege.length)) {
+    if (I.want(card, 'kosten') && k && (k.ist.length || k.abschlaege.length)) {
       const leg = `<span class="leg"><i class="ist"></i>${esc(t('ch.ist'))}</span>`
         + (k.prognose.length ? `<span class="leg"><i class="fc"></i>${esc(t('ch.fc'))}</span>` : '')
         + (k.abschlaege.length ? `<span class="leg"><i class="st"></i>${esc(t('ch.adv'))}</span>` : '');
@@ -550,8 +569,8 @@
     if (!r || r.zaehler_id !== m.zaehler_id) return '';
     let out = '';
     const p = r.profil;
-    if (card._c.profil !== false && p && (p.werktag || p.wochenende)) {
-      const W = 720, H = 160, L = 40, B = 22, T = 8;
+    if (card._c.profil !== false && I.want(card, 'profil') && p && (p.werktag || p.wochenende)) {
+      const W = TC.chartW(), H = 170, L = 40, B = 24, T = 8;
       const vals = [...(p.werktag || []), ...(p.wochenende || [])];
       const ymax = Math.max(0.01, ...vals) * 1.1;
       const bw = (W - L - 8) / 24;
@@ -571,10 +590,10 @@
       out += `<div class="panel wide prof"><div class="chead"><span class="lbl">${esc(t('pr.title'))}</span><span class="leg"><i class="wd"></i>${esc(t('pr.wd'))}</span><span class="leg"><i class="we"></i>${esc(t('pr.we'))}</span></div>${svg}</div>`;
     }
     const v = r.vergleich;
-    if (card._c.vergleich !== false && v && v.tage && (v.tage_kosten || []).length) {
+    if (card._c.vergleich !== false && I.want(card, 'vergleich') && v && v.tage && (v.tage_kosten || []).length) {
       let a = 0, d = 0;
       const pts = v.tage_kosten.map(([day, x, y]) => { a += x; d += y; return [day, a, d]; });
-      const W = 720, H = 180, L = 48, R = 10, T = 10, B = 22;
+      const W = TC.chartW(), H = 180, L = 48, R = 10, T = 10, B = 24;
       const ymax = Math.max(1, a, d) * 1.08;
       const n = pts.length;
       const X = (i) => L + (n > 1 ? (i / (n - 1)) : 0.5) * (W - L - R);

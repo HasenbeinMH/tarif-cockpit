@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.5 – 2026-11-17
+
+### Geändert
+- **Diagramme lesbar in jeder Breite:** Die Karten zeichnen ihre Diagramme in der tatsächlichen Breite statt auf 720 Pixel skaliert; Achsenschrift 11 px statt (verkleinert) etwa 5 px. Achsen in runden Schritten (z. B. 0, 500, 1.000 …), schmale Karten beschriften nur jeden zweiten Monat, die Jahreszahlen überlappen nicht mehr.
+
+### Neu
+- **Auswertungskarte teilen:** `abschnitte: [kennwert, streuung, kosten, profil, vergleich, archiv, rechnung, guete, heizlast, erzeuger]` zeigt nur die gewählten Teile; im Editor als Kästchen „Teile“. Ohne Kennwert-Teil entfällt der große Kopf, damit geteilte Karten bündig nebeneinander passen.
+
 ## 1.2.5 – 2026-11-16
 
 ### Geändert (Revision: Rechenlast, Cache, Bedienung)

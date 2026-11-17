@@ -63,7 +63,7 @@
   // Diagramm: optional Balken (linke Achse) und Linie (rechte Achse, ohne Balken links)
   TC.svgChart = (ax, bars, line) => {
     const nf = TC.nf;
-    const W = 720, H = 170, L = 40, R = bars ? 40 : 10, T = 10, B = 24;
+    const W = TC.chartW(), H = 180, L = 40, R = bars ? 40 : 10, T = 10, B = 28;
     const n = ax.length, step = (W - L - R) / n, ih = H - T - B;
     const bv = bars ? bars.filter((v) => v !== null) : [];
     const lv = line ? line.filter((v) => v !== null) : [];
@@ -100,7 +100,7 @@
       const cx = L + i * step + step / 2;
       const name = new Date(x.y, x.m, 1).toLocaleDateString(TC.loc, { month: 'narrow' });
       s += `<text class="ax" x="${cx}" y="${H - 11}" text-anchor="middle">${name}</text>`;
-      if (x.m === 0 || i === 0) s += `<text class="ax" x="${cx}" y="${H - 1}" text-anchor="middle">${x.y}</text>`;
+      if (x.m === 0 || (i === 0 && x.m < 9)) s += `<text class="ax" x="${cx}" y="${H - 1}" text-anchor="middle">${x.y}</text>`;
     });
     return s + '</svg>';
   };
