@@ -9,7 +9,10 @@ Modell: ``V = WW-Grundlast × Tage + Kennwert × Gradtage [− Ofen-Effekt × Of
   Ofen: Annahme aus der Nennleistung (``Sample.stove_assumed``) wird zum Verbrauch addiert, damit der Kennwert
   nicht verfälscht wird; Klima: Betriebstage bleiben aus der Schätzung heraus, eine Entlastung gibt es nicht.
 - Eine Annahme für den Kennwert gibt es nicht: Reichen die Daten nicht, ist die Qualität "unzureichend" (Regel 10).
-- Zweiter Kennwert "temperaturbereinigt" mit Gradtagen aus der gemessenen Innentemperatur (wenn vorhanden).
+- Zweiter Kennwert "temperaturbereinigt" mit Gradtagen aus der gemessenen Innentemperatur (wenn vorhanden); ohne Ofentage,
+  weil der Ofen die Raumtemperatur hebt, ohne dass die Heizung diese Wärme liefert.
+- Ein Ofen, der bewusst zusätzlich heizt (``HeatGenerator.relieves_heating = False``), kommt gar nicht als Ofenstunden an:
+  keine Annahme, kein Term – seine Wärme wird nie dem Gas zugerechnet.
 """
 
 from __future__ import annotations
@@ -63,6 +66,7 @@ class Sample:
     hp_energy: float | None = 0.0  # None = unbekannt
     degree_days_indoor: float | None = None
     t_indoor: float | None = None
+    stove_on: bool = False  # irgendein Ofen lief (auch einer, der die Heizung nicht entlastet)
 
 
 @dataclass(slots=True)
@@ -331,7 +335,7 @@ def fit_heat_model(
 def _fit_indoor(model: HeatModel, samples: list[Sample], hot_water: bool, baseload: bool) -> None:
     """Temperaturbereinigter Kennwert: dasselbe Modell mit Gradtagen aus der gemessenen Innentemperatur.
     %/K = 1 / mittlere Differenz innen–außen an Heiztagen (gelernt); ohne Innenwerte 6 %/K als Annahme."""
-    with_in = [s for s in samples if s.degree_days_indoor is not None]
+    with_in = [s for s in samples if s.degree_days_indoor is not None and not s.stove_on and s.stove_hours <= 0]
     if len(with_in) < MIN_DAYS:
         model.indoor_pct_per_k = ASSUMED_PCT_PER_K
         model.indoor_pct_quality = ModelQuality.ASSUMPTION

@@ -263,7 +263,12 @@ class TarifCoordinator:
         if meter.medium in HEAT_MEDIA:
             kw["hot_water"] = self.hot_water_on(meter)
             if meter.meter_id == self.heat_meter_id():
-                stoves = [g for g in gens if g.kind == GeneratorKind.FIREPLACE]
+                all_stoves = [g for g in gens if g.kind == GeneratorKind.FIREPLACE]
+                if all_stoves:
+                    # Ofentage (jeder Ofen) bleiben aus dem temperaturbereinigten Kennwert heraus: der Ofen hebt die Raumtemperatur
+                    kw["stove_days"] = {d for d, v in self._gen_series(all_stoves, "hours").items() if v and v > 0}
+                # 1.2.8: Öfen, die bewusst zusätzlich heizen, entlasten das Gas nicht – weder Annahme noch gelernter Term
+                stoves = [g for g in all_stoves if g.relieves_heating]
                 if stoves:
                     kw["stove_hours"] = self._gen_series(stoves, "hours")
                     # 1.2.2: mit gewogenem Holz die gelernte Wärme je Brennstunde statt Nennleistung × Anteil

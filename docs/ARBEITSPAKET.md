@@ -351,7 +351,7 @@ Später: Optionen, „Neu konfigurieren“, eigener Ablauf **„Anbieter wechsel
 Entschieden (13.11.2026):
 - `[A]` **Ein Repo**, Integration liefert beide Karten mit; Sensor-Modus bleibt als Fallback.
 - `[B]` Abschläge **in der Integration und per Dialog in der Karte** änderbar.
-- `[C]` Kaminofen (wenn aktiviert) geht **in die Gasprognose ein**, eigener Faktor aber erst ab ausreichenden Vergleichstagen (vorher Annahme aus Nennleistung).
+- `[C]` Kaminofen (wenn aktiviert) geht **in die Gasprognose ein**, eigener Faktor aber erst ab ausreichenden Vergleichstagen (vorher Annahme aus Nennleistung). Ab 1.2.8 (Entscheidung des Nutzers): Option „Ofen entlastet die Heizung“ – aus, wenn der Ofen bewusst zusätzlich heizt; dann geht der Ofen gar nicht in Kennwert und Gasprognose ein.
 - `[D]` **Wallbox als getrennter Sonderverbraucher** in der Stromprognose, Teil von 1.0.
 - `[E]` Datenhaltung: Tageswerte und Ablesungen im eigenen Store, unabhängig vom Recorder; Rechenkern in vier getrennte Bereiche.
 - `[F]` **Abrechnungsperiode** als eigenständiges, zentrales Objekt.

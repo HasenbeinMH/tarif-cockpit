@@ -486,6 +486,7 @@
           "data": {
             "stove_detection": "Detect stove operation by",
             "stove_threshold_k": "Rise within 30 minutes",
+            "relieves_heating": "Stove relieves the heating",
             "effective_share": "Effective share",
             "wood_price": "Wood price",
             "wood_price_unit": "Price per",
@@ -493,7 +494,8 @@
           },
           "data_description": {
             "stove_threshold_k": "Only in the heating season. Usually 1.5 K.",
-            "effective_share": "Which part of the stove heat really relieves the heating (assumption, e.g. 0.6) until there are enough comparison days.",
+            "relieves_heating": "Off if you deliberately heat the room with the stove in addition (overheating): then no stove heat is credited to gas, the heat coefficient stays pure heating and the forecast uses no stove relief.",
+            "effective_share": "Only if the stove relieves the heating: which part of the stove heat really relieves the heating (assumption, e.g. 0.6) until there are enough comparison days.",
             "wood_price": "Optional, for the estimated wood costs.",
             "kg_per_rm": "Assumption: beech/hardwood about 400 kg per stacked cubic metre."
           }
@@ -521,6 +523,7 @@
             "modulation": "Modulation (%)",
             "stove_detection": "Detect stove operation by",
             "stove_threshold_k": "Rise within 30 minutes",
+            "relieves_heating": "Stove relieves the heating",
             "effective_share": "Effective share",
             "wood_price": "Wood price",
             "wood_price_unit": "Price per",
@@ -535,7 +538,8 @@
             "state": "E.g. a binary sensor “running”. Operating hours come from it.",
             "room": "For a wood stove without operating state: detection by the temperature rise.",
             "stove_threshold_k": "Only in the heating season. Usually 1.5 K.",
-            "effective_share": "Which part of the stove heat really relieves the heating (assumption, e.g. 0.6) until there are enough comparison days.",
+            "relieves_heating": "Off if you deliberately heat the room with the stove in addition (overheating): then no stove heat is credited to gas, the heat coefficient stays pure heating and the forecast uses no stove relief.",
+            "effective_share": "Only if the stove relieves the heating: which part of the stove heat really relieves the heating (assumption, e.g. 0.6) until there are enough comparison days.",
             "wood_price": "Optional, for the estimated wood costs.",
             "kg_per_rm": "Assumption: beech/hardwood about 400 kg per stacked cubic metre."
           }

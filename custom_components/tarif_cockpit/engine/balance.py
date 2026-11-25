@@ -7,7 +7,7 @@ Eine Preisänderung ändert damit nie die Verbrauchsprognose; ein neuer Abschlag
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, tzinfo
 import math
@@ -131,6 +131,7 @@ def _heat_samples(
     stove_relief: float | None = None,
     hp_energy: Mapping[date, float | None] | None = None,
     invoices: list[Invoice] | None = None,
+    stove_days: Collection[date] | None = None,
 ) -> tuple[list[Sample], bool]:
     """Stichproben für die Regression: Tage (Sensor, letzte 365 Tage) oder Ableseperioden (nur Ablesungen, letzte 3 Jahre).
     Ab 1.1 zählen bei Zählern ohne Sensor auch Jahresrechnungen mit Menge (ohne eigene Stände) als ein Zeitraum."""
@@ -148,6 +149,7 @@ def _heat_samples(
                 d.consumption * factor, 1.0, d.degree_days, d.outdoor_temperature,
                 stove_hours=h, stove_assumed=(h or 0.0) * (stove_relief or 0.0), hp_energy=e,
                 degree_days_indoor=_indoor_dd(d), t_indoor=d.indoor_temperature,
+                stove_on=bool(stove_days and day in stove_days) or (h or 0.0) > 0,
             ))
         return out, False
     first = today - timedelta(days=READINGS_WINDOW_DAYS)
@@ -232,6 +234,7 @@ def evaluate_meter(
     stove_hours: Mapping[date, float | None] | None = None,
     stove_relief: float | None = None,
     hp_energy: Mapping[date, float | None] | None = None,
+    stove_days: Collection[date] | None = None,
     power_heat: PowerHeat | None = None,
     sensor_offset: float | None = None,
     forecast_dd: Mapping[date, float] | None = None,
@@ -244,7 +247,8 @@ def evaluate_meter(
     """Vollständige Auswertung eines Zählers für die laufende Periode.
 
     Wärme: ``hot_water`` (WW über diese Heizung), ``stove_hours`` und ``stove_relief`` (Ofenstunden je Tag, Annahme der
-    Entlastung je Stunde), ``hp_energy`` (Strom der Klimageräte/Wärmepumpen je Tag, die dieses Medium entlasten können).
+    Entlastung je Stunde; nur Öfen, die die Heizung entlasten), ``stove_days`` (Tage mit Ofenbetrieb jedes Ofens, bleiben aus
+    dem temperaturbereinigten Kennwert heraus), ``hp_energy`` (Strom der Klimageräte/Wärmepumpen je Tag, die dieses Medium entlasten können).
     Strom: ``power_heat`` (Heizen am Hausstrom, vor der Grundlast abgezogen)."""
     res = MeterResult()
     today = now.astimezone(tz).date()
@@ -308,7 +312,8 @@ def evaluate_meter(
         elif heat_model_override is not None:
             model = heat_model_override
         else:
-            samples, per_period = _heat_samples(meter, daily, readings, factor, today, tz, stove_hours, stove_relief, hp_energy, invoices)
+            samples, per_period = _heat_samples(meter, daily, readings, factor, today, tz, stove_hours, stove_relief, hp_energy, invoices,
+                                                stove_days)
             model = fit_heat_model(samples, per_period, hot_water=hot_water)
             res.samples, res.samples_per_period = samples, per_period
         res.heat_model = model
@@ -320,7 +325,7 @@ def evaluate_meter(
         if hp_energy and model.hp_avoided_per_kwh and model.hp_quality in (ModelQuality.PRELIMINARY, ModelQuality.GOOD, ModelQuality.VERY_GOOD):
             relief += _rate_per_dd(hp_energy, daily, spec.start_date, spec.end_date, known_day) * model.hp_avoided_per_kwh
         fc = heat_forecast(model, dd_prev, known_day, spec.end_date, relief_per_dd=relief, forecast_dd=forecast_dd)
-        res.indoor_split = indoor_split(daily, model, spec.start_date, known_day)
+        res.indoor_split = indoor_split(daily, model, spec.start_date, known_day, stove_days)
         rest_billing_unit = True
     else:
         main_vals = usable_values(daily)
@@ -532,13 +537,14 @@ def _split_power_heat(
 MIN_SPLIT_DAYS = 60
 
 
-def indoor_split(daily: Mapping[date, DailyConsumption], model: HeatModel, start: date, known_day: date) -> dict | None:
+def indoor_split(daily: Mapping[date, DailyConsumption], model: HeatModel, start: date, known_day: date,
+                 stove_days: Collection[date] | None = None) -> dict | None:
     """Aufteilung "+8 %: +5 % Mehrverbrauch, +3 % durch höhere Raumtemperatur" gegen das gleiche Fenster im Vorjahr.
 
     Witterungsbereinigt (Verbrauch je Gradtag an Heiztagen) ändert sich der Verbrauch um ``gesamt``; davon erklärt die
     Änderung der mittleren Innentemperatur × %/K den Anteil ``raumtemperatur``, der Rest ist ``verhalten``.
     Nur bei ausreichender Datenlage (Regel 10): temperaturbereinigtes Modell ab "vorläufig", gelernter %/K-Wert und
-    je mindestens 60 Heiztage mit Innentemperatur in beiden Fenstern."""
+    je mindestens 60 Heiztage mit Innentemperatur in beiden Fenstern. Ofentage zählen nicht (der Ofen hebt die Raumtemperatur)."""
     if model.indoor_pct_quality in (None, ModelQuality.ASSUMPTION, ModelQuality.INSUFFICIENT) or not model.indoor_pct_per_k:
         return None
     if not model.usable:  # auch das Modell mit Außentemperatur muss mindestens "vorläufig" sein
@@ -550,7 +556,7 @@ def indoor_split(daily: Mapping[date, DailyConsumption], model: HeatModel, start
         d = first
         while d <= last:
             v = daily.get(d)
-            if v is not None and v.consumption is not None and v.degree_days and v.indoor_temperature is not None and usable(v.quality):
+            if v is not None and v.consumption is not None and v.degree_days and v.indoor_temperature is not None and usable(v.quality)                     and not (stove_days and d in stove_days):
                 cons += v.consumption
                 dd += v.degree_days
                 tins.append(v.indoor_temperature)

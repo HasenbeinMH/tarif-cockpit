@@ -1291,6 +1291,7 @@ class GeneratorSubentryFlow(ConfigSubentryFlow):
             vol.Required("stove_detection", default=g.get("stove_detection", "entity" if has_state else "room")): _select(
                 ["entity", "room"], "stove_detection"),
             vol.Required("stove_threshold_k", default=g.get("stove_threshold_k", 1.5)): _number(0.5, 5, 0.1, "K"),
+            vol.Required("relieves_heating", default=g.get("relieves_heating", True)): bool,
             vol.Required("effective_share", default=_gen_number(g, "effective_share", GeneratorKind.FIREPLACE)): _number(0.05, 1, 0.05),
             vol.Optional("wood_price", description={"suggested_value": g.get("wood_price")}): _number(0, 10000, "any", cur),
             vol.Required("wood_price_unit", default=g.get("wood_price_unit", "rm")): _select(["kg", "rm"], "wood_price_unit"),
@@ -1310,6 +1311,7 @@ class GeneratorSubentryFlow(ConfigSubentryFlow):
                 self._gen.update({
                     "stove_detection": user_input["stove_detection"], "stove_threshold_k": float(user_input["stove_threshold_k"]),
                     "effective_share": float(user_input["effective_share"]),
+                    "relieves_heating": bool(user_input.get("relieves_heating", True)),
                     "wood_price": float(user_input["wood_price"]) if user_input.get("wood_price") is not None else None,
                     "wood_price_unit": user_input["wood_price_unit"], "kg_per_rm": float(user_input["kg_per_rm"]),
                 })
@@ -1341,7 +1343,12 @@ class GeneratorSubentryFlow(ConfigSubentryFlow):
                           "wird erst aus deinen Daten gelernt (Vergleichstage).") if de
                          else f"Heat = electricity × {num(cop, 1)} (COP, assumption until a heat meter exists). The relief of the heating "
                               "is learned from your data only (comparison days).")
-        if gen.kind == GeneratorKind.FIREPLACE:
+        if gen.kind == GeneratorKind.FIREPLACE and not gen.relieves_heating:
+            lines.append("Der Ofen heizt zusätzlich und entlastet die Heizung nicht: Seine Wärme wird nie dem Gas zugerechnet, Kennwert "
+                         "und Prognose rechnen ohne Ofen-Entlastung. Holz: eingesetzte Energie ÷ 4,2 kWh/kg (Schätzung)." if de
+                         else "The stove heats in addition and does not relieve the heating: its heat is never credited to gas, heat "
+                              "coefficient and forecast use no stove relief. Wood: energy input ÷ 4.2 kWh/kg (estimate).")
+        elif gen.kind == GeneratorKind.FIREPLACE:
             relief = stove_relief_per_hour(gen, Medium.GAS) or 0
             lines.append((f"Vor genug Vergleichstagen (je 10 mit und ohne Ofen): Entlastung {num(relief, 1)} kWh Gas je Ofenstunde "
                           "(Nennleistung × wirksamer Anteil ÷ 0,9 × Hs/Hi, Annahme). Holz: eingesetzte Energie ÷ 4,2 kWh/kg (Schätzung).") if de
@@ -1389,6 +1396,7 @@ class GeneratorSubentryFlow(ConfigSubentryFlow):
                     g.update({
                         "stove_detection": user_input["stove_detection"], "stove_threshold_k": float(user_input["stove_threshold_k"]),
                         "effective_share": float(user_input["effective_share"]),
+                        "relieves_heating": bool(user_input.get("relieves_heating", True)),
                         "wood_price": float(user_input["wood_price"]) if user_input.get("wood_price") is not None else None,
                         "wood_price_unit": user_input["wood_price_unit"], "kg_per_rm": float(user_input["kg_per_rm"]),
                     })

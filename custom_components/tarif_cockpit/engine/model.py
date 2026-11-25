@@ -203,6 +203,9 @@ class HeatGenerator:
     stove_threshold_k: float = 1.5  # Anstieg in 30 Minuten
     wood_price_unit: str = "kg"  # kg | rm (Raummeter)
     kg_per_rm: float = 400.0  # Annahme Buche/Hartholz
+    # Kaminofen (1.2.8): False = Ofen heizt bewusst zusätzlich (überheizt), entlastet die Heizung nicht – keine Annahme,
+    # kein gelernter Ofen-Term, keine Entlastung in der Prognose; Ofentage zählen nicht für den temperaturbereinigten Kennwert
+    relieves_heating: bool = True
 
 
 # ---------------------------------------------------------------- Historie (Store)

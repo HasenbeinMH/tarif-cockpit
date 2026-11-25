@@ -1,6 +1,6 @@
 [project]
 name = "tarif-cockpit"
-version = "1.2.7"
+version = "1.2.8"
 description = "Home-Assistant-Integration: Tarife, Kosten und Abschlagsprognose für Strom, Gas und Wasser"
 requires-python = ">=3.13"
 license = "MIT"

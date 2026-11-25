@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.8 – 2026-11-25
+
+### Neu
+- **Ofen, der zusätzlich heizt:** Beim Kaminofen gibt es die Option „Ofen entlastet die Heizung“ (Standard an). Aus heißt: Du heizt den Raum mit dem Ofen bewusst zusätzlich (überheizt). Dann wird keine Ofenwärme dem Gas zugerechnet – keine Annahme je Ofenstunde, kein gelernter Ofen-Term, keine Entlastung in der Prognose. Der Kennwert beschreibt nur die Heizung. Ofenstunden, Holz und Holzkosten bleiben.
+
+### Behoben
+- **Temperaturbereinigter Kennwert ohne Ofentage:** Tage mit Ofenbetrieb zählen nicht mehr für den Kennwert aus der Innentemperatur und die Aufteilung zum Vorjahr. Der Ofen hob dort die Raumtemperatur, ohne dass die Heizung diese Wärme lieferte.
+
 ## 1.2.7 – 2026-11-17
 
 ### Neu

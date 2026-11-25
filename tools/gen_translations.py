@@ -455,6 +455,7 @@ GEN_ENT_DESC = {
 GEN_OFEN = {
     "stove_detection": T("Ofenbetrieb erkennen über", "Detect stove operation by"),
     "stove_threshold_k": T("Anstieg in 30 Minuten", "Rise within 30 minutes"),
+    "relieves_heating": T("Ofen entlastet die Heizung", "Stove relieves the heating"),
     "effective_share": T("Wirksamer Anteil", "Effective share"),
     "wood_price": T("Holzpreis", "Wood price"),
     "wood_price_unit": T("Preis je", "Price per"),
@@ -462,8 +463,12 @@ GEN_OFEN = {
 }
 GEN_OFEN_DESC = {
     "stove_threshold_k": T("Nur in der Heizperiode. Üblich 1,5 K.", "Only in the heating season. Usually 1.5 K."),
-    "effective_share": T("Welcher Teil der Ofenwärme die Heizung wirklich entlastet (Annahme, z. B. 0,6), bis es genug Vergleichstage gibt.",
-                         "Which part of the stove heat really relieves the heating (assumption, e.g. 0.6) until there are enough comparison days."),
+    "relieves_heating": T("Aus, wenn du den Raum mit dem Ofen bewusst zusätzlich heizt (überheizt): Dann wird keine Ofenwärme dem Gas "
+                          "zugerechnet, der Kennwert bleibt reine Heizung und die Prognose rechnet ohne Ofen-Entlastung.",
+                          "Off if you deliberately heat the room with the stove in addition (overheating): then no stove heat is credited to "
+                          "gas, the heat coefficient stays pure heating and the forecast uses no stove relief."),
+    "effective_share": T("Nur wenn der Ofen die Heizung entlastet: welcher Teil der Ofenwärme die Heizung wirklich entlastet (Annahme, z. B. 0,6), bis es genug Vergleichstage gibt.",
+                         "Only if the stove relieves the heating: which part of the stove heat really relieves the heating (assumption, e.g. 0.6) until there are enough comparison days."),
     "wood_price": T("Optional, für die geschätzten Holzkosten.", "Optional, for the estimated wood costs."),
     "kg_per_rm": T("Annahme: Buche/Hartholz ca. 400 kg je Raummeter.", "Assumption: beech/hardwood about 400 kg per stacked cubic metre."),
 }

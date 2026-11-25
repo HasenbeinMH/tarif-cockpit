@@ -285,7 +285,9 @@ def evaluate_generator(
 
     # Entlastung: Kaminofen über Ofenstunden, Wärmepumpe/Klima am Hausstrom über deren Strom – nur aus dem Modell
     m = relieved_model if relieved_model is not None and relieved_model.usable else None  # Regel 10: nur mit belastbarem Modell
-    if m is not None and gen.kind == GeneratorKind.FIREPLACE and m.stove_coefficient is not None and res.hours is not None:
+    if gen.kind == GeneratorKind.FIREPLACE and not gen.relieves_heating:
+        res.flags.append("entlastet_heizung_nicht")  # 1.2.8: heizt bewusst zusätzlich, nichts wird dem Gas gutgeschrieben
+    elif m is not None and gen.kind == GeneratorKind.FIREPLACE and m.stove_coefficient is not None and res.hours is not None:
         res.avoided_energy = round(res.hours * m.stove_coefficient, 3)
         res.avoided_quality = (m.stove_quality or ModelQuality.ASSUMPTION).value
     elif (m is not None and gen.kind in ON_POWER_KINDS and m.hp_avoided_per_kwh and m.hp_quality in USABLE_FOR_FORECAST

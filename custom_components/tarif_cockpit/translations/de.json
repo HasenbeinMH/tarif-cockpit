@@ -486,6 +486,7 @@
           "data": {
             "stove_detection": "Ofenbetrieb erkennen über",
             "stove_threshold_k": "Anstieg in 30 Minuten",
+            "relieves_heating": "Ofen entlastet die Heizung",
             "effective_share": "Wirksamer Anteil",
             "wood_price": "Holzpreis",
             "wood_price_unit": "Preis je",
@@ -493,7 +494,8 @@
           },
           "data_description": {
             "stove_threshold_k": "Nur in der Heizperiode. Üblich 1,5 K.",
-            "effective_share": "Welcher Teil der Ofenwärme die Heizung wirklich entlastet (Annahme, z. B. 0,6), bis es genug Vergleichstage gibt.",
+            "relieves_heating": "Aus, wenn du den Raum mit dem Ofen bewusst zusätzlich heizt (überheizt): Dann wird keine Ofenwärme dem Gas zugerechnet, der Kennwert bleibt reine Heizung und die Prognose rechnet ohne Ofen-Entlastung.",
+            "effective_share": "Nur wenn der Ofen die Heizung entlastet: welcher Teil der Ofenwärme die Heizung wirklich entlastet (Annahme, z. B. 0,6), bis es genug Vergleichstage gibt.",
             "wood_price": "Optional, für die geschätzten Holzkosten.",
             "kg_per_rm": "Annahme: Buche/Hartholz ca. 400 kg je Raummeter."
           }
@@ -521,6 +523,7 @@
             "modulation": "Modulation (%)",
             "stove_detection": "Ofenbetrieb erkennen über",
             "stove_threshold_k": "Anstieg in 30 Minuten",
+            "relieves_heating": "Ofen entlastet die Heizung",
             "effective_share": "Wirksamer Anteil",
             "wood_price": "Holzpreis",
             "wood_price_unit": "Preis je",
@@ -535,7 +538,8 @@
             "state": "Z. B. ein Binärsensor „läuft“. Daraus kommen die Betriebsstunden.",
             "room": "Beim Kaminofen ohne Betriebszustand: Erkennung über den Temperaturanstieg.",
             "stove_threshold_k": "Nur in der Heizperiode. Üblich 1,5 K.",
-            "effective_share": "Welcher Teil der Ofenwärme die Heizung wirklich entlastet (Annahme, z. B. 0,6), bis es genug Vergleichstage gibt.",
+            "relieves_heating": "Aus, wenn du den Raum mit dem Ofen bewusst zusätzlich heizt (überheizt): Dann wird keine Ofenwärme dem Gas zugerechnet, der Kennwert bleibt reine Heizung und die Prognose rechnet ohne Ofen-Entlastung.",
+            "effective_share": "Nur wenn der Ofen die Heizung entlastet: welcher Teil der Ofenwärme die Heizung wirklich entlastet (Annahme, z. B. 0,6), bis es genug Vergleichstage gibt.",
             "wood_price": "Optional, für die geschätzten Holzkosten.",
             "kg_per_rm": "Annahme: Buche/Hartholz ca. 400 kg je Raummeter."
           }
